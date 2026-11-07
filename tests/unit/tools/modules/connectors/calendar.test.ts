@@ -119,23 +119,35 @@ describe('calendarModule (native)', () => {
     });
 
     it('returns a plain reason without the osascript command line', async () => {
-      const script = 'tell application "Calendar"\nset a to 1\nreturn a\nend tell';
-      execMock.mockRejectedValue(Object.assign(
-        new Error(`Command failed: osascript -e ${script}\nCalendar got an error: Can't get mailbox "INBOX". (-1728)`),
-        { code: 1 },
-      ));
+      const script = Array.from({ length: 40 }, (_, i) => `set a${i} to ${i}`).join('\n');
+      const raw = `Command failed: osascript -e tell application "Calendar"\n${script}\nend tell\nCalendar got an error: Can't get mailbox "INBOX". (-1728)`;
+      expect(raw.length).toBeGreaterThan(300);
+      execMock.mockRejectedValue(Object.assign(new Error(raw), { code: 1 }));
       const ctx = makeCtx();
       const result = await run({ action: 'get_status' }, ctx);
       expect(result.ok).toBe(false);
       if (!result.ok) {
-        expect(result.error).not.toMatch(/osascript|Command failed|tell application|set a to 1|return a/);
+        expect(result.error).not.toMatch(/osascript|Command failed|tell application|set a1 to|end tell/);
         expect(result.error).toContain('Calendar');
+        expect(result.error).toContain('检查对应账户');
       }
       const warn = vi.mocked(ctx.logger.warn);
       expect(warn).toHaveBeenCalledTimes(1);
       const meta = warn.mock.calls[0][1] as { connector: string; code: string; detail: string };
       expect(meta).toMatchObject({ connector: 'calendar', code: 'not_found' });
       expect(meta.detail.length).toBeLessThanOrEqual(300);
+      expect(meta.detail).toContain('-1728');
+      expect(meta.detail).not.toContain('set a1 to');
+    });
+
+    it('keeps connector validation errors intact instead of rewriting to a retry hint', async () => {
+      execMock.mockRejectedValue(new Error('end_ms must be greater than or equal to start_ms'));
+      const result = await run({ action: 'get_status' });
+      expect(result.ok).toBe(false);
+      if (!result.ok) {
+        expect(result.error).toContain('end_ms must be greater than or equal to start_ms');
+        expect(result.error).not.toContain('读取失败');
+      }
     });
   });
 

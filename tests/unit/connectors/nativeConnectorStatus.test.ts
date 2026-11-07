@@ -5,7 +5,10 @@ const osascriptMocks = vi.hoisted(() => ({
 }));
 
 vi.mock('../../../src/host/connectors/native/osascript', async (importOriginal) => ({
-  describeAppleScriptFailure: (await importOriginal<typeof import('../../../src/host/connectors/native/osascript')>()).describeAppleScriptFailure,
+  ...(await (async () => {
+    const real = await importOriginal<typeof import('../../../src/host/connectors/native/osascript')>();
+    return { describeAppleScriptFailure: real.describeAppleScriptFailure, isAppleScriptFailure: real.isAppleScriptFailure };
+  })()),
   runAppleScript: osascriptMocks.runAppleScript,
   escapeAppleScriptString: (value: string) => value,
   parseAppleScriptDate: () => null,

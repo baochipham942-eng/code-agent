@@ -7,6 +7,7 @@ import type { Connector, ConnectorExecutionResult, ConnectorStatus } from '../ba
 import {
   describeAppleScriptFailure,
   escapeAppleScriptString,
+  isAppleScriptFailure,
   parseAppleScriptDate,
   runAppleScript,
   sharedAppleScriptHandlers,
@@ -75,7 +76,9 @@ function parseLine(line: string): string[] {
 }
 
 function errorMessage(error: unknown): string {
-  return describeAppleScriptFailure('Mail', error).message;
+  return isAppleScriptFailure(error)
+    ? describeAppleScriptFailure('Mail', error).message
+    : error instanceof Error ? error.message : String(error);
 }
 
 function buildMailStatus(capabilities: string[]): ConnectorStatus {

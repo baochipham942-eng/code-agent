@@ -11,7 +11,11 @@ import type {
   ToolResult,
 } from '../../../protocol/tools';
 import { getConnectorRegistry } from '../../../connectors';
-import { describeAppleScriptFailure } from '../../../connectors/native/osascript';
+import {
+  appleScriptFailureLogDetail,
+  describeAppleScriptFailure,
+  isAppleScriptFailure,
+} from '../../../connectors/native/osascript';
 import { createVirtualArtifact } from '../../artifacts/artifactMeta';
 import { remindersSchema as schema } from './reminders.schema';
 
@@ -136,15 +140,18 @@ async function executeReminders(
       meta: buildRemindersMeta(ctx, action, output, { count: reminders.length, reminders }),
     };
   } catch (error) {
+    const osascriptFailure = isAppleScriptFailure(error);
     const failure = describeAppleScriptFailure('Reminders', error);
     ctx.logger.warn('reminders connector failed', {
       connector: 'reminders',
-      code: failure.code,
-      detail: (error instanceof Error ? error.message : String(error)).slice(0, 300),
+      code: osascriptFailure ? failure.code : 'connector_error',
+      detail: appleScriptFailureLogDetail(error),
     });
     return {
       ok: false,
-      error: failure.message,
+      error: osascriptFailure
+        ? failure.message
+        : `Reminders connector failed: ${error instanceof Error ? error.message : String(error)}`,
     };
   }
 }

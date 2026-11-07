@@ -19,7 +19,11 @@ import type {
   ToolResult,
 } from '../../../protocol/tools';
 import { getConnectorRegistry } from '../../../connectors';
-import { describeAppleScriptFailure } from '../../../connectors/native/osascript';
+import {
+  appleScriptFailureLogDetail,
+  describeAppleScriptFailure,
+  isAppleScriptFailure,
+} from '../../../connectors/native/osascript';
 import { createVirtualArtifact } from '../../artifacts/artifactMeta';
 import { mailSchema as schema } from './mail.schema';
 
@@ -207,15 +211,18 @@ async function executeMail(
       }),
     };
   } catch (error) {
+    const osascriptFailure = isAppleScriptFailure(error);
     const failure = describeAppleScriptFailure('Mail', error);
     ctx.logger.warn('mail connector failed', {
       connector: 'mail',
-      code: failure.code,
-      detail: (error instanceof Error ? error.message : String(error)).slice(0, 300),
+      code: osascriptFailure ? failure.code : 'connector_error',
+      detail: appleScriptFailureLogDetail(error),
     });
     return {
       ok: false,
-      error: failure.message,
+      error: osascriptFailure
+        ? failure.message
+        : `Mail connector failed: ${error instanceof Error ? error.message : String(error)}`,
     };
   }
 }

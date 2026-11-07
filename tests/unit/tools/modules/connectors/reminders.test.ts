@@ -119,23 +119,35 @@ describe('remindersModule (native)', () => {
     });
 
     it('returns a plain reason without the osascript command line', async () => {
-      const script = 'tell application "Reminders"\nset a to 1\nreturn a\nend tell';
-      execMock.mockRejectedValue(Object.assign(
-        new Error(`Command failed: osascript -e ${script}\nReminders got an error: Can't get mailbox "INBOX". (-1728)`),
-        { code: 1 },
-      ));
+      const script = Array.from({ length: 40 }, (_, i) => `set a${i} to ${i}`).join('\n');
+      const raw = `Command failed: osascript -e tell application "Reminders"\n${script}\nend tell\nReminders got an error: Can't get mailbox "INBOX". (-1728)`;
+      expect(raw.length).toBeGreaterThan(300);
+      execMock.mockRejectedValue(Object.assign(new Error(raw), { code: 1 }));
       const ctx = makeCtx();
       const result = await run({ action: 'get_status' }, ctx);
       expect(result.ok).toBe(false);
       if (!result.ok) {
-        expect(result.error).not.toMatch(/osascript|Command failed|tell application|set a to 1|return a/);
+        expect(result.error).not.toMatch(/osascript|Command failed|tell application|set a1 to|end tell/);
         expect(result.error).toContain('Reminders');
+        expect(result.error).toContain('检查对应账户');
       }
       const warn = vi.mocked(ctx.logger.warn);
       expect(warn).toHaveBeenCalledTimes(1);
       const meta = warn.mock.calls[0][1] as { connector: string; code: string; detail: string };
       expect(meta).toMatchObject({ connector: 'reminders', code: 'not_found' });
       expect(meta.detail.length).toBeLessThanOrEqual(300);
+      expect(meta.detail).toContain('-1728');
+      expect(meta.detail).not.toContain('set a1 to');
+    });
+
+    it('keeps connector validation errors intact instead of rewriting to a retry hint', async () => {
+      execMock.mockRejectedValue(new Error('list is required for get_reminder'));
+      const result = await run({ action: 'get_status' });
+      expect(result.ok).toBe(false);
+      if (!result.ok) {
+        expect(result.error).toContain('list is required for get_reminder');
+        expect(result.error).not.toContain('读取失败');
+      }
     });
   });
 

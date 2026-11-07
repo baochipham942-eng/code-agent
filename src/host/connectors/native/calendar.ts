@@ -7,6 +7,7 @@ import {
   buildAppleScriptDateVar,
   describeAppleScriptFailure,
   escapeAppleScriptString,
+  isAppleScriptFailure,
   parseAppleScriptDate,
   runAppleScript,
   sharedAppleScriptHandlers,
@@ -48,7 +49,9 @@ function parseLine(line: string): string[] {
 }
 
 function errorMessage(error: unknown): string {
-  return describeAppleScriptFailure('Calendar', error).message;
+  return isAppleScriptFailure(error)
+    ? describeAppleScriptFailure('Calendar', error).message
+    : error instanceof Error ? error.message : String(error);
 }
 
 function buildCalendarStatus(capabilities: string[]): ConnectorStatus {

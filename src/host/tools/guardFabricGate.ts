@@ -3,6 +3,7 @@
 // ============================================================================
 
 import type { DecisionStep, DecisionTrace } from '../../shared/contract/decisionTrace';
+import { HostReasonCode, createHostReason, type HostReasonPayload } from '../../shared/contract/permission';
 import { getGuardFabric, type ExecutionTopology } from '../permissions';
 import { resolveGuardLevel } from '../permissions/guardFabric';
 import type { PermissionLevel } from '../../shared/contract/tool';
@@ -28,6 +29,8 @@ export interface GuardFabricGateResult {
   deny?: {
     error: string;
     reason: string;
+    /** 结构化原因（稳定 code + toolName 元数据），renderer 登记表直查，不落英文原句。 */
+    hostReason?: HostReasonPayload;
     trace?: DecisionTrace;
   };
   forceApproval?: boolean;
@@ -68,9 +71,11 @@ function evaluateUserDeny(input: GuardFabricGateInput): GuardFabricGateResult['d
   const trace = createTraceBuilder(input.executionToolName)
     .addStep('policy_enforcer', matchedRule.id, 'deny', reason)
     .build('deny');
+  const error = `Blocked by your permission deny rule (${matchedRule.name}). This tool call is denied by the user's settings; do not retry it or try to achieve the same effect another way.`;
   return {
-    error: `Blocked by your permission deny rule (${matchedRule.name}). This tool call is denied by the user's settings; do not retry it or try to achieve the same effect another way.`,
+    error,
     reason,
+    hostReason: createHostReason(HostReasonCode.PermissionDeniedUserRule, error, { toolName: input.executionToolName }),
     trace,
   };
 }
@@ -87,9 +92,11 @@ function evaluateBuiltinHardDeny(input: GuardFabricGateInput): GuardFabricGateRe
   const trace = createTraceBuilder(input.executionToolName)
     .addStep('policy_enforcer', rule.id, 'deny', reason)
     .build('deny');
+  const error = `Blocked by built-in safety rule (${rule.name}): ${rule.reason}. Do not retry. Write inside the workspace/project directory instead, or ask the user to make this change themselves.`;
   return {
-    error: `Blocked by built-in safety rule (${rule.name}): ${rule.reason}. Do not retry. Write inside the workspace/project directory instead, or ask the user to make this change themselves.`,
+    error,
     reason,
+    hostReason: createHostReason(HostReasonCode.PermissionDeniedSafetyRule, error, { toolName: input.executionToolName }),
     trace,
   };
 }

@@ -52,6 +52,11 @@ export async function getOsNotificationPermission(): Promise<OsNotificationPermi
 }
 
 /** 把原生通知投递结果回报主进程（落日志，便于诊断「没弹」）。fire-and-forget。 */
+/** 供 hook 在未走 postOsNotification 的早退分支里留痕。 */
+export function reportNotificationHandled(report: Record<string, unknown>): void {
+  reportDelivery(report);
+}
+
 function reportDelivery(report: Record<string, unknown>): void {
   try {
     void ipcService.invokeDomain(IPC_DOMAINS.NOTIFICATION, 'reportClientDelivery', report);

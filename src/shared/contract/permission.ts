@@ -70,6 +70,8 @@ export enum HostReasonCode {
   PermissionDeniedCancelled = 'PERMISSION_DENIED_CANCELLED',
   PermissionDeniedFailClosed = 'PERMISSION_DENIED_FAIL_CLOSED',
   PermissionDeniedScripted = 'PERMISSION_DENIED_SCRIPTED',
+  PermissionDeniedUserRule = 'PERMISSION_DENIED_USER_RULE',
+  PermissionDeniedSafetyRule = 'PERMISSION_DENIED_SAFETY_RULE',
   DecisionPolicy = 'DECISION_POLICY',
   DecisionGuard = 'DECISION_GUARD',
   DecisionClassifier = 'DECISION_CLASSIFIER',

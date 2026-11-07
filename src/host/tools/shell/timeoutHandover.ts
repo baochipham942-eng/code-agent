@@ -9,6 +9,8 @@ export interface TimedOutCommandHandoverInput {
   cwd: string;
   sessionId?: string;
   toolCallId?: string;
+  ownerAgentId?: string;
+  displayCommand?: string;
   sandboxed?: boolean;
   abortSignal?: AbortSignal;
   onExit?: () => void;
@@ -35,6 +37,8 @@ export function handoverTimedOutCommand(
   const adopted = adoptBackgroundTask(input.child, input.command, input.cwd, {
     sessionId: input.sessionId,
     toolCallId: input.toolCallId,
+    ownerAgentId: input.ownerAgentId,
+    displayCommand: input.displayCommand,
     sandboxed: input.sandboxed,
     abortSignal: input.abortSignal,
     onExit: input.onExit,

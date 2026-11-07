@@ -99,7 +99,7 @@ export const CLOUD = {
 // ============================================================================
 
 /** Agent Neo 帮助与产品文档入口 */
-export const AGENT_NEO_HELP_URL = 'https://github.com/baochipham942-eng/code-agent';
+export const AGENT_NEO_HELP_URL = 'https://github.com/neo-cowork/code-agent';
 
 /** 当前生产环境云端 API 基础 URL */
 export const PRODUCTION_CLOUD_API_URL = 'https://agentneo.vercel.app';

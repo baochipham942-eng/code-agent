@@ -6,6 +6,10 @@ import type {
   TaskStatus,
 } from '../../shared/contract/backgroundTask';
 import { isTerminalTaskStatus } from '../../shared/contract/backgroundTask';
+import {
+  type SessionTaskSlotLocale,
+  withAutomationPromptTimeoutHint,
+} from '../../shared/i18n/sessionTaskSlot';
 import type { BackgroundTaskStore } from './backgroundTaskStore';
 import {
   getAllBackgroundTasks,
@@ -17,10 +21,14 @@ import {
 } from '../tools/modules/shell/backgroundTaskSources';
 import { type BackgroundTaskLedger, getBackgroundTaskLedger } from './backgroundTaskLedger';
 import { buildBackgroundTaskRecoveryPlan } from './backgroundTaskRecoveryPlan';
+import { isLikelyUnansweredMacOsAutomationPrompt } from './macosAutomationPrompt';
+import { getConfigService } from '../services/core/configService';
+import { createLogger } from '../services/infra/logger';
 
 type ShellLikeStatus = 'running' | 'completed' | 'failed';
 
 const EMPTY_OUTPUT_MESSAGE = 'Process completed with exit code 0 but produced no output.';
+const logger = createLogger('BackgroundTaskSnapshotAdapters');
 
 function getOutputFileSize(outputFile?: string): number | undefined {
   if (!outputFile) return undefined;
@@ -92,6 +100,8 @@ function buildTerminalMessage(args: {
   durationMs?: number;
   exitCode?: number;
   outputFile?: string;
+  automationPromptLikely?: boolean;
+  locale?: SessionTaskSlotLocale;
 }): string {
   const duration = args.durationMs != null ? `，耗时 ${formatDuration(args.durationMs)}` : '';
   const log = args.outputFile ? `，日志 ${args.outputFile}` : '';
@@ -99,7 +109,11 @@ function buildTerminalMessage(args: {
     return `${args.label} 已完成${duration}${log}`;
   }
   const exitCode = args.exitCode != null ? `，退出码 ${args.exitCode}` : '';
-  return `${args.label} 失败${exitCode}${duration}${log}`;
+  return withAutomationPromptTimeoutHint(
+    `${args.label} 失败${exitCode}${duration}${log}`,
+    args.locale ?? 'zh',
+    args.automationPromptLikely,
+  );
 }
 
 function queueTerminalNotification(args: {
@@ -113,6 +127,8 @@ function queueTerminalNotification(args: {
   durationMs?: number;
   exitCode?: number;
   outputFile?: string;
+  automationPromptLikely?: boolean;
+  locale?: SessionTaskSlotLocale;
 }): void {
   if (!args.sessionId || !shouldQueueTerminalNotification(args.previous, args.status)) {
     return;
@@ -130,6 +146,8 @@ function queueTerminalNotification(args: {
       durationMs: args.durationMs,
       exitCode: args.exitCode,
       outputFile: args.outputFile,
+      automationPromptLikely: args.automationPromptLikely,
+      locale: args.locale,
     }),
     payload: {
       taskId: args.taskId,
@@ -152,6 +170,19 @@ function formatDuration(durationMs: number): string {
   return `${minutes} 分 ${remainingSeconds} 秒`;
 }
 
+function getAutomationPromptLocale(sessionId?: string): SessionTaskSlotLocale {
+  try {
+    return getConfigService().getSettings().ui.language;
+  } catch (error) {
+    logger.warn('Failed to read UI locale for macOS Automation failure hint; using Chinese fallback', {
+      reason: 'automation_prompt_locale_read_failed',
+      sessionId,
+      message: error instanceof Error ? error.message : String(error),
+    });
+    return 'zh';
+  }
+}
+
 export function syncShellTaskSnapshotToLedger(
   task: TaskInfo,
   ledger: BackgroundTaskLedger = getBackgroundTaskLedger(),
@@ -160,6 +191,13 @@ export function syncShellTaskSnapshotToLedger(
   const taskId = `shell:${task.taskId}`;
   const previous = ledger.getTask(taskId);
   const recoveryStatus = status === 'running' ? 'running-live' : status;
+  const automationPromptLikely = isLikelyUnansweredMacOsAutomationPrompt({
+    command: task.command,
+    status,
+    exitCode: task.exitCode,
+    outputFile: task.outputFile,
+  });
+  const locale = automationPromptLikely ? getAutomationPromptLocale(task.sessionId) : undefined;
   ledger.upsertTask({
     id: taskId,
     kind: 'shell',
@@ -187,6 +225,8 @@ export function syncShellTaskSnapshotToLedger(
         recoveryStatus,
         outputFile: task.outputFile,
         exitCode: task.exitCode,
+        automationPromptLikely,
+        locale,
       }),
     },
   });
@@ -202,6 +242,8 @@ export function syncShellTaskSnapshotToLedger(
     durationMs: task.duration,
     exitCode: task.exitCode,
     outputFile: task.outputFile,
+    automationPromptLikely,
+    locale,
   });
 
   upsertOutputRef(ledger, {

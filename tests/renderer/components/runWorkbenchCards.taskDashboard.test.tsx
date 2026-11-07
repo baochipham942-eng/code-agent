@@ -4,6 +4,7 @@ import React from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it, vi } from 'vitest';
 import { TaskDashboardSummary, getRunUiStatusLabel } from '../../../src/renderer/components/TaskPanel/RunWorkbenchCards';
+import { buildLedgerTaskRecords } from '../../../src/renderer/hooks/useRunWorkbenchModel';
 import type { TaskRecord } from '../../../src/renderer/types/runWorkbench';
 import { zh } from '../../../src/renderer/i18n/zh';
 import { isOpenTaskStatus } from '../../../src/shared/contract/planning';
@@ -186,5 +187,39 @@ describe('TaskDashboardSummary', () => {
     expect(html).toContain('当前对话暂无任务');
     expect(html).toContain('后台任务');
     expect(html).not.toContain('其他运行');
+  });
+});
+
+describe('后台任务行：raw JS 异常清洗为类别人话（FB-746）', () => {
+  it('失败行显示中文类别文案，不出现「Cannot read properties」原文', () => {
+    const records = buildLedgerTaskRecords([
+      {
+        id: 'agent:codex:crash-1',
+        kind: 'agent_engine',
+        sessionId: 'session-1',
+        runId: 'run-1',
+        source: 'agent_engine',
+        title: '整理周报',
+        summary: '整理周报',
+        status: 'failed',
+        createdAt: 100,
+        updatedAt: 100,
+        startedAt: 100,
+        events: [],
+        outputRefs: [],
+        failure: {
+          message: "TypeError: Cannot read properties of undefined (reading 'x')",
+          category: 'agent_engine',
+        },
+      },
+    ], 'session-1');
+
+    const html = renderToStaticMarkup(
+      React.createElement(TaskDashboardSummary, { tasks: records, run: null }),
+    );
+    expect(html).toContain('data-task-status="blocked"');
+    expect(html).toContain(zh.taskPanel.taskBlockedReason.unknown);
+    expect(html).not.toContain('Cannot read properties');
+    expect(html).not.toContain('TypeError');
   });
 });

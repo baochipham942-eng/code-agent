@@ -2,6 +2,7 @@ import { useEffect, useRef } from 'react';
 import type { AgentEngineFailureDiagnostics, AgentEngineKind } from '@shared/contract/agentEngine';
 import type { MessageAttachment } from '../../../../../shared/contract';
 import { useSessionStore } from '../../../../stores/sessionStore';
+import { useComposerRejectedUploadsStore } from '../../../../stores/composerRejectedUploadsStore';
 
 interface ChatInputSessionScope {
   currentSessionId: string | null;
@@ -44,6 +45,7 @@ export function useChatInputSessionScope(
     lastSessionIdRef.current = currentSessionId;
     setValue('');
     setAttachments([]);
+    useComposerRejectedUploadsStore.getState().clear();
     onSessionDraftReset?.();
   }, [currentSessionId, setValue, setAttachments, onSessionDraftReset]);
 

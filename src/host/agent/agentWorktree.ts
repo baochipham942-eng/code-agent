@@ -226,15 +226,26 @@ async function probeWorktreeBase(dir: string): Promise<GitWorktreeBaseProbe> {
 }
 
 /**
- * worktree 创建失败时的人话提示：区分「不在 git 仓库」和「在 git 仓库但还没有
- * 任何提交」。后者 git 原生报 "ambiguous argument 'HEAD'"，对用户没有指向性。
- * 探测无结论（unknown）时退回通用提示——创建失败的原始 stderr 已在错误信息里。
+ * worktree 创建失败时的人话提示 + 探测结论。区分「不在 git 仓库」（no-repo）、
+ * 「在 git 仓库但还没有任何提交」（unborn，git 原生报 "ambiguous argument 'HEAD'"，
+ * 对用户没有指向性）和其余失败（other）。`kind` 供调用方下发结构化
+ * metadata.code（renderer 登记表翻译），探测无结论（unknown）与探测通过但创建
+ * 仍失败（resolves）都归 other——创建失败的原始 stderr 已在错误信息里。
  */
-export async function worktreeFailureHint(cwd: string): Promise<string> {
-  if ((await probeWorktreeBase(cwd)).kind === 'unborn') {
-    return '仓库还没有任何提交（HEAD 无法解析），无法创建 worktree；请先在仓库里做一次初始提交，或换 native 引擎的子代理。';
+export async function worktreeFailureHint(
+  cwd: string,
+): Promise<{ hint: string; kind: 'no-repo' | 'unborn' | 'other' }> {
+  const probe = await probeWorktreeBase(cwd);
+  if (probe.kind === 'unborn') {
+    return {
+      kind: 'unborn',
+      hint: '仓库还没有任何提交（HEAD 无法解析），无法创建 worktree；请先在仓库里做一次初始提交，或换 native 引擎的子代理。',
+    };
   }
-  return 'Ensure you are in a git repository.';
+  return {
+    kind: probe.kind === 'no-repo' ? 'no-repo' : 'other',
+    hint: 'Ensure you are in a git repository.',
+  };
 }
 
 export interface WorktreeInfo {

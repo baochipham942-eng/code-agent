@@ -13,6 +13,9 @@ import type {
 } from '../../shared/contract/artifactLocator';
 import { extractPresentationSlideText } from '../../shared/ooxml/presentationPackageIndex';
 import { app } from '../platform';
+import { createLogger } from '../services/infra/logger';
+import { getLibreOfficeState } from '../runtime/libreOffice/state';
+import type { LibreOfficeState } from '../runtime/libreOffice/types';
 import { getUserConfigDir } from '../config/configPaths';
 import { computeArtifactRevision } from '../tools/artifacts/artifactLocatorHost';
 import { loadPresentationPackageIndex } from '../tools/artifacts/presentationPackageIndex';
@@ -405,6 +408,7 @@ export async function handleInspectPresentation(payload: { filePath: string; lim
 interface PresentationPreviewDependencies {
   cacheRoot?: string;
   libreOfficeAvailable?: () => boolean;
+  libreOfficeState?: () => LibreOfficeState;
   convert?: (pptxPath: string, outputDir: string) => Promise<string[]>;
 }
 
@@ -416,6 +420,8 @@ interface PresentationScreenshotManifest {
   /** 上次命中缓存的时间（ms）；旧 manifest 无此字段，照常读 */
   lastUsedAt?: number;
 }
+
+const logger = createLogger('WorkspaceArchiveIPC');
 
 const presentationPreviewInflight = new Map<string, Promise<PresentationPagePreviewResult>>();
 
@@ -451,6 +457,28 @@ async function writeBackManifestUsage(
   }
 }
 
+/**
+ * 区分「还在后台装 / 装失败 / 平台不支持 / 自动安装被关」：失败与不支持把 runtime 错误码
+ * 经 error 透传给 picker 选具体文案；其余返回 undefined（沿用「正在准备」）。每条都留可区分日志。
+ */
+function describeLibreOfficeMissing(readState: () => LibreOfficeState): string | undefined {
+  const state = readState();
+  const autoInstallDisabled = process.env.CODE_AGENT_NO_RUNTIME_AUTOINSTALL === '1';
+  if ((state.phase === 'failed' || state.phase === 'unsupported') && state.error) {
+    logger.warn('Presentation preview unavailable: LibreOffice not usable', {
+      phase: state.phase,
+      code: state.error.code,
+      logPath: state.error.logPath,
+    });
+    return state.error.code;
+  }
+  logger.info('Presentation preview unavailable: LibreOffice not ready', {
+    phase: state.phase,
+    autoInstallDisabled,
+  });
+  return undefined;
+}
+
 async function buildPresentationPagePreview(
   payload: { filePath: string },
   dependencies: PresentationPreviewDependencies,
@@ -476,7 +504,12 @@ async function buildPresentationPagePreview(
 
   const libreOfficeAvailable = dependencies.libreOfficeAvailable ?? isLibreOfficeAvailable;
   if (!libreOfficeAvailable()) {
-    return { filePath, state: 'libreoffice-missing', pages };
+    return {
+      filePath,
+      state: 'libreoffice-missing',
+      pages,
+      error: describeLibreOfficeMissing(dependencies.libreOfficeState ?? getLibreOfficeState),
+    };
   }
 
   const cacheRoot = dependencies.cacheRoot

@@ -237,7 +237,8 @@ describe('worktreeFailureHint 按失败原因给人话', () => {
     const repo = await makeZeroCommitRepo();
     scratchDirs.push(repo);
 
-    const hint = await worktreeFailureHint(repo);
+    const { hint, kind } = await worktreeFailureHint(repo);
+    expect(kind).toBe('unborn');
     expect(hint).toContain('初始提交');
     expect(hint).not.toContain('Ensure you are in a git repository');
   });
@@ -246,13 +247,19 @@ describe('worktreeFailureHint 按失败原因给人话', () => {
     const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'not-a-repo-hint-'));
     scratchDirs.push(dir);
 
-    expect(await worktreeFailureHint(dir)).toBe('Ensure you are in a git repository.');
+    expect(await worktreeFailureHint(dir)).toEqual({
+      kind: 'no-repo',
+      hint: 'Ensure you are in a git repository.',
+    });
   });
 
   it('有提交的仓库 → 默认英文提示（不误报零提交）', async () => {
     const repo = await makeRepoWithCommit();
     scratchDirs.push(repo);
 
-    expect(await worktreeFailureHint(repo)).toBe('Ensure you are in a git repository.');
+    expect(await worktreeFailureHint(repo)).toEqual({
+      kind: 'other',
+      hint: 'Ensure you are in a git repository.',
+    });
   });
 });

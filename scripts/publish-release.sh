@@ -31,7 +31,7 @@ readonly APPLE_TEAM_ID="D7CVTJ72NV"
 readonly SIGNING_AUTHORITY="Developer ID Application: jay lem (D7CVTJ72NV)"
 readonly APP_BUNDLE_ID="com.linchen.code-agent"
 readonly APP_NAME="Agent Neo"
-readonly GITHUB_REPO="baochipham942-eng/code-agent"
+readonly GITHUB_REPO="neo-cowork/code-agent"
 readonly MOUNTPOINT="/tmp/agent-neo-publish-mount"
 readonly WEB_PORT=8180
 

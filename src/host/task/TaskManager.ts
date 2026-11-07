@@ -638,6 +638,11 @@ export class TaskManager extends EventEmitter {
     return this.runRegistry?.hasSession(sessionId) ?? false;
   }
 
+  /** 有 run 从 registry 退场（含前台轮结束）时回调；无 registry 时是空操作。 */
+  onRunIdle(listener: () => void): () => void {
+    return this.runRegistry?.onIdleTransition(listener) ?? (() => undefined);
+  }
+
   /**
    * 获取统计信息
    */

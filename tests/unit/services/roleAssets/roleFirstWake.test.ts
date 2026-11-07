@@ -26,6 +26,7 @@ const mockSessionManager = vi.hoisted(() => ({
   getCurrentSessionId: vi.fn(() => null),
   getSession: vi.fn(),
   createSession: vi.fn(),
+  addMessageToSession: vi.fn(),
   updateMessage: vi.fn(),
 }));
 
@@ -183,6 +184,7 @@ beforeEach(async () => {
   mockSettings.value = {};
   mockSessionManager.getCurrentSessionId.mockReturnValue(null);
   mockSessionManager.getSession.mockReset();
+  mockSessionManager.addMessageToSession.mockReset().mockResolvedValue(undefined);
   mockSessionManager.updateMessage.mockReset().mockResolvedValue(undefined);
   mockSessionManager.createSession.mockReset().mockImplementation(async () => {
     harness.sessionSeq += 1;

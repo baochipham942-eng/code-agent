@@ -26,6 +26,7 @@ import type {
   RoleFirstWakeStateName,
 } from '../../../shared/contract/roleAssets';
 import type { CapabilityCenterItem } from '../../../shared/contract/capability';
+import type { Message } from '../../../shared/contract/message';
 import { getAgentsMdDir } from '../../config/configPaths';
 import { parseAgentMdVisual } from '../../agent/hybrid/agentMdLoader';
 import { getRoleFirstWakePath, isSafeRoleId } from './roleAssetPaths';
@@ -423,6 +424,7 @@ async function defaultFirstWakeRunner(input: {
       await orchestrator.sendMessage(input.prompt, undefined, {
         mode: 'normal',
         inputSource: 'automation',
+        inputHistoryVisibility: 'meta',
         systemInstructions: [UNATTENDED_TRUST_NOTICE],
         disableAutoAgent: true,
         agentOverrideId: input.roleId,
@@ -465,6 +467,16 @@ async function defaultFirstWakeRunner(input: {
     config.originKind = 'headless';
     config.allowedToolNames = input.allowedToolNames;
 
+    const firstWakeUserMessage: Message = {
+      id: `first-wake-user-${Date.now()}`,
+      role: 'user',
+      content: input.prompt,
+      timestamp: Date.now(),
+      isMeta: true,
+      source: 'system',
+    };
+    await sessionManager.addMessageToSession(input.sessionId, firstWakeUserMessage);
+
     let lastEventAssistantContent = '';
     const agentLoop = createAgentLoop(
       config,
@@ -476,14 +488,7 @@ async function defaultFirstWakeRunner(input: {
           }
         }
       },
-      [
-        {
-          id: `first-wake-user-${Date.now()}`,
-          role: 'user',
-          content: input.prompt,
-          timestamp: Date.now(),
-        },
-      ],
+      [firstWakeUserMessage],
       input.sessionId,
     );
     await agentLoop.run(input.prompt);

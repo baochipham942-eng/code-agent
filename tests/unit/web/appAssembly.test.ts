@@ -134,6 +134,7 @@ const EXPECTED_ROUTES: Array<[string, string]> = [
   ['get', '/background/tasks'],
   ['post', '/background/move-to-background'],
   ['post', '/background/move-to-foreground'],
+  ['post', '/background/dismiss-terminal'],
   // voice-live routes are capability contributions and intentionally absent from the default table
   // admin review queue router
   ['get', '/admin/review-queue'],

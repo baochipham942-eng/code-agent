@@ -40,6 +40,15 @@ export function registerBackgroundHandlers(getMainWindow: () => AppWindow | null
     }
   );
 
+  // 清除已结束的后台条目（running 态 no-op；终态行由用户手动清除）
+  ipcHost.handle(
+    BACKGROUND_CHANNELS.DISMISS_TERMINAL,
+    async (_event, sessionId: string): Promise<boolean> => {
+      logger.info('Dismissing terminal background task', { sessionId });
+      return manager.dismissTerminal(sessionId);
+    }
+  );
+
   // 获取所有后台任务
   ipcHost.handle(
     BACKGROUND_CHANNELS.GET_TASKS,

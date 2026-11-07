@@ -43,10 +43,17 @@ class BackgroundTaskManager extends EventEmitter {
       return false;
     }
 
-    // 检查是否已在后台
-    if (this.backgroundSessions.has(sessionId)) {
-      logger.debug('Session already in background', { sessionId });
-      return true;
+    // 检查是否已在后台：running 条目重复请求是 no-op；终态条目（完成/失败/停止行
+    // 常驻面板直到用户清除）要重置回 running——否则同一会话再次转后台后，新 run 的
+    // 终态收线会撞上旧终态条目被 running-guard 挡掉，面板永远显示旧结果。
+    const existing = this.backgroundSessions.get(sessionId);
+    if (existing) {
+      if (existing.status === 'running') {
+        logger.debug('Session already in background', { sessionId });
+        return true;
+      }
+      this.backgroundSessions.delete(sessionId);
+      this.emitUpdate({ type: 'removed', task: existing });
     }
 
     const sessionInfo: BackgroundSessionInfo = {
@@ -111,8 +118,9 @@ class BackgroundTaskManager extends EventEmitter {
    * 标记后台任务完成
    *
    * running-guard：只收 running 态的条目。同一条目的 task_complete 与 agent_complete
-   * 收口点会先后到（后者有 3 秒延迟 remove 窗口）、SSE 重放也可能重复投递——已收线
-   * 的条目再收一次只会重复弹通知，不允许。
+   * 收口点会先后到、SSE 重放也可能重复投递——已收线的条目再收一次只会重复弹通知，
+   * 不允许。终态条目常驻列表直到用户清除（dismissTerminal）或切前台——不自动删除，
+   * 否则用户没盯着面板的 3 秒窗口一过结果就没了（N-BGPANEL-STOP-TERMINAL）。
    */
   async markCompleted(sessionId: string, message?: string): Promise<void> {
     const task = this.backgroundSessions.get(sessionId);
@@ -139,15 +147,6 @@ class BackgroundTaskManager extends EventEmitter {
       duration: Date.now() - task.startedAt,
       toolsUsed: [],
     }, { force: true });
-
-    // 3 秒后自动从后台列表移除
-    setTimeout(() => {
-      this.backgroundSessions.delete(sessionId);
-      this.emitUpdate({
-        type: 'removed',
-        task,
-      });
-    }, 3000);
   }
 
   /**
@@ -182,6 +181,31 @@ class BackgroundTaskManager extends EventEmitter {
       toolsUsed: [],
       succeeded: false,
     }, { force: true });
+  }
+
+  /**
+   * 清除已结束的后台条目（终态行手动清除，N-BGPANEL-STOP-TERMINAL）
+   *
+   * running 态 no-op：运行中的条目只能停（AGENT_CANCEL 走 run 取消链路）或切前台，
+   * 不允许从面板凭空消失。
+   */
+  dismissTerminal(sessionId: string): boolean {
+    const task = this.backgroundSessions.get(sessionId);
+    if (!task || task.status === 'running') {
+      logger.debug('Background task not dismissible', { sessionId });
+      return false;
+    }
+
+    this.backgroundSessions.delete(sessionId);
+
+    logger.info('Background task dismissed', { sessionId });
+
+    this.emitUpdate({
+      type: 'removed',
+      task,
+    });
+
+    return true;
   }
 
   /**

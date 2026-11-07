@@ -836,10 +836,12 @@ export function createHttpCodeAgentAPI(baseUrl: string): CommandBridgeAPI {
         if (channel === 'session:create' && typeof bodyPayload === 'string') {
           bodyPayload = { title: bodyPayload };
         }
-        // 后台切换（Tauri IPC 侧是单 string 参数，web 路由吃 {sessionId} 对象）：
+        // 后台切换/清除（Tauri IPC 侧是单 string 参数，web 路由吃 {sessionId} 对象）：
         // 单 string 按同名对象包一层，否则 /background/move-to-* 会以 INVALID_BODY 400。
         if (
-          (channel === 'background:move-to-background' || channel === 'background:move-to-foreground')
+          (channel === 'background:move-to-background'
+            || channel === 'background:move-to-foreground'
+            || channel === 'background:dismiss-terminal')
           && typeof bodyPayload === 'string'
         ) {
           bodyPayload = { sessionId: bodyPayload };

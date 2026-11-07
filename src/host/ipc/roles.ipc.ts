@@ -46,6 +46,7 @@ import {
   deleteScopedMemory,
   writeScopedMemory,
   resolveRoleProactivityConfig,
+  syncCadenceJobs,
   listRoleDrafts,
   confirmRoleDraft,
   rejectRoleDraft,

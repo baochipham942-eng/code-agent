@@ -15,6 +15,7 @@ const JOURNEY_FILES = [
   'tests/scripts/perfJourneyColdStart.test.ts',
   'tests/scripts/perfJourneyFirstToken.test.ts',
   'tests/scripts/perfJourneyLongSession.test.ts',
+  'tests/scripts/perfJourneyLongSessionScroll.test.ts',
   'tests/scripts/perfJourneySessionSwitch.test.ts',
 ];
 
@@ -29,6 +30,7 @@ function fixture(commitCount = 3) {
       'cold-start': { commitCount, reason: 'fixture cold-start' },
       'first-token': { commitCount, reason: 'fixture first-token' },
       'long-session': { commitCount, reason: 'fixture long-session' },
+      'long-session-scroll': { commitCount, reason: 'fixture long-session-scroll' },
       'session-switch': { commitCount, reason: 'fixture session-switch' },
     },
   }));
@@ -97,6 +99,7 @@ describe('perf-journey-ratchet', () => {
       report('cold-start', 3),
       report('first-token', 2),
       report('long-session', 3),
+      report('long-session-scroll', 3),
       report('session-switch', 3),
     ]));
     const result = run(root, ['--tighten', '--report', reportPath]);
@@ -107,6 +110,7 @@ describe('perf-journey-ratchet', () => {
     expect(next.journeys['cold-start'].commitCount).toBe(3);
     expect(next.journeys['first-token'].commitCount).toBe(2);
     expect(next.journeys['long-session'].commitCount).toBe(3);
+    expect(next.journeys['long-session-scroll'].commitCount).toBe(3);
     expect(next.journeys['session-switch'].commitCount).toBe(3);
     expect(next.reason).toContain('first-token 3→2');
     expect(next.journeys['first-token'].reason).toContain('Tightened 3→2');
@@ -120,6 +124,7 @@ describe('perf-journey-ratchet', () => {
       report('cold-start', 2),
       report('first-token', 4),
       report('long-session', 3),
+      report('long-session-scroll', 3),
       report('session-switch', 3),
     ]));
     const before = readFileSync(join(root, 'scripts/perf-journey-ratchet-baseline.json'), 'utf8');
@@ -164,7 +169,7 @@ describe('perf-journey-ratchet', () => {
 describe('perf-journey smoke options', () => {
   it('defaults to all journeys and accepts a single journey id', () => {
     expect(parseJourneyBrowserSmokeOptions([])).toEqual({
-      journeys: ['cold-start', 'first-token', 'long-session', 'session-switch'],
+      journeys: ['cold-start', 'first-token', 'long-session', 'long-session-scroll', 'session-switch'],
       extraRenders: 0,
       repeats: 1,
       outputPath: null,
@@ -192,10 +197,17 @@ describe('perf-journey gates:fast path scope', () => {
       'tests/scripts/perfJourneyFirstToken.test.ts',
     ]);
 
+    // TurnBasedTraceView is the one deliberate exception to the single-slot
+    // invariant: it feeds two probes - the long-session entry cascade and the
+    // long-session-scroll window-swap cascade (N-PERF-LONG-SESSION-SCROLL-COVERAGE).
     const trace = selectTests(policy, ['src/renderer/components/features/chat/TurnBasedTraceView.tsx']);
-    expect(trace.matchedRules.filter((id) => id.startsWith('perf-journey-'))).toEqual(['perf-journey-long-session']);
+    expect(trace.matchedRules.filter((id) => id.startsWith('perf-journey-'))).toEqual([
+      'perf-journey-long-session',
+      'perf-journey-long-session-scroll',
+    ]);
     expect(trace.files.filter((file) => JOURNEY_FILES.includes(file))).toEqual([
       'tests/scripts/perfJourneyLongSession.test.ts',
+      'tests/scripts/perfJourneyLongSessionScroll.test.ts',
     ]);
   });
 
@@ -206,6 +218,7 @@ describe('perf-journey gates:fast path scope', () => {
       'perf-journey-cold-start',
       'perf-journey-first-token',
       'perf-journey-long-session',
+      'perf-journey-long-session-scroll',
       'perf-journey-session-switch',
     ]));
   });

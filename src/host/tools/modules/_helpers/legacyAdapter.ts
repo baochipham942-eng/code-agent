@@ -105,6 +105,7 @@ export function buildLegacyCtxFromProtocol(
     resolver: ctx.resolver,
     toolScope: ctx.toolScope,
     executionIntent: ctx.executionIntent,
+    neoTag: ctx.neoTag,
   } as LegacyToolContext;
 }
 

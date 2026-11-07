@@ -8,10 +8,10 @@ const COL = { x: 420, y: 0, w: 600, h: 900 };
 const card = (y: number) => ({ x: 440, y, w: 400, h: 56 });
 
 // hermetic 覆盖 tests/manual/deliverable-dedup-verify.mjs：不起 webServer、不开浏览器，
-// 只钉死脚本自己的三块逻辑——seed fixtures 形状、几何判定、repeated=1/samebase=2 计数门。
+// 只钉死脚本自己的三块逻辑——seed fixtures 形状、几何判定、repeated=1/samebase=2/relabs=1/twoturns=2 计数门。
 describe('tests/manual/deliverable-dedup-verify.mjs', () => {
-  it('EXPECTED_CARDS 钉住计数门：repeated=1、samebase=2', () => {
-    expect(EXPECTED_CARDS).toEqual({ repeated: 1, samebase: 2 });
+  it('EXPECTED_CARDS 钉住计数门：repeated=1、samebase=2、relabs=1、twoturns=2', () => {
+    expect(EXPECTED_CARDS).toEqual({ repeated: 1, samebase: 2, relabs: 1, twoturns: 2 });
   });
 
   describe('buildSeedCases', () => {
@@ -37,7 +37,7 @@ describe('tests/manual/deliverable-dedup-verify.mjs', () => {
       expect(msgs[1].toolCalls[0].arguments.file_path).toBe(`${WORK}/report.html`);
       expect(msgs[3].toolCalls[0].arguments.file_path).toBe(`${WORK}/report.html`);
     });
-    it('relabs：单轮里 ./report.html 与绝对路径并存（裸串 key 差异观察）', () => {
+    it('relabs：单轮里 ./report.html 与绝对路径并存（FU1 后键应折叠为一张卡）', () => {
       const [, a] = buildSeedCases(WORK, T0).relabs;
       expect(a.toolCalls.map((c: { arguments: { file_path: string } }) => c.arguments.file_path))
         .toEqual(['./report.html', `${WORK}/report.html`]);
@@ -83,11 +83,23 @@ describe('tests/manual/deliverable-dedup-verify.mjs', () => {
       const one = evaluateCase('samebase', { labels: ['l0'], rects: [card(100)], col: COL }, 's');
       expect(one.failures).toEqual(['FAIL AssertionError: samebase expected cardCount 2 got 1']);
     });
-    it('twoturns/relabs 只观察：2 张卡不触发门', () => {
-      for (const name of ['twoturns', 'relabs']) {
-        const res = evaluateCase(name, { labels: ['l0', 'l1'], rects: [card(100), card(180)], col: COL }, 's');
-        expect(res.failures).toEqual([]);
-      }
+    it('twoturns 2 张卡（owner 决策：每轮一张卡）→ 无失败', () => {
+      const res = evaluateCase('twoturns', { labels: ['l0', 'l1'], rects: [card(100), card(180)], col: COL }, 's');
+      expect(res.failures).toEqual([]);
+    });
+    it('twoturns 1 张卡（跨轮合并回归）→ 恰好产出那条 FAIL 行', () => {
+      const res = evaluateCase('twoturns', { labels: ['l0'], rects: [card(100)], col: COL }, 's');
+      expect(res.failures).toEqual(['FAIL AssertionError: twoturns expected cardCount 2 got 1']);
+    });
+    it('twoturns 3 张卡 → FAIL 行', () => {
+      const res = evaluateCase('twoturns', { labels: ['l0', 'l1', 'l2'], rects: [card(100), card(180), card(260)], col: COL }, 's');
+      expect(res.failures).toEqual(['FAIL AssertionError: twoturns expected cardCount 2 got 3']);
+    });
+    it('relabs 计数门：1 张卡过；2 张卡（裸串 key 的旧形状）→ FAIL 行', () => {
+      const one = evaluateCase('relabs', { labels: ['l0'], rects: [card(100)], col: COL }, 's');
+      expect(one.failures).toEqual([]);
+      const two = evaluateCase('relabs', { labels: ['l0', 'l1'], rects: [card(100), card(180)], col: COL }, 's');
+      expect(two.failures).toEqual(['FAIL AssertionError: relabs expected cardCount 1 got 2']);
     });
     it('计数吻合但几何有问题时 geometry=PROBLEM（clipped 哨兵串非零）', () => {
       const res = evaluateCase('repeated', { labels: ['l0'], rects: [card(100)], col: null }, 's');

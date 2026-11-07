@@ -26,6 +26,7 @@ vi.mock('../../../src/host/services/infra/logger', () => ({
 }));
 
 import { registerNotificationHandlers } from '../../../src/host/ipc/notification.ipc';
+import { desktopPresence } from '../../../src/host/services/companion/desktopPresence';
 
 const call = (action: string, payload?: unknown) =>
   h.handlers.get(IPC_DOMAINS.NOTIFICATION)!(null, { action, payload } as IPCRequest);
@@ -61,3 +62,27 @@ describe('notification.ipc dispatch 特征', () => {
     expect(await call('getRecent')).toEqual({ success: false, error: { code: 'NOTIFICATION_ERROR', message: 'Unknown error' } });
   });
 });
+
+// N-NOTIFY-PRESENCE-HEARTBEAT ④：reportPresence 接受合法心跳并落到 desktopPresence 单例；
+// 畸形载荷拒单（schema safeParse → 抛错 → mapError NOTIFICATION_ERROR）。
+describe('notification.ipc reportPresence', () => {
+  it('合法载荷被接受并写入 desktopPresence（会话已读时间落地）', async () => {
+    const before = Date.now();
+    const report = { visible: true, focused: true, lastInputAt: before, viewingSessionId: 'ipc-presence-sess' };
+    expect(await call('reportPresence', report)).toEqual({ success: true, data: null });
+    const viewedAt = desktopPresence.lastViewedAt('ipc-presence-sess');
+    expect(viewedAt).not.toBe(null);
+    expect(viewedAt as number).toBeGreaterThanOrEqual(before);
+    expect(desktopPresence.isActive()).toBe(true);
+  });
+
+  it('畸形载荷被拒：字段类型错 / 缺字段 / 多余字段 / 空载荷', async () => {
+    expect(await call('reportPresence', { visible: 'yes', focused: true, lastInputAt: 1 }))
+      .toEqual({ success: false, error: { code: 'NOTIFICATION_ERROR', message: 'Invalid desktop presence report' } });
+    expect(await call('reportPresence', { visible: true, focused: true })).toEqual({ success: false, error: { code: 'NOTIFICATION_ERROR', message: 'Invalid desktop presence report' } });
+    expect(await call('reportPresence', { visible: true, focused: true, lastInputAt: 1, extra: 1 }))
+      .toEqual({ success: false, error: { code: 'NOTIFICATION_ERROR', message: 'Invalid desktop presence report' } });
+    expect(await call('reportPresence')).toEqual({ success: false, error: { code: 'NOTIFICATION_ERROR', message: 'Invalid desktop presence report' } });
+  });
+});
+

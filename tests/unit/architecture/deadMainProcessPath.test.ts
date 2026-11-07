@@ -165,6 +165,16 @@ describe('死主进程路径（src/host/index.ts）', () => {
       .toMatch(callPattern);
   });
 
+  // 音频清扫不在 services/infra（入口函数在采集模块里），单列一条，断言口径与上表一致。
+  // 断掉这条接线 = 采集关着的机器录音无任何回收路径，无限堆积。
+  it('webStartupRetention.ts 真的调了音频保留清扫（第二跳）', () => {
+    const kickoff = readCode(RETENTION_KICKOFF);
+    expect(kickoff, '未 import desktopAudioCapture：关掉采集的用户过期录音不会在启动期被清理')
+      .toMatch(/services\/desktop\/desktopAudioCapture['"]/);
+    expect(kickoff, '未调用 sweepCapturedAudio()：import 了但没调等于没接')
+      .toMatch(/\bsweepCapturedAudio\s*\(\s*\)/);
+  });
+
   it('webServer.ts 真的注册了 Light Memory 整理 job', () => {
     const webServer = readCode(SHIPPED_ENTRY);
     expect(webServer, 'webServer 未 import webStartupMemoryJobs：记忆整理 job 在发行版里不会被创建')

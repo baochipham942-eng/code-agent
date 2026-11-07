@@ -9,6 +9,7 @@ import {
   nextFrame,
   publishJourneyError,
   publishJourneyResult,
+  waitForCommitSettlement,
 } from './journey-probe-instrument';
 
 const instrument = createJourneyInstrument();
@@ -26,6 +27,7 @@ function FirstTokenSurface(): React.ReactElement {
       await nextFrame();
       const visible = document.body.innerText.includes(FIRST_TOKEN);
       if (!visible) throw new Error('first-token: streamed text was not rendered');
+      await waitForCommitSettlement(instrument);
       if (!cancelled) {
         publishJourneyResult('first-token', instrument, {
           firstToken: FIRST_TOKEN,

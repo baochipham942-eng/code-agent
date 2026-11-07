@@ -19,6 +19,17 @@ vi.mock('../../../../src/host/services/infra/logger', () => ({
   createLogger: () => ({ info: vi.fn(), warn: vi.fn(), error: loaderErrorSpy, debug: vi.fn() }),
 }));
 
+vi.mock('../../../../src/host/services/infra/sessionManager', () => ({
+  getSessionManager: () => ({
+    getMessages: async () => [{ id: 'u1', role: 'user', content: '帮我想想要不要建个日程助理', timestamp: 1 }],
+    getSession: async () => ({ origin: undefined }),
+  }),
+}));
+
+vi.mock('../../../../src/host/permissions/modes', () => ({
+  getPermissionModeManager: () => ({ isUnattendedSession: () => false }),
+}));
+
 import { proposeRoleModule } from '../../../../src/host/tools/modules/roleAuthoring/proposeRole';
 import { getProtocolRegistry } from '../../../../src/host/tools/protocolRegistry';
 import { getKnownToolNames } from '../../../../src/host/tools/knownToolNames';
@@ -92,12 +103,24 @@ describe('propose_role 工具名校验', () => {
     const block = prompt.slice(prompt.indexOf('常用映射'), prompt.indexOf('调用前用一句话'));
     const names = new Set<string>();
     for (const line of block.split('\n').filter((l) => l.includes('→'))) {
-      const rhs = line.split('→')[1].replace(/（[^）]*）/g, '');
-      for (const token of rhs.split(/[\s,，+、；]+/)) {
+      // 括号内也是要比对的工具名（calendar_create_event / reminders_create 只出现在括号里），
+      // 故不再剥掉全角括号，而是把括号当分隔符一并分词；action=xxx 是 calendar 的动作值
+      // 不是工具名，先剔除，避免 list_events 被当成工具名进漂移比对。
+      const rhs = line.split('→')[1].replace(/action\s*=\s*[A-Za-z0-9_]+/g, ' ');
+      for (const token of rhs.split(/[（）\s,，+、；]+/)) {
         if (/^[A-Za-z][A-Za-z0-9_]*$/.test(token)) names.add(token);
       }
     }
-    for (const required of ['calendar', 'reminders', 'mail', 'mail_draft', 'tmeetMeetingList']) {
+    for (const required of [
+      'calendar',
+      'reminders',
+      'mail',
+      'mail_draft',
+      'tmeetMeetingList',
+      'calendar_create_event',
+      'reminders_create',
+      'mail_send',
+    ]) {
       expect(names.has(required)).toBe(true);
     }
     const missing = [...names].filter((n) => !known.has(n));

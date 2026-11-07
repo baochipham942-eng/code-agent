@@ -44,6 +44,17 @@ const MAX_UPLOAD_ERROR_LENGTH = 500;
  */
 const NON_RETRYABLE_POSTGREST_CODES = new Set(['42501']);
 
+/**
+ * PGRST204 降级白名单：云端 schema 允许滞后于 app 的可选 turn 列。错误点名这些列时，
+ * 上传器把该列从本轮所有 turn 行里剔掉重试一次并在此后跳过（进程级），别让整批
+ * turn 陪着失败；其余列的 PGRST204 是 row↔schema 的实质漂移，维持原失败路径。
+ * 加列时云端迁移（supabase/migrations）必须同步补上，这里只兜发布窗口期。
+ */
+const DROPPABLE_TURN_COLUMNS_ON_PGRST204 = new Set(['turn_source']);
+
+/** PostgREST schema cache 缺列错误的列名提取：Could not find the '<col>' column of 'telemetry_turns' in the schema cache */
+const MISSING_TURN_COLUMN_MESSAGE = /Could not find the '([a-z_]+)' column of 'telemetry_turns' in the schema cache/u;
+
 function getPostgrestErrorCode(error: unknown): string | null {
   if (error && typeof error === 'object' && 'code' in error) {
     const code = (error as { code?: unknown }).code;
@@ -109,6 +120,11 @@ export class TelemetryUploaderService implements Disposable {
   // 当前这轮 upload() 是否失败过、失败签名是什么——upload() 开头重置，finally 里结算
   private roundFailureSignature: string | null = null;
   private roundFailureIsNonRetryable = false;
+
+  // PGRST204 降级账本：本进程已确认云端缺列、从上传行里剔掉的 turn 列。
+  // 后续批次/轮次从建行起就不带这些列，避免每批先撞一次错再补删；进程重启即清零，
+  // 云端迁移落地后重启 app 就恢复全量上传。
+  private droppedTurnColumns = new Set<string>();
 
   constructor() {
     this.deviceId = getSecureStorage().getDeviceId();
@@ -298,9 +314,21 @@ export class TelemetryUploaderService implements Disposable {
       );
       let turnUploadFailed = false;
       for (let i = 0; i < turnRows.length; i += BATCH_SIZE) {
-        const { error: turnError } = await supabase
+        const batchRows = turnRows.slice(i, i + BATCH_SIZE);
+        let { error: turnError } = await supabase
           .from('telemetry_turns')
-          .upsert(turnRows.slice(i, i + BATCH_SIZE), { onConflict: 'id' });
+          .upsert(batchRows, { onConflict: 'id' });
+        // 云端 schema 滞后于 app 的降级：PGRST204 点名白名单里的可选列时，把该列从
+        // 本轮所有行（不只当前批）剔掉、同批重试一次，别让整批 turn 陪着失败。
+        const droppedColumn = this.consumeDroppableTurnColumn(turnError);
+        if (droppedColumn != null) {
+          for (const row of turnRows) {
+            delete row[droppedColumn];
+          }
+          ({ error: turnError } = await supabase
+            .from('telemetry_turns')
+            .upsert(batchRows, { onConflict: 'id' }));
+        }
         if (turnError) {
           this.recordUploadFailure('telemetry_turns', turnError);
           turnUploadFailed = true;
@@ -520,8 +548,35 @@ export class TelemetryUploaderService implements Disposable {
     };
   }
 
+  /**
+   * PGRST204 降级判定：错误是否点名白名单里的可选 turn 列（云端 schema 滞后于 app）。
+   * 命中则记入 droppedTurnColumns——每列每进程只打一条可区分原因的 warn——并返回列名，
+   * 由调用方把该列从行里剔掉后重试；未命中（其他错误、非白名单列）返回 null，维持原失败路径。
+   */
+  private consumeDroppableTurnColumn(error: unknown): string | null {
+    if (getPostgrestErrorCode(error) !== 'PGRST204') return null;
+    const message = (error as { message?: unknown } | null)?.message;
+    if (typeof message !== 'string') return null;
+    const column = MISSING_TURN_COLUMN_MESSAGE.exec(message)?.[1];
+    if (column == null || !DROPPABLE_TURN_COLUMNS_ON_PGRST204.has(column)) return null;
+    if (!this.droppedTurnColumns.has(column)) {
+      this.droppedTurnColumns.add(column);
+      logger.warn(
+        `Telemetry turn upload degraded: cloud column missing '${column}' (PGRST204) — ` +
+        `field dropped from turn rows for the rest of this process; ` +
+        `restart after the cloud migration lands to restore it.`,
+      );
+    }
+    return column;
+  }
+
   private toTurnRow(t: TelemetryTurn, sessionId: string, userId: string, homeDir: string) {
-    return buildTelemetryTurnUploadRow(t, sessionId, userId, homeDir);
+    const row = buildTelemetryTurnUploadRow(t, sessionId, userId, homeDir) as Record<string, unknown>;
+    // 已降级剔除的列：后续轮次从建行起就不带上
+    for (const column of this.droppedTurnColumns) {
+      delete row[column];
+    }
+    return row;
   }
 
   private toFeedbackRow(f: TelemetryFeedback, userId: string, turnId: string | null) {

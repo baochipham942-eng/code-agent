@@ -18,7 +18,10 @@ import {
   isCronAgentResultUrgent,
   isNotifySuppressedResult,
   readCronAlertReason,
+  readCronPermissionDenied,
 } from './cronNormalizers';
+import { cronPermissionDeniedReasonText } from '../../shared/cronPermissionDenied';
+import type { CronPermissionDeniedMarker } from '../../shared/contract/sessionAutomation';
 import {
   CRON_LOGIN_WALL_STOP,
   parseCronLoginWallStop,
@@ -173,6 +176,22 @@ function buildBudgetDisabledSummary(definition: CronJobDefinition, error: string
 }
 
 /**
+ * 「需处理」完成通知文案（N-CRON-RUN-COMPLETED-BUT-DENIED；Rework r2 点名步骤）：
+ * 被拒且无产出的运行打完成通知时，正文点名第一条被拒命令与原因大白话——不看详情
+ * 也知道哪步没被批准、为什么。原因用词与 renderer 详情句同源（shared/
+ * cronPermissionDenied 的 cronPermissionDeniedReasonText）。多步被拒只点名第一条，
+ * 其余看运行详情；步摘要 ≤80 字且已脱敏，全文不超邻接通知的 200 字惯例。
+ */
+function buildPermissionDeniedNoticeSummary(marker: CronPermissionDeniedMarker): string {
+  const english = getConfigService().getSettings().ui?.language === 'en';
+  const step = marker.steps[0];
+  const reason = cronPermissionDeniedReasonText(step.reason, english ? 'en' : 'zh');
+  return english
+    ? `Scheduled task needs attention: "${step.summary}" was not approved (${reason}); nothing was produced.`
+    : `定时任务需处理：「${step.summary}」没有获批准（${reason}），没有产出。`;
+}
+
+/**
  * 最终停用通知（不受冷却约束）：必须带上出路——去哪重新启用、看什么错误。
  * 所有动作类型都发（不止 agent 任务）：用户不知道任务被停了正是本次回归的痛点。
  */
@@ -273,13 +292,17 @@ export function notifyCronAgentExecution(
     const presentation = !succeeded && !loginWall
       ? classifyCronFailurePresentation(execution.error)
       : undefined;
+    // 需处理标记：被拒且无产出的完成轮，通知点名第一条被拒命令与原因（Rework r2）。
+    const permissionDenied = succeeded ? readCronPermissionDenied(execution.result) : undefined;
     notificationService.notifyTaskComplete(
       {
         sessionId: execution.sessionId ?? '',
         sessionTitle: `[定时] ${definition.name}`,
         jobId: definition.id,
         summary: succeeded
-          ? readCronAlertReason(execution.result) ?? '定时任务已完成'
+          ? permissionDenied
+            ? buildPermissionDeniedNoticeSummary(permissionDenied)
+            : readCronAlertReason(execution.result) ?? '定时任务已完成'
           : loginWall
             ? undefined
             : `定时任务失败：${execution.error ?? '未知错误'}`,

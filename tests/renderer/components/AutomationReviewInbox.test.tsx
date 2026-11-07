@@ -570,6 +570,54 @@ describe('AutomationReviewInbox', () => {
     expect(en.cronCenter.parkedVoidedLabel).toBeTruthy();
   });
 
+  // voidReason 持久化的是中文收口原句（含重启前落库的老行）；英文 UI 按原句查表翻出英文句，
+  // 中文 UI 输出与原句字节一致；非收口文本原样保留。三句 × 两语言。
+  it.each([
+    ['expiredAfterRestart24h', '这一步等你确认超过 24 小时，已自动作废，没有执行。',
+      'This step waited for your confirmation for over 24 hours, so it was voided automatically and did not run.'],
+    ['workingDirectoryUnavailable', '这次对话没有工作目录，重启后无法安全执行，没有执行。',
+      "This conversation has no working directory, so it can't be run safely after a restart. It did not run."],
+    ['runEndedAfterRestart', '所属运行已结束，没有执行；下次触发会重新询问你。',
+      'The run this step belonged to has already ended, so it did not run; you will be asked again the next time it triggers.'],
+    ['argsUnavailable', '应用重启后找不到这一步的完整信息，为安全起见没有执行。',
+      'After the app restarted, the full details of this step could not be found, so it was not run for safety.'],
+  ] as const)('voided 行 %s：zh 显原句 / en 显译文', async (_key, zhSentence, enSentence) => {
+    // zh：老行原句原样（字节一致）
+    listParkedApprovals.mockResolvedValue([
+      makeParked({ id: 'perm_void', status: 'voided', tool: 'Bash', voidReason: zhSentence }),
+    ]);
+    render(<AutomationReviewInbox />);
+    await waitFor(() => {
+      expect(screen.getByTestId('parked-approval-voided')).toBeTruthy();
+    });
+    expect(screen.getByTestId('parked-approval-voided').textContent).toContain(`已作废：${zhSentence}`);
+    cleanup();
+
+    // en：同一行（老行字面量）翻成英文句
+    i18nState.language = 'en';
+    listParkedApprovals.mockResolvedValue([
+      makeParked({ id: 'perm_void', status: 'voided', tool: 'Bash', voidReason: zhSentence }),
+    ]);
+    render(<AutomationReviewInbox />);
+    await waitFor(() => {
+      expect(screen.getByTestId('parked-approval-voided')).toBeTruthy();
+    });
+    expect(screen.getByTestId('parked-approval-voided').textContent).toContain(`Voided：${enSentence}`);
+    expect(screen.getByTestId('parked-approval-voided').textContent).not.toContain(zhSentence);
+  });
+
+  it('voidReason 是普通文本（非收口句）时原样显示，不套翻译', async () => {
+    i18nState.language = 'en';
+    listParkedApprovals.mockResolvedValue([
+      makeParked({ id: 'perm_void_raw', status: 'voided', tool: 'Bash', voidReason: '已手动取消' }),
+    ]);
+    render(<AutomationReviewInbox />);
+    await waitFor(() => {
+      expect(screen.getByTestId('parked-approval-voided')).toBeTruthy();
+    });
+    expect(screen.getByTestId('parked-approval-voided').textContent).toContain('Voided：已手动取消');
+  });
+
   // N-PARKED-APPROVAL-SURVIVE-RESTART-PERSIST ④：停车审批行带参数预览（host 已脱敏）
   it('item.argsPreview 在时渲染参数预览行（zh 词条）', async () => {
     listParkedApprovals.mockResolvedValue([

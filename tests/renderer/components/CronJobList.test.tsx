@@ -144,3 +144,24 @@ describe('CronJobList 人话副标题 + 触发源 chip', () => {
     }
   });
 });
+
+describe('CronJobList 等你批准 badge（N-CRON-UNATTENDED-BASH-PARK-STUCK-VISIBLE）', () => {
+  it('map 命中的 job 显示 amber badge，未命中的 job 保持原状态 chip；map 清空后 badge 消失', () => {
+    useCronStore.setState({
+      jobs: [makeJob({ id: 'job-1', name: '每日晨报' }), makeJob({ id: 'job-2', name: '周报盘点' })],
+    });
+    const { rerender } = render(<CronJobList awaitingByJobId={new Map([['job-1', { jobId: 'job-1' }]])} />);
+
+    const badges = screen.getAllByTestId('cron-job-awaiting-approval');
+    expect(badges).toHaveLength(1);
+    expect(badges[0].textContent).toBe('等你批准');
+    expect(badges[0].classList.contains('text-badge-warning')).toBe(true);
+    expect(badges[0].closest('button')!.textContent).toContain('每日晨报');
+
+    const otherRow = screen.getByText('周报盘点').closest('button')!;
+    expect(otherRow.querySelector('[data-testid="cron-job-awaiting-approval"]')).toBeNull();
+
+    rerender(<CronJobList awaitingByJobId={new Map()} />);
+    expect(screen.queryByTestId('cron-job-awaiting-approval')).toBeNull();
+  });
+});

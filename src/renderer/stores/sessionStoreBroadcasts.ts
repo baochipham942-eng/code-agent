@@ -26,6 +26,8 @@ const handleTerminalStatusReconcile = createTerminalStatusReconciler({
   reloadSession: (sessionId) => useSessionStore.getState().switchSession(sessionId, { force: true }),
   isRunActive: (sessionId) => useAppStore.getState().isSessionProcessing(sessionId),
   isTerminalStatus: (status) => isTerminalRecoverySessionStatus(status as SessionStatus | undefined),
+  hasUnendedRun: (sessionId) => useTerminalRunGuardStore.getState().hasUnendedRun(sessionId),
+  clearUnendedRun: (sessionId) => useTerminalRunGuardStore.getState().markRunEndObserved(sessionId),
 });
 
 export async function bindInitializedSessionBroadcasts(

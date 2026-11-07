@@ -84,6 +84,41 @@ function normalizeSpawnArgs(args: Record<string, unknown>): Record<string, unkno
   return normalized;
 }
 
+/**
+ * 派发入口的输入校验（N-CAP-NOTICE-LEAK）：空/缺 task 的 spawn 在后台分支会
+ * 先注册一个注定失败的占位子 agent（真机实录：模型把注入块当任务、派占位后台
+ * 任务后整轮失败），agents 数组缺 task 更会在 service 层炸裸 TypeError。这里
+ * 提前返回可读的 INVALID_ARGS，让模型立刻拿到能自我纠正的错误，而不是等到
+ * 完成通知才知道失败。只做输入校验，不改派发语义。
+ */
+function validateSpawnArgs(args: Record<string, unknown>): string | null {
+  const parallelSpawn = args.parallel === true
+    && Array.isArray(args.agents)
+    && args.agents.length > 0;
+  if (parallelSpawn) {
+    const agents = args.agents as unknown[];
+    for (let index = 0; index < agents.length; index++) {
+      const agent = agents[index];
+      if (!agent || typeof agent !== 'object') {
+        return `agents[${index}] 必须是带 role 和 task 的对象。`;
+      }
+      const item = agent as Record<string, unknown>;
+      if (typeof item.role !== 'string' || !item.role.trim()) {
+        return `agents[${index}].role 缺失或为空：并行起团每一项都要 role + task。`;
+      }
+      if (typeof item.task !== 'string' || !item.task.trim()) {
+        return `agents[${index}].task 缺失或为空：并行起团每一项都要 role + task。`;
+      }
+    }
+    return null;
+  }
+  const task = args.task;
+  if (typeof task !== 'string' || !task.trim()) {
+    return 'spawn_agent 需要非空 task（单发传 role+task，动态代理传 customPrompt+task）；并行起团传 parallel=true + agents 数组（每项 role+task）。';
+  }
+  return null;
+}
+
 async function runSpawnAgent(
   args: Record<string, unknown>,
   ctx: ToolContext,
@@ -116,6 +151,14 @@ async function runSpawnAgent(
       error: 'spawn_agent requires modelConfig in context',
       code: 'NOT_INITIALIZED',
       meta: { failureCode: AgentFailureCode.ModelError },
+    };
+  }
+  const invalidArgs = validateSpawnArgs(args);
+  if (invalidArgs) {
+    return {
+      ok: false,
+      error: invalidArgs,
+      code: 'INVALID_ARGS',
     };
   }
 

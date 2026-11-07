@@ -13,12 +13,22 @@ import type {
 } from '../../shared/contract/artifactLocator';
 import { extractPresentationSlideText } from '../../shared/ooxml/presentationPackageIndex';
 import { app } from '../platform';
+import { createLogger } from '../services/infra/logger';
+import { getLibreOfficeState } from '../runtime/libreOffice/state';
+import type { LibreOfficeState } from '../runtime/libreOffice/types';
 import { getUserConfigDir } from '../config/configPaths';
 import { computeArtifactRevision } from '../tools/artifacts/artifactLocatorHost';
 import { loadPresentationPackageIndex } from '../tools/artifacts/presentationPackageIndex';
 import { convertToScreenshots, isLibreOfficeAvailable } from '../tools/media/ppt/visualReview';
 import { PRESENTATION_PREVIEW_CACHE_DIRNAME } from '../tools/media/ppt/constants';
 import { listPublishedVersions } from '../tools/modules/document/publishedVersions';
+import {
+  archiveListFormat,
+  classifyArchiveFailure,
+  gzipPayloadLooksLikeTar,
+  listTarArchive,
+  type ArchiveListDependencies,
+} from './workspaceArchiveList';
 
 interface WorkspaceBundleFileInput {
   path: string;
@@ -69,11 +79,12 @@ interface WorkspaceArchiveEntry {
 
 interface WorkspaceArchiveInspection {
   filePath: string;
-  format: 'zip';
+  format: 'zip' | 'tar' | 'tgz' | 'gz' | '7z' | 'rar';
   entryCount: number;
   shownCount: number;
   truncated: boolean;
   entries: WorkspaceArchiveEntry[];
+  fallback?: { code: 'encrypted' | 'corrupt' | 'unsupported' };
 }
 
 interface WorkspacePresentationSlide {
@@ -267,21 +278,82 @@ export async function handleExportBundle(
   };
 }
 
-export async function handleInspectArchive(payload: { filePath: string; limit?: number }): Promise<WorkspaceArchiveInspection> {
+function archiveLimit(limit: number | undefined): number {
+  return Math.max(1, Math.min(limit ?? 200, 500));
+}
+
+function archiveFallback(
+  filePath: string,
+  format: WorkspaceArchiveInspection['format'],
+  code: 'encrypted' | 'corrupt' | 'unsupported',
+): WorkspaceArchiveInspection {
+  return {
+    filePath,
+    format,
+    entryCount: 0,
+    shownCount: 0,
+    truncated: false,
+    entries: [],
+    fallback: { code },
+  };
+}
+
+function sliceArchive(
+  filePath: string,
+  format: WorkspaceArchiveInspection['format'],
+  entries: WorkspaceArchiveEntry[],
+  limit: number,
+): WorkspaceArchiveInspection {
+  return {
+    filePath,
+    format,
+    entryCount: entries.length,
+    shownCount: Math.min(entries.length, limit),
+    truncated: entries.length > limit,
+    entries: entries.slice(0, limit),
+  };
+}
+
+export async function handleInspectArchive(
+  payload: { filePath: string; limit?: number },
+  dependencies: ArchiveListDependencies = {},
+): Promise<WorkspaceArchiveInspection> {
+  const filePath = payload.filePath;
+  const limit = archiveLimit(payload.limit);
+  if (/\.zip$/i.test(filePath)) {
+    return inspectZipArchive(filePath, limit);
+  }
+
+  const format = archiveListFormat(filePath);
+  if (!format) {
+    throw new Error('Only .zip archives can be inspected inline');
+  }
+  if (format === 'gz' && !(await gzipPayloadLooksLikeTar(filePath))) {
+    return archiveFallback(filePath, 'gz', 'unsupported');
+  }
+
+  const listed = await listTarArchive(filePath, dependencies);
+  if ('code' in listed) return archiveFallback(filePath, format, listed.code);
+  return sliceArchive(filePath, format, listed.entries, limit);
+}
+
+async function inspectZipArchive(filePath: string, limit: number): Promise<WorkspaceArchiveInspection> {
   const fs = await import('fs/promises');
   const JSZip = require('jszip') as {
     loadAsync(data: Buffer): Promise<{
       files: Record<string, { name: string; dir: boolean }>;
     }>;
   };
-  const filePath = payload.filePath;
-  if (!/\.zip$/i.test(filePath)) {
-    throw new Error('Only .zip archives can be inspected inline');
-  }
-
   const data = await fs.readFile(filePath);
-  const zip = await JSZip.loadAsync(data);
-  const limit = Math.max(1, Math.min(payload.limit ?? 200, 500));
+  let zip: { files: Record<string, { name: string; dir: boolean }> };
+  try {
+    zip = await JSZip.loadAsync(data);
+  } catch (err) {
+    const text = err instanceof Error ? err.message : String(err);
+    const classified = classifyArchiveFailure(text);
+    const code = classified === 'encrypted' || classified === 'unsupported' ? classified : 'corrupt';
+    return archiveFallback(filePath, 'zip', code);
+  }
   const allEntries = Object.values(zip.files)
     .map((entry) => {
       const cleanName = entry.name.replace(/\\/g, '/');
@@ -299,15 +371,7 @@ export async function handleInspectArchive(payload: { filePath: string; limit?: 
       if (left.isDirectory !== right.isDirectory) return left.isDirectory ? -1 : 1;
       return left.name.localeCompare(right.name);
     });
-
-  return {
-    filePath,
-    format: 'zip',
-    entryCount: allEntries.length,
-    shownCount: Math.min(allEntries.length, limit),
-    truncated: allEntries.length > limit,
-    entries: allEntries.slice(0, limit),
-  };
+  return sliceArchive(filePath, 'zip', allEntries, limit);
 }
 
 export async function handleInspectPresentation(payload: { filePath: string; limit?: number }): Promise<WorkspacePresentationInspection> {
@@ -344,6 +408,7 @@ export async function handleInspectPresentation(payload: { filePath: string; lim
 interface PresentationPreviewDependencies {
   cacheRoot?: string;
   libreOfficeAvailable?: () => boolean;
+  libreOfficeState?: () => LibreOfficeState;
   convert?: (pptxPath: string, outputDir: string) => Promise<string[]>;
 }
 
@@ -355,6 +420,8 @@ interface PresentationScreenshotManifest {
   /** 上次命中缓存的时间（ms）；旧 manifest 无此字段，照常读 */
   lastUsedAt?: number;
 }
+
+const logger = createLogger('WorkspaceArchiveIPC');
 
 const presentationPreviewInflight = new Map<string, Promise<PresentationPagePreviewResult>>();
 
@@ -390,6 +457,28 @@ async function writeBackManifestUsage(
   }
 }
 
+/**
+ * 区分「还在后台装 / 装失败 / 平台不支持 / 自动安装被关」：失败与不支持把 runtime 错误码
+ * 经 error 透传给 picker 选具体文案；其余返回 undefined（沿用「正在准备」）。每条都留可区分日志。
+ */
+function describeLibreOfficeMissing(readState: () => LibreOfficeState): string | undefined {
+  const state = readState();
+  const autoInstallDisabled = process.env.CODE_AGENT_NO_RUNTIME_AUTOINSTALL === '1';
+  if ((state.phase === 'failed' || state.phase === 'unsupported') && state.error) {
+    logger.warn('Presentation preview unavailable: LibreOffice not usable', {
+      phase: state.phase,
+      code: state.error.code,
+      logPath: state.error.logPath,
+    });
+    return state.error.code;
+  }
+  logger.info('Presentation preview unavailable: LibreOffice not ready', {
+    phase: state.phase,
+    autoInstallDisabled,
+  });
+  return undefined;
+}
+
 async function buildPresentationPagePreview(
   payload: { filePath: string },
   dependencies: PresentationPreviewDependencies,
@@ -415,7 +504,12 @@ async function buildPresentationPagePreview(
 
   const libreOfficeAvailable = dependencies.libreOfficeAvailable ?? isLibreOfficeAvailable;
   if (!libreOfficeAvailable()) {
-    return { filePath, state: 'libreoffice-missing', pages };
+    return {
+      filePath,
+      state: 'libreoffice-missing',
+      pages,
+      error: describeLibreOfficeMissing(dependencies.libreOfficeState ?? getLibreOfficeState),
+    };
   }
 
   const cacheRoot = dependencies.cacheRoot

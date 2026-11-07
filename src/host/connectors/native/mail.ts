@@ -5,7 +5,9 @@
 import fs from 'fs';
 import type { Connector, ConnectorExecutionResult, ConnectorStatus } from '../base';
 import {
+  describeAppleScriptFailure,
   escapeAppleScriptString,
+  isAppleScriptFailure,
   parseAppleScriptDate,
   runAppleScript,
   sharedAppleScriptHandlers,
@@ -74,7 +76,9 @@ function parseLine(line: string): string[] {
 }
 
 function errorMessage(error: unknown): string {
-  return error instanceof Error ? error.message : String(error);
+  return isAppleScriptFailure(error)
+    ? describeAppleScriptFailure('Mail', error).message
+    : error instanceof Error ? error.message : String(error);
 }
 
 function buildMailStatus(capabilities: string[]): ConnectorStatus {
@@ -265,7 +269,7 @@ async function listMessages(payload: Record<string, unknown>): Promise<MailMessa
     'repeat with idx from 1 to msgCount',
     'if idx > scanLimit then exit repeat',
     'set msgRef to item idx of msgRefs',
-    'set msgLine to (id of msgRef as text) & "|" & (my sanitizeText(subject of msgRef)) & "|" & (my sanitizeText(sender of msgRef)) & "|" & (my sanitizeText((date received of msgRef) as text)) & "|" & (read status of msgRef as text)',
+    'set msgLine to (id of msgRef as text) & "|" & (my sanitizeText(subject of msgRef)) & "|" & (my sanitizeText(sender of msgRef)) & "|" & (my isoDateText(date received of msgRef)) & "|" & (read status of msgRef as text)',
     'set end of outputLines to msgLine',
     'end repeat',
     'return my joinLines(outputLines)',
@@ -327,7 +331,7 @@ async function readMessage(payload: Record<string, unknown>): Promise<MailMessag
     'set {oldTID, AppleScript\'s text item delimiters} to {AppleScript\'s text item delimiters, "; "}',
     'set attachmentText to attachmentNames as text',
     'set AppleScript\'s text item delimiters to oldTID',
-    'return (id of msgRef as text) & "|" & (my sanitizeText(subject of msgRef)) & "|" & (my sanitizeText(sender of msgRef)) & "|" & (my sanitizeText((date received of msgRef) as text)) & "|" & (read status of msgRef as text) & "|" & (my sanitizeText(content of msgRef)) & "|" & (count of attachmentNames as text) & "|" & (my sanitizeText(attachmentText))',
+    'return (id of msgRef as text) & "|" & (my sanitizeText(subject of msgRef)) & "|" & (my sanitizeText(sender of msgRef)) & "|" & (my isoDateText(date received of msgRef)) & "|" & (read status of msgRef as text) & "|" & (my sanitizeText(content of msgRef)) & "|" & (count of attachmentNames as text) & "|" & (my sanitizeText(attachmentText))',
     'end tell'
   );
 

@@ -1,13 +1,16 @@
 /**
  * Tier 2 全量 PRAGMA quick_check —— 独立子进程。
  * 仿 dbVacuumSubprocess.ts：better-sqlite3 是同步 API，不能在 webServer 主线程全扫。
+ *
+ * native binding 路径由父进程经 resolveBetterSqlite3SubprocessPath 解析一次
+ * (bundle 态走 dist/native 清单,源码态走包解析,ADR-086 §4.3)传给子进程;
+ * 子进程单 require,失败 exit 3,不再持候选清单试探。
  */
 
 import { spawn } from 'child_process';
 import * as fs from 'fs';
 import * as path from 'path';
-import { fileURLToPath } from 'url';
-import { betterSqlite3CandidatePaths } from '../core/database/nativeLoader';
+import { resolveBetterSqlite3SubprocessPath } from '../core/database/nativeLoader';
 import { SQLITE_INTEGRITY } from '../../../shared/constants';
 import { getUserDataPath } from '../../platform/appPaths';
 import { createLogger } from './logger';
@@ -18,7 +21,6 @@ import {
 } from '../core/database/integrityGate';
 
 const logger = createLogger('DbQuickCheck');
-const moduleDir = typeof __dirname === 'string' ? __dirname : path.dirname(fileURLToPath(import.meta.url));
 
 const LOCK_FILE = '.quickcheck-running';
 const EXIT_NATIVE_BINDING_UNRESOLVED = 3;
@@ -56,27 +58,18 @@ function isAlreadyRunning(): boolean {
   }
 }
 
+// 子进程不做任何路径试探:只 require 父进程解析好的那一个绝对路径(ADR-086 §4.3)。
 const CHILD_SCRIPT = `
-const fs = require('fs');
-const path = require('path');
-const candidates = JSON.parse(process.env.NEO_QUICKCHECK_NATIVE_CANDIDATES || '[]');
-let Database = null;
-let loadedFrom = null;
-for (const candidate of candidates) {
-  if (path.isAbsolute(candidate) && !fs.existsSync(candidate)) continue;
-  try {
-    Database = require(candidate);
-    loadedFrom = candidate;
-    break;
-  } catch (error) {
-    console.error('[quickcheck] native candidate unavailable: ' + candidate + ' :: ' + (error && error.message));
-  }
-}
-if (!Database) {
-  console.error('[quickcheck] better-sqlite3 native binding unresolved; tried: ' + candidates.join(', '));
+const nativePath = process.env.NEO_QUICKCHECK_NATIVE_PATH;
+const nativeSource = process.env.NEO_QUICKCHECK_NATIVE_SOURCE || 'unknown';
+let Database;
+try {
+  Database = require(nativePath);
+} catch (error) {
+  console.error('better-sqlite3 native binding unresolved at ' + nativePath + ' (' + nativeSource + '): ' + (error && error.message));
   process.exit(${EXIT_NATIVE_BINDING_UNRESOLVED});
 }
-console.error('[quickcheck] native binding loaded from ' + loadedFrom);
+console.error('native binding loaded from ' + nativePath);
 const db = new Database(process.env.NEO_QUICKCHECK_DB_PATH, { readonly: true, fileMustExist: true });
 try {
   db.pragma('busy_timeout = ' + Number(process.env.NEO_QUICKCHECK_BUSY_TIMEOUT_MS));
@@ -102,13 +95,26 @@ export async function runQuickCheckInSubprocess(dbPath: string): Promise<QuickCh
   }
 
   const dataDir = path.dirname(dbPath);
-  const candidates = [...betterSqlite3CandidatePaths(moduleDir), 'better-sqlite3'];
+  let nativePath: string;
+  let nativeSource: string;
+  try {
+    const resolved = resolveBetterSqlite3SubprocessPath(logger);
+    nativePath = resolved.path;
+    nativeSource = resolved.source;
+  } catch (error) {
+    // 解析失败(清单缺失/声明路径缺失/平台不符)就不派子进程:错误文案自带清单条目信息
+    logger.error(
+      `Database quick_check could not resolve better-sqlite3: ${error instanceof Error ? error.message : String(error)}`,
+    );
+    return 'spawn-failed';
+  }
   return await new Promise<QuickCheckOutcome>((resolve) => {
     const child = spawn(process.execPath, ['-e', CHILD_SCRIPT], {
       env: {
         ...process.env,
         NEO_QUICKCHECK_DB_PATH: dbPath,
-        NEO_QUICKCHECK_NATIVE_CANDIDATES: JSON.stringify(candidates),
+        NEO_QUICKCHECK_NATIVE_PATH: nativePath,
+        NEO_QUICKCHECK_NATIVE_SOURCE: nativeSource,
         NEO_QUICKCHECK_BUSY_TIMEOUT_MS: String(SQLITE_INTEGRITY.QUICK_CHECK_BUSY_TIMEOUT_MS),
       },
       stdio: ['ignore', 'ignore', 'pipe'],
@@ -153,7 +159,9 @@ export async function runQuickCheckInSubprocess(dbPath: string): Promise<QuickCh
     child.on('close', (code, signal) => {
       const elapsed = Date.now() - startedAt;
       if (code === 0) {
-        logger.info(`Database quick_check ok (pid ${child.pid}, ${elapsed}ms)`);
+        logger.info(`Database quick_check ok (pid ${child.pid}, ${elapsed}ms)`, {
+          childStderr: stderr.trim() || undefined,
+        });
         settle('ok');
         return;
       }
@@ -164,7 +172,7 @@ export async function runQuickCheckInSubprocess(dbPath: string): Promise<QuickCh
       }
       if (code === EXIT_NATIVE_BINDING_UNRESOLVED) {
         logger.error(
-          `Database quick_check could not resolve better-sqlite3; tried: ${candidates.join(', ')} :: ${stderr.trim()}`,
+          `Database quick_check could not resolve better-sqlite3 at ${nativePath} (${nativeSource}) :: ${stderr.trim()}`,
         );
         settle('spawn-failed');
         return;

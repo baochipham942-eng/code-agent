@@ -1,10 +1,10 @@
 // ============================================================================
-// CloudRunLedger — 云端 run 账本（ADR-086 S1：持久 run 行 + 可订阅迁移）
+// CloudRunLedger — 云端 run 账本（ADR-087 S1–S3）
 // ============================================================================
 // 账户只从注入的 accountResolver 来（缺省 = 绑定的 AuthService 已验证会话）；
 // createRun 不收 accountId 参数，请求体里的用户字段进不到 account_id。
 // runId / workspaceId 由账本铸造，写入后由 schema 触发器保不可变。
-// S1 只有存储与迁移；admit / 配额 / 取消在 S2+，路由接线是后续单。
+// 持久行与迁移之外，这里提供 admit / 配额 / FIFO 位置 / 提升 / 取消请求。
 //
 // 账户事实源用「authService 装载时注册」而不是本文件静态 import AuthService：
 // 静态 import 会把 services/core barrel（configService 的 import 期 .env 副作用）
@@ -23,6 +23,7 @@ import {
   type CloudRunState,
   type CloudRunTrigger,
 } from '../../../shared/contract/cloudRun';
+import { CLOUD_RUN_MAX_IN_FLIGHT } from '../../../shared/constants';
 import { createLogger } from '../infra/logger';
 import {
   CloudRunRepository,
@@ -49,7 +50,7 @@ export function bindCloudRunAccountSource(source: CloudRunAccountSource): void {
   accountSource = source;
 }
 
-/** ADR-086 合同 1：只有 hasVerifiedSession() 为真才给出账户 id；未绑定即拒绝。 */
+/** ADR-087 合同 1：只有 hasVerifiedSession() 为真才给出账户 id；未绑定即拒绝。 */
 function defaultAccountResolver(): string | null {
   const source = accountSource;
   if (!source?.hasVerifiedSession()) return null;
@@ -69,6 +70,13 @@ interface CreateCloudRunInput {
   trigger: CloudRunTrigger;
 }
 
+interface AdmitCloudRunInput extends CreateCloudRunInput {
+  requestJson: string;
+  clientMessageId?: string;
+  /** ADR-087 S4B：通道幂等键；仅 trigger='channel' 合法，且 channel 行必须带。 */
+  channelDeliveryId?: string;
+}
+
 export class CloudRunLedger {
   private readonly repository: CloudRunRepository;
   private readonly accountResolver: CloudRunAccountResolver;
@@ -83,14 +91,8 @@ export class CloudRunLedger {
 
   /** 无已验证账户即抛 CloudRunAccountRequiredError（稳定码 CLOUD_RUN_ACCOUNT_REQUIRED），一行不落。 */
   createRun(input: CreateCloudRunInput): CloudRunRecord {
-    if (!input.sessionId) throw new Error('Cloud run sessionId must be non-empty');
-    if (!(CLOUD_RUN_TRIGGERS as readonly string[]).includes(input.trigger)) {
-      throw new Error(`Unsupported cloud run trigger: ${String(input.trigger)}`);
-    }
-    const accountId = this.accountResolver();
-    if (typeof accountId !== 'string' || !accountId) {
-      throw new CloudRunAccountRequiredError();
-    }
+    this.validateCreateInput(input);
+    const accountId = this.requireAccountId();
     const now = this.clock();
     return this.repository.insertRun({
       runId: randomUUID(),
@@ -100,6 +102,79 @@ export class CloudRunLedger {
       workspaceId: `ws_${randomUUID()}`,
       now,
     });
+  }
+
+  admit(input: AdmitCloudRunInput) {
+    this.validateCreateInput(input);
+    if (!input.requestJson) throw new Error('Cloud run requestJson must be non-empty');
+    // ADR-087「同一次触发来了两遍」：通道幂等键 (accountId, channelDeliveryId)。
+    // 带 key 的 trigger 只许是 channel；channel 行没有 key 就无法去重，也拒绝。
+    const channelDeliveryId = input.channelDeliveryId?.trim() || undefined;
+    if (channelDeliveryId && input.trigger !== 'channel') {
+      throw new Error('Cloud run channelDeliveryId is only valid with trigger channel');
+    }
+    if (input.trigger === 'channel' && !channelDeliveryId) {
+      throw new Error('Cloud run trigger channel requires a non-empty channelDeliveryId');
+    }
+    const accountId = this.requireAccountId();
+    const admission = this.repository.admitRun({
+      runId: randomUUID(),
+      accountId,
+      sessionId: input.sessionId,
+      trigger: input.trigger,
+      workspaceId: `ws_${randomUUID()}`,
+      requestJson: input.requestJson,
+      clientMessageId: input.clientMessageId?.trim() || undefined,
+      channelDeliveryId,
+      maxInFlight: CLOUD_RUN_MAX_IN_FLIGHT,
+      now: this.clock(),
+    });
+    return {
+      ...admission,
+      position: this.repository.getQueuePosition(admission.record),
+    };
+  }
+
+  readRun(runId: string) {
+    const accountId = this.requireAccountId();
+    const record = this.repository.getRunForAccount(runId, accountId);
+    if (!record) return null;
+    return { record, position: this.repository.getQueuePosition(record) };
+  }
+
+  /**
+   * 排程方（cloudCronScheduler）要按「这本账当前解析出的账户」过滤到期行时读这里，
+   * 与 admit 的账户同一事实源；不给任何调用方开「自带 accountId 进 admit」的口子。
+   */
+  resolveAccountId(): string | null {
+    return this.accountResolver();
+  }
+
+  bindExecutionRunId(runId: string, executionRunId: string): CloudRunRecord {
+    return this.repository.bindExecutionRunId(runId, executionRunId, this.clock());
+  }
+
+  requestCancel(runId: string): CloudRunRecord {
+    return this.repository.requestCancel(runId, this.clock());
+  }
+
+  countInFlight(accountId: string): number {
+    return this.repository.countInFlight(accountId);
+  }
+
+  listInFlightRuns(): CloudRunRecord[] {
+    return this.repository.listInFlightRuns();
+  }
+
+  listQueuedAccountIds(): string[] {
+    return this.repository.listQueuedAccountIds();
+  }
+
+  promoteNext(accountId: string): CloudRunRecord | null {
+    const promoted = this.repository.promoteNext(accountId, CLOUD_RUN_MAX_IN_FLIGHT, this.clock());
+    if (!promoted) return null;
+    this.notify(promoted.transition);
+    return promoted.record;
   }
 
   /** 合同迁移表是终态守卫的唯一事实源；这里只把拒绝原因说成可区分的两类。 */
@@ -139,6 +214,21 @@ export class CloudRunLedger {
 
   getRun(runId: string): CloudRunRecord | null {
     return this.repository.getRun(runId);
+  }
+
+  private validateCreateInput(input: CreateCloudRunInput): void {
+    if (!input.sessionId) throw new Error('Cloud run sessionId must be non-empty');
+    if (!(CLOUD_RUN_TRIGGERS as readonly string[]).includes(input.trigger)) {
+      throw new Error(`Unsupported cloud run trigger: ${String(input.trigger)}`);
+    }
+  }
+
+  private requireAccountId(): string {
+    const accountId = this.accountResolver();
+    if (typeof accountId !== 'string' || !accountId) {
+      throw new CloudRunAccountRequiredError();
+    }
+    return accountId;
   }
 
   /** 迁移已提交：监听器抛错只 warn 留痕，绝不回滚、不中断其余监听器。 */

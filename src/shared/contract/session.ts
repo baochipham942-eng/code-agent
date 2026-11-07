@@ -23,6 +23,8 @@ export interface DurableResumeState {
   autoResumeCount: number;
   maxAutoResumeCount: number;
   canContinue: boolean;
+  /** Present when the park is a quota wait. `duePassed` is computed at projection time. */
+  quotaWait?: { dueAt: number; duePassed: boolean };
 }
 
 /**

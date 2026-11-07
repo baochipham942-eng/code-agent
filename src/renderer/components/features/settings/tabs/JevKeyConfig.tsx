@@ -2,8 +2,9 @@
 // JevKeyConfig — TypeSafe (Jev) API key row + Jev 判官状态区块 on General settings.
 // Key row writes the service slot `typesafe` through setServiceApiKey (secure storage);
 // display is masked; an empty save on a configured key clears only after confirm.
-// 判官区块（N-JEV-DEFAULT-ON-CONSENT）：jevStatus 五态状态行 + 降级计数 + 总开关
-// （settings/set 的 jev 块）+「发什么给谁」披露 + 仅待同意态出现的 Allow 按钮。
+// 判官区块（N-JEV-DEFAULT-ON-CONSENT + N-JEV-NEO-KEY）：jevStatus 状态行（六态，含
+// Neo 云判官的限流文案）+ 降级计数 + 总开关（settings/set 的 jev 块）+「发什么给谁」
+// 披露 + 仅待同意态出现的 Allow 按钮 + 托管资格时的云判官子开关（neoHostedEnabled）。
 // ============================================================================
 
 import React, { useCallback, useEffect, useState } from 'react';
@@ -33,6 +34,7 @@ export const JevKeyConfig: React.FC = () => {
   const [pendingKeyClear, setPendingKeyClear] = useState(false);
   const [jevStatus, setJevStatus] = useState<JevStatus | null>(null);
   const [jevEnabled, setJevEnabled] = useState(true);
+  const [neoHostedEnabled, setNeoHostedEnabled] = useState(true);
   const [jevSaving, setJevSaving] = useState(false);
 
   const loadJudgeState = useCallback(async () => {
@@ -45,6 +47,7 @@ export const JevKeyConfig: React.FC = () => {
     try {
       const settings = await ipcService.invokeDomain<AppSettings>(IPC_DOMAINS.SETTINGS, 'get');
       setJevEnabled(settings?.jev?.enabled !== false);
+      setNeoHostedEnabled(settings?.jev?.neoHostedEnabled !== false);
     } catch {
       // keep default-on
     }
@@ -73,8 +76,14 @@ export const JevKeyConfig: React.FC = () => {
     void loadJudgeState();
   }, [loadJudgeState]);
 
-  const handleJudgeSave = async (updates: { enabled?: boolean; openRouterConsent?: boolean }, optimistic: boolean) => {
-    if (optimistic) setJevEnabled(!jevEnabled);
+  const handleJudgeSave = async (
+    updates: { enabled?: boolean; openRouterConsent?: boolean; neoHostedEnabled?: boolean },
+    optimistic: boolean,
+  ) => {
+    if (optimistic) {
+      if (updates.enabled !== undefined) setJevEnabled(!jevEnabled);
+      if (updates.neoHostedEnabled !== undefined) setNeoHostedEnabled(!neoHostedEnabled);
+    }
     setJevSaving(true);
     try {
       // jev 不是管理员专属键：走通用 settings/set（settingsUpdateRequiresAdmin 不含 jev），
@@ -82,7 +91,10 @@ export const JevKeyConfig: React.FC = () => {
       await ipcService.invokeDomain(IPC_DOMAINS.SETTINGS, 'set', { settings: { jev: updates } });
       if (updates.openRouterConsent === true) toast.success(judgeText.allowedToast);
     } catch (error) {
-      if (optimistic) setJevEnabled(jevEnabled);
+      if (optimistic) {
+        if (updates.enabled !== undefined) setJevEnabled(jevEnabled);
+        if (updates.neoHostedEnabled !== undefined) setNeoHostedEnabled(neoHostedEnabled);
+      }
       toast.error(`${judgeText.saveFailedPrefix}${error instanceof Error ? error.message : t.settings.general.permissions.unknownError}`);
     } finally {
       setJevSaving(false);
@@ -91,6 +103,12 @@ export const JevKeyConfig: React.FC = () => {
   };
 
   const keySource = jevEnabled ? (jevStatus?.keySource ?? 'none') : 'disabled_by_user';
+  // 托管判官限流退避（blocked-until 未到点）：状态行换成「额度用完/不可用」文案。
+  const hostedBlock = jevStatus?.hosted ?? null;
+  const hostedBlocked = hostedBlock?.blockedUntil != null && hostedBlock.blockedUntil > Date.now();
+  const statusText = keySource === 'neo_hosted' && hostedBlocked
+    ? hostedBlock?.blockReason === 'user_daily_limit' ? judgeText.hostedBlockUser : judgeText.hostedBlockFuse
+    : judgeText.status[keySource];
   // jevStatus 形状异常（旧 host / 查询失败）不得拖垮设置页：按 0 处理。
   const degradedTotal = Object.values(jevStatus?.features ?? {})
     .reduce((sum, feature) => sum + (feature?.degradedCount ?? 0), 0);
@@ -201,7 +219,7 @@ export const JevKeyConfig: React.FC = () => {
               {judgeText.title}
             </h3>
             <p className="text-xs text-zinc-400" data-testid="jev-judge-status">
-              {judgeText.status[keySource]}
+              {statusText}
             </p>
             {degradedTotal > 0 && (
               <p className="mt-0.5 text-xs text-zinc-500" data-testid="jev-degraded-count">
@@ -217,11 +235,29 @@ export const JevKeyConfig: React.FC = () => {
             aria-label={judgeText.switchLabel}
           />
         </div>
-        <p className="mt-2 text-xs text-zinc-500" data-testid="jev-disclosure">
-          {judgeText.disclosurePrefix}
-          <span className="text-zinc-400">{disclosureProvider}</span>
-          {judgeText.disclosureSuffix}
-        </p>
+        {jevStatus?.hosted?.eligible === true && (
+          <div className="mt-2 flex items-center justify-between gap-4" data-testid="jev-hosted-row">
+            <span className="text-xs text-zinc-400">{judgeText.hostedSwitchLabel}</span>
+            <Toggle
+              size="sm"
+              checked={neoHostedEnabled}
+              disabled={jevSaving}
+              onChange={() => void handleJudgeSave({ neoHostedEnabled: !neoHostedEnabled }, true)}
+              aria-label={judgeText.hostedSwitchLabel}
+            />
+          </div>
+        )}
+        {keySource === 'neo_hosted' ? (
+          <p className="mt-2 text-xs text-zinc-500" data-testid="jev-disclosure">
+            {judgeText.disclosureHosted}
+          </p>
+        ) : (
+          <p className="mt-2 text-xs text-zinc-500" data-testid="jev-disclosure">
+            {judgeText.disclosurePrefix}
+            <span className="text-zinc-400">{disclosureProvider}</span>
+            {judgeText.disclosureSuffix}
+          </p>
+        )}
         {keySource === 'openrouter_pending_consent' && (
           <div className="mt-2">
             <Button

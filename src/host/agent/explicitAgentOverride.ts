@@ -16,6 +16,7 @@ export interface ExplicitAgentOverride {
   name: string;
   systemPrompt: string;
   deniedToolNames: string[];
+  tools?: string[];
 }
 
 /** 解析显式选择的 agent；未知 id / 空值返回 null（回退自动路由，不阻断 run） */
@@ -29,6 +30,7 @@ export function resolveExplicitAgentOverride(
       id: agent.id,
       name: agent.name,
       systemPrompt: agent.prompt,
+      tools: agent.tools,
       deniedToolNames: buildRoutingToolDenylist({
         readonly: agent.coordination?.readonly === true,
       }),

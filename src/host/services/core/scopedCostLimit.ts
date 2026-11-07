@@ -1,5 +1,8 @@
 import { AsyncLocalStorage } from 'node:async_hooks';
 
+/** 每记一笔真实 cost 后的监听器入参：当前上下文累计 USD（N-CRON-RUN-LEDGER-VISIBLE-FU1）。 */
+export type ScopedCostListener = (costUsd: number) => void;
+
 interface ScopedCostState {
   readonly maxCostUsd: number;
   costUsd: number;
@@ -11,6 +14,8 @@ interface ScopedCostState {
   /** 一次本地估算就让整 case 不能冒充 provider 实际 usage。 */
   usageUnavailable: boolean;
   exceeded: boolean;
+  /** 可选成本监听器（增量落库等旁路记账）；抛错被吞掉，绝不改变计量/越线语义。 */
+  onCost?: ScopedCostListener;
 }
 
 export interface ScopedTokenUsage {
@@ -60,6 +65,16 @@ function throwIfExceeded(state: ScopedCostState): void {
   }
 }
 
+/** 旁路监听器吞错：它是记账的附加观察者，不许把异常混进真实 usage 的记账/越线路径。 */
+function notifyCostListener(state: ScopedCostState): void {
+  if (!state.onCost) return;
+  try {
+    state.onCost(state.costUsd);
+  } catch (error) {
+    console.error('[ScopedCostLimit] cost listener failed:', error);
+  }
+}
+
 function recordUsageForState(
   state: ScopedCostState,
   usage: ScopedUsageRecord,
@@ -67,6 +82,7 @@ function recordUsageForState(
 ): void {
   state.usageRecorded = true;
   state.costUsd += costUsd;
+  notifyCostListener(state);
   if (usage.source === 'estimated') {
     state.usageUnavailable = true;
   } else {
@@ -83,7 +99,10 @@ function recordUsageForState(
  * BudgetService 每落一条真实 usage 就会记入当前上下文；越线后立即抛错，
  * 即使下游吞掉该错误，run() 返回前也会再次 fail-loud。
  */
-export function createScopedCostLimit(maxCostUsd: number): {
+export function createScopedCostLimit(maxCostUsd: number, options?: {
+  /** 每记一笔真实 cost 后收到当前累计 USD（含即将触发越线的那笔）。 */
+  onCost?: ScopedCostListener;
+}): {
   run<T>(operation: () => Promise<T>): Promise<T>;
   recordUsage: ScopedCostRecorder;
   getCostUsd(): number;
@@ -100,6 +119,7 @@ export function createScopedCostLimit(maxCostUsd: number): {
     usageRecorded: false,
     usageUnavailable: false,
     exceeded: false,
+    onCost: options?.onCost,
   };
   return {
     run<T>(operation: () => Promise<T>): Promise<T> {
@@ -137,6 +157,7 @@ export function recordScopedCost(costUsd: number): void {
   if (!state) return;
   state.usageRecorded = true;
   state.costUsd += costUsd;
+  notifyCostListener(state);
   throwIfExceeded(state);
 }
 

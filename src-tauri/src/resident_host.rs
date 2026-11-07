@@ -24,13 +24,20 @@
 //! 子进程与一次 2s 超时的 HTTP GET，与 setup 里已有的健康检查同量级）。
 
 use std::path::Path;
-use std::process::Command;
-use std::time::Duration;
+use std::process::{Child, Command};
+use std::thread;
+use std::time::{Duration, Instant};
 
 /// pid 文件名，与 daemonLock.ts 的 DAEMON_PID_FILE 同源（落在数据目录根下）。
 pub const DAEMON_PID_FILE: &str = "daemon.pid";
 /// 附着探活的 /health 超时（连接+读），与 is_server_running / quit-guard 同档。
 pub const ATTACH_HEALTH_TIMEOUT: Duration = Duration::from_secs(2);
+/// 「停止并退出」意图已被 daemon 确认（POST /api/quit-intent mode=stop 200）后，
+/// 壳等 daemon 自行排空退出的预算。**必须等于 TS 侧 `WEB_DAEMON.STOP_WAIT_MS`**
+/// （65s = DRAIN_GRACE_MS 60s + 关库收尾），等价性由
+/// tests/unit/main/gracefulShutdown.static.test.ts 读两侧源码钉住；`neo daemon
+/// stop` 等待的也是同一个值（cli/commands/daemon.ts）。
+pub const STOP_INTENT_WAIT: Duration = Duration::from_secs(65);
 
 /// pid 记录：`{pid, startTime}`（旧版纯 pid 文件 / 读不出标记的平台为 None）。
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -405,6 +412,170 @@ fn terminate_attached_daemon_unix(pid: u32, timeout: Duration, poll: Duration) -
 fn terminate_attached_daemon_unix(_pid: u32, _timeout: Duration, _poll: Duration) -> String {
     // 非 unix 目标走上面的 cfg!(windows) 分支；这个存根只覆盖「既非 unix 又非
     // windows」的假想目标，让 terminate_attached_daemon 两边都能编译。
+    "attached-stop-unsupported".to_string()
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// 「停止并退出」意图落地后的停止通道（N-QUIT-STOP-DAEMON-FIX-FU1）
+//
+// 旧通道（terminate_child / stop_attached_daemon）是「发停机信号 + 3s 计时强杀」：
+// daemon 在 SIGTERM 下只能走壳看门狗档排空（1s 宽限），跑不完当前步骤就被 SIGKILL。
+// 新通道的前提是 stop 意图已被 daemon 确认——daemon 对「stdin EOF + intent=stop」
+// 按无看门狗档排空（60s 完整宽限）再优雅停机，壳只需要把停机指令送达（owned 子
+// 进程 = 关 stdin 写端；附着守护 = 什么都不发，意图变化本身就是触发器），然后
+// 按 STOP_INTENT_WAIT 预算等它自己退出，预算用尽才 SIGKILL 兜底（docker stop /
+// systemd TimeoutStopSec 的同款合同：先礼后兵，SIGKILL 永远是最后一步）。
+// ─────────────────────────────────────────────────────────────────────────────
+
+/// 已经发出「请自行退出」的信号之后：轮询等它退，超时才 SIGKILL 兜底。
+/// unix / not(unix) 两个 `terminate_child` 共用同一份超时策略，避免两处各自漂移。
+/// exit_reason 区分 graceful/forced，是事后判断「这次退出干不干净」的唯一证据。
+pub fn wait_then_force_kill(child: &mut Child, graceful_reason: &str) -> (String, Option<String>) {
+    let deadline = Instant::now() + crate::GRACEFUL_SHUTDOWN_TIMEOUT;
+    while Instant::now() < deadline {
+        match child.try_wait() {
+            Ok(Some(status)) => return (graceful_reason.to_string(), Some(status.to_string())),
+            Ok(None) => thread::sleep(crate::GRACEFUL_SHUTDOWN_POLL_INTERVAL),
+            Err(_) => break,
+        }
+    }
+
+    force_kill(child, "forced-sigkill-timeout")
+}
+
+/// SIGKILL 兜底 + 收尸（wait），kill 发不出去时把系统错误带进 exit_reason。
+pub fn force_kill(child: &mut Child, reason: &str) -> (String, Option<String>) {
+    if let Err(error) = child.kill() {
+        return (format!("cleanup-kill-failed:{error}"), None);
+    }
+    let wait_status = child.wait().map(|status| status.to_string()).ok();
+    (reason.to_string(), wait_status)
+}
+
+/// 先发 SIGTERM 让 webServer 自己走干净关库路径，再交给 [`wait_then_force_kill`]
+/// 轮询等它退。意图没落地（无 token / POST 失败 / 关机 / 更新 / 信号）时的默认通道。
+#[cfg(unix)]
+pub fn terminate_child(child: &mut Child) -> (String, Option<String>) {
+    let pid = child.id() as i32;
+    // SAFETY: pid 是刚 spawn 出、尚未被 wait 掉的子进程句柄，SIGTERM 是标准的
+    // 「请自行退出」信号，不涉及内存操作。
+    if unsafe { libc::kill(pid, libc::SIGTERM) } != 0 {
+        return force_kill(child, "forced-sigkill-sigterm-send-failed");
+    }
+
+    wait_then_force_kill(child, "graceful-sigterm")
+}
+
+/// Windows 没有 POSIX 信号，TerminateProcess（Child::kill）不给子进程任何收尾机会。
+/// 但 webServer 本来就监听 stdin EOF 自杀（`webServer.ts` 的 `process.stdin.on('end')`，
+/// spawn 时的 `.stdin(Stdio::piped())` 就是为它准备的），所以这里关掉 stdin 写端
+/// 当作「请自行退出」，再走与 unix 同一套轮询 + 超时兜底。
+/// 不用 CREATE_NEW_PROCESS_GROUP + CTRL_BREAK_EVENT：那要 unsafe winapi + 改 spawn flags
+/// （已带 CREATE_NO_WINDOW，叠加还得另验），而 stdin EOF 这条通路是现成且已在用的。
+#[cfg(not(unix))]
+pub fn terminate_child(child: &mut Child) -> (String, Option<String>) {
+    // take() 取出 ChildStdin，出作用域即关闭管道写端 → 子进程 stdin 收到 EOF。
+    if child.stdin.take().is_none() {
+        return force_kill(child, "forced-sigkill-no-stdin-pipe");
+    }
+
+    wait_then_force_kill(child, "graceful-stdin-eof")
+}
+
+/// 意图已落地的 owned webServer 停止：不发信号，只关 stdin 写端（EOF）——daemon
+/// 对「EOF + intent=stop」按无看门狗档排空（60s 完整宽限）再自行退出，壳在这里
+/// 等它，预算用尽才 SIGKILL。与 unix terminate_child 的差别只有停机指令（EOF
+/// 替代 SIGTERM——SIGTERM 档 daemon 只敢用 1s 壳档宽限）和预算（65s 替代 3s）。
+#[cfg(unix)]
+pub fn stop_child_by_stop_intent(
+    child: &mut Child,
+    budget: Duration,
+    poll: Duration,
+) -> (String, Option<String>) {
+    // take() 取出 ChildStdin，出作用域即关闭管道写端 → 子进程 stdin 收到 EOF。
+    if child.stdin.take().is_none() {
+        return force_kill(child, "forced-sigkill-no-stdin-pipe");
+    }
+    let deadline = Instant::now() + budget;
+    while Instant::now() < deadline {
+        match child.try_wait() {
+            Ok(Some(status)) => {
+                return ("graceful-stdin-eof".to_string(), Some(status.to_string()))
+            }
+            Ok(None) => thread::sleep(poll),
+            Err(_) => break,
+        }
+    }
+    force_kill(child, "forced-sigkill-timeout")
+}
+
+/// Windows 不在新通道范围内（FU1 scope cut）：terminate_child(not unix) 的 stdin
+/// EOF + 3s 已是既有行为，drain 也留在看门狗档，不因意图落地拉长等待。
+#[cfg(not(unix))]
+pub fn stop_child_by_stop_intent(
+    _child: &mut Child,
+    _budget: Duration,
+    _poll: Duration,
+) -> (String, Option<String>) {
+    unreachable!("stop-intent owned-child stop is unix-only; callers gate on cfg!(unix)")
+}
+
+/// 意图已落地的附着守护停止：**不发任何信号**——intent=stop 已让 daemon 自行
+/// 排空退出（quit-intent 路由 → daemonStateReporter 联动 recheck），壳只按 pid
+/// 轮询等它消失，预算用尽先复核身份（pid 被复用时绝不能把 SIGKILL 打到无辜
+/// 进程）再 SIGKILL。身份入口核对沿用 stop_attached_daemon 的口径。
+pub fn wait_attached_daemon_self_exit(
+    record: &DaemonPidRecord,
+    budget: Duration,
+    poll: Duration,
+) -> Option<String> {
+    let identity_ok = process_identity_matches(record, ps_process_identity(record.pid).as_deref());
+    match decide_attached_stop(Some(record), identity_ok) {
+        AttachedStop::Signal { pid } => Some(wait_pid_self_exit(pid, record, budget, poll)),
+        AttachedStop::Skip => None,
+    }
+}
+
+/// unix 实现：kill(pid, 0) 只探活；探活消失 = graceful-self-exit。预算用尽时
+/// 先复核身份——pid 已被复用说明守护其实退过了（对新进程 SIGKILL 是错杀）。
+#[cfg(unix)]
+fn wait_pid_self_exit(
+    pid: u32,
+    record: &DaemonPidRecord,
+    budget: Duration,
+    poll: Duration,
+) -> String {
+    let pid = pid as i32;
+    let deadline = Instant::now() + budget;
+    while Instant::now() < deadline {
+        // SAFETY: 信号 0 只探活，不投递。
+        if unsafe { libc::kill(pid, 0) } != 0 {
+            return "graceful-self-exit".to_string();
+        }
+        thread::sleep(poll);
+    }
+    if !process_identity_matches(record, ps_process_identity(record.pid).as_deref()) {
+        return "graceful-self-exit".to_string();
+    }
+    // SAFETY: 身份仍吻合，SIGKILL 兜底与 terminate_attached_daemon_unix 同口径。
+    if unsafe { libc::kill(pid, libc::SIGKILL) } != 0 {
+        return format!(
+            "attached-sigkill-send-failed:{}",
+            std::io::Error::last_os_error()
+        );
+    }
+    "forced-sigkill-timeout".to_string()
+}
+
+#[cfg(not(unix))]
+fn wait_pid_self_exit(
+    _pid: u32,
+    _record: &DaemonPidRecord,
+    _budget: Duration,
+    _poll: Duration,
+) -> String {
+    // 与 terminate_attached_daemon_unix 的存根同款：真实非 unix 目标走
+    // resident_host_windows 的分支，这里只是让两套 cfg 都能编译。
     "attached-stop-unsupported".to_string()
 }
 
@@ -925,5 +1096,173 @@ mod tests {
             None,
             "两键组的槽位序唯一来源是 ok_cancel_slots"
         );
+    }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// 进程收尾的真子进程编排测试（本地档，不是 CI 门：`.github/workflows/` 全仓 grep
+// `cargo test` 零命中）。unix-only：Windows 分支的 stdin-EOF 行为只有
+// static-contract 档证据（tests/unit/main/gracefulShutdown.static.test.ts）。
+// ─────────────────────────────────────────────────────────────────────────────
+#[cfg(all(test, unix))]
+mod terminate_child_tests {
+    use super::terminate_child;
+    use std::process::{Command, Stdio};
+    use std::{thread, time::Duration};
+
+    /// 让 shell 有时间跑到 `trap` 那一行再发信号，否则会跟「装 trap」赛跑：
+    /// SIGTERM 在 trap 生效前打到默认处理上，把 ignore 场景误判成 graceful。
+    fn let_shell_install_trap() {
+        thread::sleep(Duration::from_millis(100));
+    }
+
+    #[test]
+    fn sigterm_handled_by_child_reports_graceful() {
+        let mut child = Command::new("sh")
+            .arg("-c")
+            .arg("trap 'exit 0' TERM; while :; do sleep 0.1; done")
+            .stdin(Stdio::null())
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .spawn()
+            .expect("failed to spawn trap-TERM test child");
+        let_shell_install_trap();
+
+        let (exit_reason, wait_status) = terminate_child(&mut child);
+
+        assert_eq!(exit_reason, "graceful-sigterm");
+        assert!(wait_status.is_some());
+    }
+
+    #[test]
+    fn sigterm_ignored_by_child_falls_back_to_forced_kill() {
+        let mut child = Command::new("sh")
+            .arg("-c")
+            .arg("trap '' TERM; while :; do sleep 0.1; done")
+            .stdin(Stdio::null())
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .spawn()
+            .expect("failed to spawn trap-ignore test child");
+        let_shell_install_trap();
+
+        let (exit_reason, wait_status) = terminate_child(&mut child);
+
+        assert_eq!(exit_reason, "forced-sigkill-timeout");
+        assert!(wait_status.is_some());
+    }
+}
+
+// N-QUIT-STOP-DAEMON-FIX-FU1：「停止并退出」意图落地后的停止通道。真子进程验
+// 编排：EOF 后要花时间的子进程必须被报 graceful（旧 3s 通道会报 forced），永不
+// 退出的子进程只在预算耗尽后才 SIGKILL（预算测试内注入缩短，不等 65s）。
+#[cfg(all(test, unix))]
+mod stop_intent_stop_tests {
+    use super::{
+        ps_process_identity, stop_child_by_stop_intent, wait_attached_daemon_self_exit,
+        DaemonPidRecord, STOP_INTENT_WAIT,
+    };
+    use std::process::{Command, Stdio};
+    use std::time::{Duration, Instant};
+
+    const POLL: Duration = Duration::from_millis(50);
+
+    /// stdin 保持管道、其余静音的 sh 子进程（EOF 语义只在 piped stdin 下成立）。
+    fn spawn_sh(script: &str) -> std::process::Child {
+        Command::new("sh")
+            .arg("-c")
+            .arg(script)
+            .stdin(Stdio::piped())
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .spawn()
+            .expect("failed to spawn stop-intent test child")
+    }
+
+    #[test]
+    fn child_needing_time_after_eof_reports_graceful() {
+        // EOF 后还要 ~4s 才退干净：旧 3s 通道（SIGTERM+wait_then_force_kill）会把它
+        // 报成 forced-sigkill-timeout；新通道必须等它自然退出并报 graceful-stdin-eof。
+        let mut child = spawn_sh("read x; sleep 4; exit 0");
+        let started = Instant::now();
+
+        let (exit_reason, wait_status) = stop_child_by_stop_intent(&mut child, STOP_INTENT_WAIT, POLL);
+
+        assert_eq!(exit_reason, "graceful-stdin-eof");
+        assert!(wait_status.is_some());
+        // 子进程自己睡了 4s——等待确实跨过了旧 3s 预算，而不是被提前收割。
+        assert!(started.elapsed() >= Duration::from_secs(3));
+    }
+
+    #[test]
+    fn child_never_exiting_is_force_killed_only_after_budget() {
+        // EOF 后死循环：预算（测试内注入 600ms）耗尽前不许 SIGKILL，之后必须兜底。
+        let mut child = spawn_sh("read x; while :; do sleep 0.1; done");
+        let started = Instant::now();
+
+        let (exit_reason, wait_status) =
+            stop_child_by_stop_intent(&mut child, Duration::from_millis(600), POLL);
+
+        assert_eq!(exit_reason, "forced-sigkill-timeout");
+        assert!(wait_status.is_some());
+        assert!(started.elapsed() >= Duration::from_millis(600));
+    }
+
+    /// 用真实 ps 身份给活着的 node 子进程造一份附着记录（lstart 原文 + 命令行含
+    /// node 才过 process_identity_matches；sh 子进程过不了身份核对）。
+    fn record_for_live_node(child: &std::process::Child) -> DaemonPidRecord {
+        let ps = ps_process_identity(child.id()).expect("ps identity for live node child");
+        let text = ps.trim();
+        let at = text.find(" node").expect("node command line in ps output");
+        DaemonPidRecord {
+            pid: child.id(),
+            start_time: Some(text[..at].trim_end().to_string()),
+        }
+    }
+
+    fn spawn_node(script: &str) -> std::process::Child {
+        Command::new("node")
+            .arg("-e")
+            .arg(script)
+            .stdin(Stdio::null())
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .spawn()
+            .expect("failed to spawn node stop-intent test child (node must be in PATH)")
+    }
+
+    #[test]
+    fn attached_daemon_exits_by_itself_reports_graceful_self_exit() {
+        // ~1.2s 后自行退出的「守护」：通道不发任何信号，等它自己消失。若通道偷偷
+        // 发了 SIGTERM，node 会立刻死，elapsed 就到不了 1s——时间断言同时钉住「无信号」。
+        let mut child = spawn_node("setTimeout(() => process.exit(0), 1200)");
+        let record = record_for_live_node(&child);
+        // 父进程是本测试：不收尸的话退出的 node 会以 zombie 形式让 kill(pid,0) 一直
+        // 成功，探活要等 65s 预算耗尽才靠身份复核兜底（真实链路里守护的父是
+        // launchd，退出即被收尸）。后台线程收尸，测的就是探活的轮询路径本身。
+        std::thread::spawn(move || {
+            let _ = child.wait();
+        });
+        let started = Instant::now();
+
+        let exit_reason = wait_attached_daemon_self_exit(&record, STOP_INTENT_WAIT, POLL);
+
+        assert_eq!(exit_reason.as_deref(), Some("graceful-self-exit"));
+        assert!(started.elapsed() >= Duration::from_secs(1));
+        assert!(started.elapsed() < Duration::from_secs(10)); // 轮询路径，不是预算兜底
+    }
+
+    #[test]
+    fn attached_daemon_never_exiting_sigkill_only_after_budget() {
+        let mut child = spawn_node("setInterval(() => {}, 100)");
+        let record = record_for_live_node(&child);
+        let started = Instant::now();
+
+        let exit_reason =
+            wait_attached_daemon_self_exit(&record, Duration::from_millis(600), POLL);
+
+        assert_eq!(exit_reason.as_deref(), Some("forced-sigkill-timeout"));
+        assert!(started.elapsed() >= Duration::from_millis(600));
+        let _ = child.wait(); // 收掉被 SIGKILL 的子进程，不留 zombie
     }
 }

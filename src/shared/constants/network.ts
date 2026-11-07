@@ -64,6 +64,8 @@ export const WEB_FETCH = {
   CACHE_TTL: 900_000,
   /** 缓存最大条目数 */
   CACHE_MAX_ENTRIES: 50,
+  /** 手动跟随重定向的最大跳数（每跳都过 SSRF 守卫） */
+  MAX_REDIRECTS: 5,
   /** 受信文档内容直通上限 */
   TRUSTED_DOCS_MAX_CHARS: 100_000,
   /** 可重试 HTTP 状态码 */
@@ -97,7 +99,7 @@ export const CLOUD = {
 // ============================================================================
 
 /** Agent Neo 帮助与产品文档入口 */
-export const AGENT_NEO_HELP_URL = 'https://github.com/baochipham942-eng/code-agent';
+export const AGENT_NEO_HELP_URL = 'https://github.com/neo-cowork/code-agent';
 
 /** 当前生产环境云端 API 基础 URL */
 export const PRODUCTION_CLOUD_API_URL = 'https://agentneo.vercel.app';
@@ -151,6 +153,10 @@ export const CLOUD_ENDPOINTS = {
   /** 官方 Role Pack Registry（签名控制面） */
   get roleRegistry() {
     return `${getCloudApiUrl()}/api/v1/role-registry`;
+  },
+  /** Neo 托管 Jev 判官（计量代理：key 只在服务端，N-JEV-NEO-KEY） */
+  get jevJudge() {
+    return `${getCloudApiUrl()}/api/v1/jev-judge`;
   },
   /** WebSocket 端点 */
   get websocket() {

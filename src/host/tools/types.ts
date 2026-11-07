@@ -211,6 +211,12 @@ export interface PermissionRequestData {
   parentToolUseId?: string;
   forceConfirm?: boolean;
   /**
+   * forceConfirm 的成因标记（N-RESIDENT-SCHEDULE-KEEPALIVE-DAEMON-FU1 返修 r2）：
+   * true 仅当 W3 写边界 ask 是唯一成因且无 peer 触发；定时任务写授权只放行这一种形态。
+   * 与 shared/contract/permission.ts 的 PermissionRequest.forceConfirmBoundaryOnly 同义。
+   */
+  forceConfirmBoundaryOnly?: boolean;
+  /**
    * ADR-067 D3：本轮最新输入的 origin 链（可多条，判定取最不可信者）。
    * 由 ToolExecutor 从 ExecuteOptions 透传；含 peer-agent 时写/执行类一律 forceConfirm。
    */

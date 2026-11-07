@@ -21,6 +21,7 @@ describe('findSupersededSessionRoots', () => {
     ['waiting + crash_or_quit + 计数耗尽（预算耗尽后又等审批）', run({ interruptCause: 'crash_or_quit', autoResumeCount: MAX_AUTO_RESUME_COUNT }), false],
     ['waiting + user_stop', run({ interruptCause: 'user_stop' }), true],
     ['waiting + guard_halt', run({ interruptCause: 'guard_halt' }), true],
+    ['waiting + quota_wait', run({ interruptCause: 'quota_wait', quotaWaitDueAt: 1 }), true],
     ['running', run({ status: 'running', interruptCause: 'user_stop' }), false],
   ] as const)('%s → %s', (_label, envelope, expected) => {
     expect(pick(envelope)).toBe(expected);

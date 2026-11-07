@@ -29,6 +29,8 @@ export interface MemberRowSource {
   standbyKey?: string;
   /** Swarm 账本记录的改动文件；只读 explore 为 []。 */
   filesChanged?: readonly string[];
+  /** 最近可见进展的活锚点（contextSnapshot.lastUpdated，只从活源取，不回落 startTime）；无进展提示（agentRowStall）用它算空转。 */
+  lastActivityAt?: number;
 }
 
 export interface AgentRow {

@@ -46,11 +46,12 @@ export interface LoadedSnapshot {
 
 export interface ArchiveInspection {
   filePath: string;
-  format: 'zip';
+  format: 'zip' | 'tar' | 'tgz' | 'gz' | '7z' | 'rar';
   entryCount: number;
   shownCount: number;
   truncated: boolean;
   entries: Array<{ name: string; isDirectory: boolean; depth: number; extension?: string }>;
+  fallback?: { code: 'encrypted' | 'corrupt' | 'unsupported' };
 }
 
 export function shouldFlashOnDiskLoad(
@@ -73,12 +74,6 @@ export function parseDesignPptArtifactContent(content: string): DesignPptScreens
   } catch {
     return null;
   }
-}
-
-export function getExtension(filePath: string | null | undefined): string {
-  if (!filePath) return '';
-  const idx = filePath.lastIndexOf('.');
-  return idx < 0 ? '' : filePath.slice(idx + 1).toLowerCase();
 }
 
 export function basename(filePath: string): string {

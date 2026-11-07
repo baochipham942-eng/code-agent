@@ -31,7 +31,7 @@ readonly APPLE_TEAM_ID="D7CVTJ72NV"
 readonly SIGNING_AUTHORITY="Developer ID Application: jay lem (D7CVTJ72NV)"
 readonly APP_BUNDLE_ID="com.linchen.code-agent"
 readonly APP_NAME="Agent Neo"
-readonly GITHUB_REPO="baochipham942-eng/code-agent"
+readonly GITHUB_REPO="neo-cowork/code-agent"
 readonly MOUNTPOINT="/tmp/agent-neo-publish-mount"
 readonly WEB_PORT=8180
 
@@ -296,12 +296,12 @@ launch_app() {
   fi
   log "step 7: kill zombie webServer + launch app"
 
-  # 杀 zombie webServer
-  pkill -f "dist/web/webServer.cjs" 2>/dev/null || true
-
-  # 清 8180 端口
+  # 清 8180 端口：只按「谁 LISTEN 在 WEB_PORT」定位，绝不能按进程名 pkill ——
+  # 别的 Dev 槽 / verify-slotless / 其他会话的 webServer 同名不同端口，按名字杀
+  # 会把它们一起带走（FB-553）。-sTCP:LISTEN 同时避免把 merely 连着这个端口的
+  # 客户端（浏览器 tab）一并 kill -9。
   local pids
-  pids="$(lsof -ti tcp:$WEB_PORT 2>/dev/null || true)"
+  pids="$(lsof -ti tcp:$WEB_PORT -sTCP:LISTEN 2>/dev/null || true)"
   if [[ -n "$pids" ]]; then
     log "  killing process on :$WEB_PORT (pid: $pids)"
     # shellcheck disable=SC2086

@@ -1,4 +1,3 @@
-import path from 'path';
 import { createRequire } from 'module';
 import type BetterSqlite3 from 'better-sqlite3';
 import type { createLogger } from '../../infra/logger';
@@ -9,26 +8,28 @@ type Logger = ReturnType<typeof createLogger>;
 const runtimeRequire = typeof require === 'function' ? require : createRequire(import.meta.url);
 
 /**
- * better-sqlite3 的候选 require 路径,按优先级排序。
+ * 给 DB 子进程(quick_check / VACUUM)解析 better-sqlite3 的单一绝对路径(ADR-086 §4.3):
+ * 一个进程一个决定 —— 父进程在这里解析一次,子进程只 require 收到的路径,不再重复试探。
  *
- * moduleDir 由调用方传入：必须以原 databaseService.ts 的位置为基准计算 native path,
- * 不能用本文件的 moduleDir, 否则打包后 ../native/ 会偏移到错误目录。
- *
- * 单独导出是因为 VACUUM 子进程(dbVacuumSubprocess.ts)要在**另一个 node 进程**里
- * 加载同一份 native binding —— 打包态 binding 在 dist/native/ 而非 node_modules,
- * 两处必须用同一份候选清单,否则子进程在打包态静默找不到 binding。
- *
- * loadBetterSqlite3 已按 ADR-086 T2 切到清单/包解析,不再消费本清单;
- * 两个子进程的交接(T3)退役本导出。
+ * - bundle 模式: 清单 entry 的绝对路径,source 指名清单文件与模块 id;
+ *   清单缺失/声明路径缺失/平台不符直接 throw(文案保持 ADR §4.4)。
+ * - 源码模式: runtimeRequire.resolve 的绝对路径(与子进程 cwd 无关),
+ *   source = "package resolution (source mode)"。
  */
-export function betterSqlite3CandidatePaths(moduleDir: string): string[] {
-  // Web/Tauri 模式: 系统 Node.js 运行，Electron ABI 的 .node 文件不兼容
-  // 优先从 dist/native/ 加载为系统 Node 编译的版本
-  return [
-    path.join(moduleDir, '../native/better-sqlite3'),
-    path.join(moduleDir, '../../native/better-sqlite3'),
-    path.join(process.cwd(), 'dist/native/better-sqlite3'),
-  ];
+export function resolveBetterSqlite3SubprocessPath(
+  logger?: Logger,
+): { path: string; source: string } {
+  const manifest = readNativeDepManifest(process.env, logger);
+  if (!manifest) {
+    return {
+      path: runtimeRequire.resolve('better-sqlite3'),
+      source: 'package resolution (source mode)',
+    };
+  }
+  return {
+    path: resolveNativeDepEntry(manifest, 'better-sqlite3'),
+    source: `native dep manifest ${manifest.manifestPath} (module 'better-sqlite3')`,
+  };
 }
 
 /**
@@ -37,8 +38,8 @@ export function betterSqlite3CandidatePaths(moduleDir: string): string[] {
  *   清单取单一 entry 路径 require 一次;清单缺失/声明路径缺失/平台不符直接 throw,无静默回退。
  * - 源码模式:直接 require('better-sqlite3') 纯包解析,零候选试探,不读 dist/native。
  *
- * moduleDir 参数保留不动(四个调用方不随本单改);子进程交接(T3)之前它只剩
- * betterSqlite3CandidatePaths 的调用方在用。
+ * moduleDir 参数保留不动(四个调用方不随本单改);子进程交接见
+ * resolveBetterSqlite3SubprocessPath。
  */
 export function loadBetterSqlite3(_moduleDir: string, logger: Logger): typeof BetterSqlite3 | null {
   if (process.env.CODE_AGENT_CLI_MODE && !process.env.CODE_AGENT_WEB_MODE) {

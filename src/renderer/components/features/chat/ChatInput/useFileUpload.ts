@@ -17,14 +17,10 @@ import { createLogger } from '../../../../utils/logger';
 import ipcService from '../../../../services/ipcService';
 import { buildArchiveManifest, buildPresentationSummary } from './attachmentSummaries';
 import { useI18n } from '../../../../hooks/useI18n';
+import { formatFileSize } from './formatFileSize';
+import { useComposerRejectedUploadsStore } from '../../../../stores/composerRejectedUploadsStore';
 
 const logger = createLogger('useFileUpload');
-
-function formatFileSize(bytes: number): string {
-  if (bytes >= 1024 * 1024) return `${(bytes / (1024 * 1024)).toFixed(1)}MB`;
-  if (bytes >= 1024) return `${(bytes / 1024).toFixed(0)}KB`;
-  return `${bytes}B`;
-}
 
 function readFileAsDataUrl(file: File): Promise<string | null> {
   return new Promise((resolve) => {
@@ -69,6 +65,7 @@ export function useFileUpload() {
     // 非 PDF 文件超限时 toast 提示
     if (file.size > MAX_FILE_SIZE) {
       logger.warn('File is too large (max 10MB)', { fileName: file.name, size: file.size });
+      useComposerRejectedUploadsStore.getState().add({ name: displayName, size: file.size });
       showToast('warning', t.chatInput.uploadFileTooLarge.replace('{name}', file.name).replace('{size}', formatFileSize(file.size)));
       return null;
     }
@@ -198,11 +195,23 @@ export function useFileUpload() {
 
     return new Promise((resolve) => {
       const reader = new FileReader();
-      reader.onload = (e) => {
+      reader.onload = async (e) => {
         const data = e.target?.result as string;
+        // .csv：从同一份已读文本构建 sheetsJson，消息气泡里渲染与 xlsx 同款的
+        // 交互表格。动态 import 让 papaparse 留在懒 chunk（同 CsvTable 拆包策略）；
+        // 解析失败静默回退为普通图标卡。
+        let sheetsJson: string | undefined;
+        if (category === 'data' && file.name.toLowerCase().endsWith('.csv')) {
+          try {
+            const { buildCsvSheetsJson } = await import('./csvSheets');
+            sheetsJson = buildCsvSheetsJson(displayName, data);
+          } catch (err) {
+            logger.warn('csv sheetsJson build failed, falling back to icon card', { fileName: file.name, error: err });
+          }
+        }
         resolve({
           id, type: 'file', category, name: displayName, size: file.size,
-          mimeType: file.type || 'text/plain', data, language, path: filePath,
+          mimeType: file.type || 'text/plain', data, language, path: filePath, sheetsJson,
         });
       };
       reader.onerror = () => {

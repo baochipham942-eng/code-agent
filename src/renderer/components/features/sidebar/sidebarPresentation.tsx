@@ -61,6 +61,7 @@ export const AccountMenuLabel: React.FC<{ children: React.ReactNode }> = ({ chil
 export const AccountMenuItem: React.FC<AccountMenuItemProps> = ({ icon, label, onClick, badge, testId }) => (
   <button
     type="button"
+    role="menuitem"
     data-testid={testId}
     onClick={onClick}
     className="flex w-full items-center gap-2 px-3 py-2 text-sm text-zinc-400 transition-colors hover:bg-zinc-800 hover:text-zinc-200"

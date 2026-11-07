@@ -217,10 +217,12 @@ denied_commands = ["^git status"]
 denied_paths = ["/opt/secret/**"]
 `;
 
-    it('blocks write to default denied path /etc/**', async () => {
+    // /etc/** 同时被内置不可覆盖规则 block-root-write 在闸门更早硬拒（错误文案不同），
+    // 这里用只在 policy 默认 denied_paths 里的 ~/.aws/** 验证 PolicyEnforcer 本身仍拦截。
+    it('blocks write to default denied path ~/.aws/**', async () => {
       const executor = makeExecutor(project(POLICY));
       const result = await executor.execute('write_file', {
-        file_path: '/etc/hosts',
+        file_path: path.join(os.homedir(), '.aws', 'credentials'),
         content: 'hacked',
       }, {});
 

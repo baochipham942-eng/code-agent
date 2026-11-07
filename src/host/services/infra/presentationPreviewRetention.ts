@@ -25,7 +25,12 @@ import { getUserConfigDir } from '../../config/configPaths';
 import { PRESENTATION_PREVIEW_CACHE_DIRNAME } from '../../tools/media/ppt/constants';
 import { computeArtifactRevision } from '../../tools/artifacts/artifactLocatorHost';
 import { createLogger } from './logger';
-import { countRetentionFailed, createRetentionLedger, type RetentionFailureCounter } from './retentionLedger';
+import {
+  countRetentionFailed,
+  createRetentionLedger,
+  type RetentionFailureCounter,
+  type RetentionLedgerStatus,
+} from './retentionLedger';
 import { collectReferenceText } from './retentionReferenceScan';
 
 const logger = createLogger('PresentationPreviewRetention');
@@ -54,6 +59,26 @@ interface PreviewRevisionDir {
 
 const retentionLedger = createRetentionLedger();
 
+// 此刻仍删不掉的失败数（与 appCacheRetention / audioRetention 的 failedCurrent 同口径）：
+// 每轮 sweep 用本轮 failed 覆盖，零失败清账时归零——UI 失败行的数字取这份，不随重试虚增
+let failedCurrentCount = 0;
+
+/**
+ * 一轮 sweep 收尾记账：零失败先清旧账（此前删不掉的已不在），再用本轮结果覆盖
+ * "仍在失败"计数并累计进账本。本模块所有错误都在 sweep 内部 catch（不存在不完整轮），
+ * 每条出口都必须走这里，否则失败行丢账。
+ */
+function publishSweepOutcome(summary: PresentationPreviewRetentionSummary & RetentionFailureCounter, now: number): void {
+  if (summary.failed === 0) retentionLedger.resetFailures();
+  failedCurrentCount = summary.failed;
+  retentionLedger.publish(summary.deleted, summary.failed, summary.lastError, now);
+}
+
+/** 状态出口：Settings > Data 的缓存清理失败行读这份（经 cacheRetentionStatus 聚合） */
+export function getPresentationPreviewRetentionStatus(): RetentionLedgerStatus & { failedCurrent: number } {
+  return { ...retentionLedger.read(), failedCurrent: failedCurrentCount };
+}
+
 export async function sweepPresentationPreviewRetention(input?: {
   cacheRoot?: string;
   dbPath?: string | null;
@@ -68,7 +93,7 @@ export async function sweepPresentationPreviewRetention(input?: {
   try {
     const revisions = await listSweepableRevisionDirs(cacheRoot);
     if (revisions.length === 0) {
-      retentionLedger.publish(summary.deleted, summary.failed, summary.lastError, now);
+      publishSweepOutcome(summary, now);
       return { ...summary };
     }
 
@@ -83,7 +108,7 @@ export async function sweepPresentationPreviewRetention(input?: {
       const reason = error instanceof Error ? error.message : String(error);
       logger.warn('[预览保留] 引用扫描失败，本轮不删除任何目录', { reason });
       countRetentionFailed(summary, reason);
-      retentionLedger.publish(summary.deleted, summary.failed, summary.lastError, now);
+      publishSweepOutcome(summary, now);
       return { ...summary };
     }
 
@@ -110,7 +135,7 @@ export async function sweepPresentationPreviewRetention(input?: {
     countRetentionFailed(summary, reason);
   }
 
-  retentionLedger.publish(summary.deleted, summary.failed, summary.lastError, now);
+  publishSweepOutcome(summary, now);
   return { ...summary };
 }
 

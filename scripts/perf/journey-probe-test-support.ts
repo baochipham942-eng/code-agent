@@ -11,6 +11,7 @@ export const JOURNEY_RULE_IDS = [
   'perf-journey-cold-start',
   'perf-journey-first-token',
   'perf-journey-long-session',
+  'perf-journey-long-session-scroll',
   'perf-journey-session-switch',
 ] as const;
 

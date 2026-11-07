@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+/* global AbortSignal, fetch, setTimeout */
 
 import { execFileSync, spawn, spawnSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
@@ -11,7 +12,12 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 import { CLI_CONNECTOR_DESCRIPTORS } from '../src/shared/constants/cliConnectorDescriptors.ts';
 
 const PROVIDER_ID = 'custom-tokenrhythm';
-const MODEL_ID = 'deepseek-v4-flash';
+const SLOTLESS_MODEL_CANDIDATES = [
+  'deepseek-v4-flash',
+  'deepseek-flash',
+  'deepseek-v4-flash-0731',
+  'deepseek-v4-pro',
+];
 const STATE_FILE = '.neo-verify-state.json';
 const DEFAULT_SECRET_FILE = path.join(os.homedir(), '.ship', 'secrets', 'neo-dogfood.env');
 const DEFAULT_SOURCE_DATA_DIR = path.join(os.homedir(), '.code-agent-dev');
@@ -28,14 +34,17 @@ const repoRoot = path.resolve(scriptDir, '..');
 function usage() {
   return [
     'Usage:',
-    '  node scripts/verify-slotless.mjs <ticket> [--reuse-dist] [--native <ids>] [--source-config <path>]',
+    '  node scripts/verify-slotless.mjs <ticket> [--reuse-dist] [--native <ids>] [--source-config <path>] [--clean-account]',
     '  node scripts/verify-slotless.mjs --stop <NEO_VERIFY_DATA_DIR>',
     '',
     'Starts the worktree webServer on an isolated port and signs in with the dogfood account.',
     'Copies the selected source data directory secure-storage.json + .secure-key pair by default.',
     'By default, native connectors keep the source config and no system apps are probed.',
+    'Use --clean-account to skip the cloud session-list pull so the sidebar starts truly empty (sign-in is unchanged).',
     'Use --native calendar,reminders to opt in to native connector verification on macOS.',
     `The source template defaults to ${DEFAULT_SOURCE_CONFIG}; use --source-config to select it explicitly.`,
+    'Set NEO_VERIFY_PRE_START=<script> to run that node script (with NEO_VERIFY_DATA_DIR in env) after the',
+    'data dir is staged and before the webServer spawns — e.g. to place folders the startup path must see.',
   ].join('\n');
 }
 
@@ -63,16 +72,28 @@ function copyModelDescriptor(value) {
   return Object.fromEntries(allowed.filter((key) => value[key] !== undefined).map((key) => [key, value[key]]));
 }
 
+export function resolveSlotlessModelId(sourceProvider) {
+  const models = sourceProvider?.models;
+  const modelId = SLOTLESS_MODEL_CANDIDATES.find((candidate) => {
+    const descriptor = models?.[candidate];
+    return descriptor && typeof descriptor === 'object' && !Array.isArray(descriptor) && descriptor.enabled !== false;
+  });
+  if (modelId) return modelId;
+  const states = SLOTLESS_MODEL_CANDIDATES.map((candidate) => {
+    const descriptor = models?.[candidate];
+    return `${candidate}=${descriptor?.enabled === false ? 'disabled' : 'missing'}`;
+  });
+  fail(`no enabled model candidate for ${PROVIDER_ID}: ${states.join(', ')}`);
+}
+
 export function buildSlotlessConfig(source, tokenRhythmKey, nativeConnectorIds) {
   const sourceModels = source?.models;
   const sourceProvider = sourceModels?.providers?.[PROVIDER_ID];
-  const sourceModel = sourceProvider?.models?.[MODEL_ID];
   if (!sourceProvider || typeof sourceProvider !== 'object' || Array.isArray(sourceProvider)) {
     fail(`source config is missing provider ${PROVIDER_ID}`);
   }
-  if (!sourceModel || typeof sourceModel !== 'object' || Array.isArray(sourceModel)) {
-    fail(`source config is missing model ${PROVIDER_ID}/${MODEL_ID}`);
-  }
+  const modelId = resolveSlotlessModelId(sourceProvider);
+  const sourceModel = sourceProvider.models[modelId];
 
   const provider = {};
   for (const key of ['enabled', 'displayName', 'baseUrl', 'protocol', 'temperature', 'maxTokens']) {
@@ -80,8 +101,8 @@ export function buildSlotlessConfig(source, tokenRhythmKey, nativeConnectorIds) 
   }
   provider.enabled = true;
   provider.apiKey = tokenRhythmKey;
-  provider.model = MODEL_ID;
-  provider.models = { [MODEL_ID]: copyModelDescriptor(sourceModel) };
+  provider.model = modelId;
+  provider.models = { [modelId]: copyModelDescriptor(sourceModel) };
 
   // ConfigService 会把未出现的内置 provider 与默认值合并，其中若干默认 enabled=true。
   // 显式关闭源配置里的其他 provider，避免临时实例把空壳 provider 呈现为可选项；只复制
@@ -96,7 +117,7 @@ export function buildSlotlessConfig(source, tokenRhythmKey, nativeConnectorIds) 
   const routeNames = Object.keys(sourceModels?.routing ?? {});
   const routing = Object.fromEntries(
     (routeNames.length > 0 ? routeNames : ['code', 'fast', 'chat'])
-      .map((route) => [route, { provider: PROVIDER_ID, model: MODEL_ID }]),
+      .map((route) => [route, { provider: PROVIDER_ID, model: modelId }]),
   );
 
   const config = {
@@ -157,7 +178,7 @@ export function buildSlotlessTemplateProvenance(config, sourceConfigPath) {
       .filter((key) => configuredProvider[key] !== undefined)
       .map((key) => [key, configuredProvider[key]]),
   );
-  const modelDescriptorSha256 = fingerprintJson(configuredProvider.models[MODEL_ID]);
+  const modelDescriptorSha256 = fingerprintJson(configuredProvider.models[configuredProvider.model]);
   const connectorsSha256 = fingerprintJson(config.connectors);
   const mcp = config.mcp === undefined
     ? { present: false, sha256: null }
@@ -419,7 +440,7 @@ async function assertConfiguredModel(url, token) {
   const body = await response.json().catch(() => null);
   const settings = body?.success ? body.data : null;
   const provider = settings?.models?.providers?.[PROVIDER_ID];
-  const model = provider?.models?.[MODEL_ID];
+  const model = provider?.models?.[provider.model];
   if (
     !response.ok
     || !provider
@@ -428,7 +449,7 @@ async function assertConfiguredModel(url, token) {
     || !model
     || model.enabled === false
   ) {
-    fail(`model self-check failed: ${PROVIDER_ID}/${MODEL_ID} is not configured`);
+    fail(`model self-check failed: ${PROVIDER_ID}/${provider?.model} is not configured`);
   }
 }
 
@@ -724,7 +745,39 @@ async function cleanupFailedStart(child, dataDir, marker, nativeConnectorIds, na
   }
 }
 
-async function startRun(ticketArg, reuseDist, nativeConnectorIds, sourceConfigArg) {
+export function buildWebServerEnv({ baseEnv = process.env, dataDir, runtimeTmpDir, port, cleanAccount }) {
+  return {
+    ...baseEnv,
+    AGENT_NEO_BUNDLED_RUNTIME_ROOT: repoRoot,
+    CODE_AGENT_DATA_DIR: dataDir,
+    CODE_AGENT_DISABLE_RENDERER_HOT_UPDATE: '1',
+    CODE_AGENT_WORKING_DIR: repoRoot,
+    ...(cleanAccount ? { CODE_AGENT_SKIP_CLOUD_SESSION_LIST: '1' } : {}),
+    TEMP: runtimeTmpDir,
+    TMP: runtimeTmpDir,
+    TMPDIR: runtimeTmpDir,
+    WEB_HOST: '127.0.0.1',
+    WEB_PORT: String(port),
+  };
+}
+
+/**
+ * Opt-in staging hook (NEO_VERIFY_PRE_START): run a node script against the staged
+ * data dir before the webServer spawns — e.g. to place folders in the default work
+ * root that the startup path under test must already see. Non-zero exit fails the start.
+ */
+function runPreStartHook(dataDir) {
+  const hook = process.env.NEO_VERIFY_PRE_START?.trim();
+  if (!hook) return;
+  const result = spawnSync(process.execPath, [hook], {
+    stdio: 'inherit',
+    env: { ...process.env, NEO_VERIFY_DATA_DIR: dataDir },
+  });
+  if (result.error) fail(`pre-start hook failed to start: ${result.error.message}`);
+  if (result.status !== 0) fail(`pre-start hook exited with ${result.status ?? 'unknown'}`);
+}
+
+async function startRun(ticketArg, reuseDist, nativeConnectorIds, sourceConfigArg, cleanAccount = false) {
   const ticket = sanitizeTicket(ticketArg);
   const credentials = readDogfoodCredentials();
   const requestedSourceConfig = resolveSourceConfigPath(sourceConfigArg);
@@ -750,6 +803,7 @@ async function startRun(ticketArg, reuseDist, nativeConnectorIds, sourceConfigAr
     const runtimeTmpDir = path.join(dataDir, 'runtime-tmp');
     mkdirSync(runtimeTmpDir, { mode: 0o700 });
     chmodSync(runtimeTmpDir, 0o700);
+    runPreStartHook(dataDir);
 
     const port = await reservePort();
     const url = `http://127.0.0.1:${port}`;
@@ -760,18 +814,7 @@ async function startRun(ticketArg, reuseDist, nativeConnectorIds, sourceConfigAr
       child = spawn(process.execPath, [webServer, `--neo-verify-run=${marker}`], {
         cwd: dataDir,
         detached: true,
-        env: {
-          ...process.env,
-          AGENT_NEO_BUNDLED_RUNTIME_ROOT: repoRoot,
-          CODE_AGENT_DATA_DIR: dataDir,
-          CODE_AGENT_DISABLE_RENDERER_HOT_UPDATE: '1',
-          CODE_AGENT_WORKING_DIR: repoRoot,
-          TEMP: runtimeTmpDir,
-          TMP: runtimeTmpDir,
-          TMPDIR: runtimeTmpDir,
-          WEB_HOST: '127.0.0.1',
-          WEB_PORT: String(port),
-        },
+        env: buildWebServerEnv({ dataDir, runtimeTmpDir, port, cleanAccount }),
         stdio: ['ignore', logFd, logFd],
       });
     } finally {
@@ -796,6 +839,7 @@ async function startRun(ticketArg, reuseDist, nativeConnectorIds, sourceConfigAr
       repoRoot,
       template,
       nativeConnectorIds: requestedNativeConnectorIds,
+      cleanAccount,
       nativeAppPidsBeforeStart: nativeAppsBeforeStart,
       launchedNativeApps,
       startedAt: new Date().toISOString(),
@@ -803,7 +847,7 @@ async function startRun(ticketArg, reuseDist, nativeConnectorIds, sourceConfigAr
     child.unref();
     console.log('NEO_VERIFY_SECURE_STORAGE=configured');
     console.log(`NEO_VERIFY_KEY=${maskTokenRhythmKey(credentials.tokenRhythmKey)}`);
-    console.log(`NEO_VERIFY_MODEL=${PROVIDER_ID}/${MODEL_ID}`);
+    console.log(`NEO_VERIFY_MODEL=${PROVIDER_ID}/${config.models.providers[PROVIDER_ID].model}`);
     console.log(
       `NEO_VERIFY_TEMPLATE=${template.fingerprintSha256.slice(0, 16)}`
       + ` temperature=${template.provider.temperature ?? 'absent'}`
@@ -812,6 +856,7 @@ async function startRun(ticketArg, reuseDist, nativeConnectorIds, sourceConfigAr
     if (nativeConnectorIds !== undefined) {
       console.log(`NEO_VERIFY_NATIVE=${nativeConnectorIds.join(',')}`);
     }
+    if (cleanAccount) console.log('NEO_VERIFY_CLEAN_ACCOUNT=1');
     console.log(`NEO_VERIFY_URL=${url}`);
     console.log(`NEO_VERIFY_DATA_DIR=${dataDir}`);
   } catch (error) {
@@ -820,23 +865,21 @@ async function startRun(ticketArg, reuseDist, nativeConnectorIds, sourceConfigAr
   }
 }
 
-async function main(args = process.argv.slice(2)) {
-  if (args.includes('--help') || args.includes('-h')) {
-    console.log(usage());
-    return;
-  }
-  if (args[0] === '--stop') {
-    await stopRun(args[1]);
-    return;
-  }
+export function parseStartArgs(args) {
   let ticket;
   let reuseDist = false;
   let nativeConnectorIds;
   let sourceConfigArg;
+  let cleanAccount = false;
   for (let index = 0; index < args.length; index += 1) {
     const arg = args[index];
     if (arg === '--reuse-dist') {
       reuseDist = true;
+      continue;
+    }
+    if (arg === '--clean-account') {
+      if (cleanAccount) fail('--clean-account may only be specified once');
+      cleanAccount = true;
       continue;
     }
     if (arg === '--native') {
@@ -863,7 +906,20 @@ async function main(args = process.argv.slice(2)) {
     ticket = arg;
   }
   if (!ticket) fail(usage());
-  await startRun(ticket, reuseDist, nativeConnectorIds, sourceConfigArg);
+  return { ticket, reuseDist, nativeConnectorIds, sourceConfigArg, cleanAccount };
+}
+
+async function main(args = process.argv.slice(2)) {
+  if (args.includes('--help') || args.includes('-h')) {
+    console.log(usage());
+    return;
+  }
+  if (args[0] === '--stop') {
+    await stopRun(args[1]);
+    return;
+  }
+  const { ticket, reuseDist, nativeConnectorIds, sourceConfigArg, cleanAccount } = parseStartArgs(args);
+  await startRun(ticket, reuseDist, nativeConnectorIds, sourceConfigArg, cleanAccount);
 }
 
 const isEntrypoint = process.argv[1] && import.meta.url === pathToFileURL(path.resolve(process.argv[1])).href;

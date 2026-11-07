@@ -106,7 +106,11 @@ export async function detectExternalImportSources(
           homeDir,
         });
         const categories: ExternalImportCategoryCount[] = [
-          { category: 'instructions', count: dryRun.summary.instructionOnly },
+          {
+            // 与预览头部 countImportableRules 同口径：整文件对照项（instruction-file）不计入来源行。
+            category: 'instructions',
+            count: dryRun.instructions.filter((item) => item.reason === 'directive-confirmation-required').length,
+          },
           { category: 'memories', count: dryRun.summary.discoveredMemory },
         ];
         if (descriptor.skillsDir) {

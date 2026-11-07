@@ -59,7 +59,7 @@ function transitionCount(db: BetterSqlite3.Database): number {
   );
 }
 
-describe('CloudRunLedger (ADR-086 S1)', () => {
+describe('CloudRunLedger (ADR-087 S1)', () => {
   let db: BetterSqlite3.Database;
   let tick: number;
 

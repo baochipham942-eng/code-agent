@@ -8,7 +8,9 @@ import type { RawDomainRouteHandlers } from '../../shared/ipc/domainRoutes';
 import { CronSchemas, type CronDomainRequest } from '../../shared/ipc/schemas/cron';
 import { defineDomainRoutes, installDomainRoutes } from './domainRoutes/registry';
 import { getCronService } from '../cron/cronService';
+import { CloudNotConfiguredError } from '../cron/cronCloudErrors';
 import { getConnectorRegistry } from '../connectors/registry';
+import { isAppleEventsDenied } from '../connectors/native/osascript';
 import { ModelRouter } from '../model/modelRouter';
 import { createLogger } from '../services/infra/logger';
 import { resolveSessionDefaultModelConfig } from '../services/core/sessionDefaults';
@@ -69,7 +71,10 @@ function getUpdateCronJobRequest(source: unknown): { jobId: string; updates: Upd
  * 列出 mail 触发源可绑定的账号与邮箱（N-TRIGGER-MAIL-CREATE-ENTRY-K1）。失败分类
  * 与 cronMailPoller 的 createDefaultMailReader 同构：未注册（设置里没启用）=
  * connector-not-enabled；探测不过（未授权/授权被拒）= not-authorized；readiness
- * unavailable（非 macOS）= unsupported-platform；list_accounts 抛错 = read-error。
+ * unavailable（非 macOS）= unsupported-platform；list_accounts 抛错 = read-error，
+ * 但错误内容是 Apple Events 授权被拒（-1743）时归 not-authorized——缓存 readiness
+ * 已 ready（早前探测通过、授权后被撤销且不失效）或其它路径先到 list_accounts 时，
+ * -1743 只会在这里出现，按错误内容分类才能覆盖（FB-541）。
  * readiness 非 ready 时先补一次 probe_access（重启后 readiness 回 unchecked，已授权
  * 用户不该被逼去设置再点一次）。每个非 ok 分支都带 reason 记日志（降级留痕）。
  */
@@ -111,8 +116,11 @@ async function listMailSources(): Promise<CronMailSourcesResult> {
           .map((item) => item.name);
         mailboxesByAccount[account.name] = mailboxes;
       } catch (error) {
-        // 单账户邮箱列举失败不拖死整个目录：该账户降级为空列表（UI 回落默认 INBOX），
-        // 其余账户照常；失败原因记日志可区分。
+        // 授权被拒（-1743）是整体授权状态变化（用户撤销了自动化授权），不是单
+        // 账户的目录问题：rethrow 让整个调用落进下面的 not-authorized 分支，而
+        // 不是把该账户降级成空列表让用户以为没有邮箱。其余错误照旧单账户降级：
+        // 该账户回落空列表（UI 回落默认 INBOX），其余账户照常，失败记日志可区分。
+        if (isAppleEventsDenied(error)) throw error;
         const detail = error instanceof Error ? error.message : String(error);
         logger.warn(`listMailSources mailbox listing failed for account ${account.name}: ${detail}`);
         mailboxesByAccount[account.name] = [];
@@ -121,8 +129,37 @@ async function listMailSources(): Promise<CronMailSourcesResult> {
     return { ok: true, accounts, mailboxesByAccount };
   } catch (error) {
     const detail = error instanceof Error ? error.message : String(error);
+    // -1743（Apple Events 授权被拒）从 read-error 里细分出来：渲染层对
+    // not-authorized 给「去设置」，对 read-error 只给永远无效的重试。
+    if (isAppleEventsDenied(error)) {
+      logger.warn(`listMailSources unavailable (reason: not-authorized): ${detail}`);
+      return { ok: false, reason: 'not-authorized', detail };
+    }
     logger.warn(`listMailSources unavailable (reason: read-error): ${detail}`);
     return { ok: false, reason: 'read-error', detail };
+  }
+}
+
+/**
+ * webhook hook 注册/轮换。{url, token} 只在成功响应的 data 里出现一次；失败分支
+ * 只带不含密钥的主机消息（失败时本就没有密钥），云端未配置用独立 code 供渲染层本地化。
+ */
+async function runWebhookHookAction(operation: 'register' | 'rotate', payload: unknown): Promise<IPCResponse> {
+  const jobId = getStringField(payload, 'jobId');
+  if (!jobId) throw new Error('Invalid cron job id');
+  const cronService = getCronService();
+  try {
+    const secret = operation === 'register'
+      ? await cronService.registerWebhookHook(jobId)
+      : await cronService.rotateWebhookHook(jobId);
+    return { success: true, data: secret };
+  } catch (error) {
+    const message = error instanceof Error ? error.message : 'Unknown error';
+    logger.warn(`Cron webhook hook ${operation} failed for job ${jobId}: ${message}`);
+    return {
+      success: false,
+      error: { code: error instanceof CloudNotConfiguredError ? 'CRON_CLOUD_NOT_CONFIGURED' : 'CRON_ERROR', message },
+    };
   }
 }
 
@@ -189,6 +226,12 @@ const cronHandlers: RawDomainRouteHandlers<CronDomainRequest, void> = {
     const jobs = cronService.listJobs(filter);
     return { success: true, data: jobs } satisfies IPCResponse;
   },
+  registerWebhookHook: async (_ctx, payload) => runWebhookHookAction('register', payload),
+  rotateWebhookHook: async (_ctx, payload) => runWebhookHookAction('rotate', payload),
+  ensureCloudStream: async () => {
+    getCronService().ensureCloudStream();
+    return { success: true } satisfies IPCResponse;
+  },
   listMailSources: async () => {
     // 可用性结果（含 ok:false 的 reason 分类）走 success:true + data：这是结构化的
     // 「现在能不能选账号」陈述，不是 IPC 层错误；渲染层按 reason 给可区分提示。
@@ -214,6 +257,22 @@ const cronHandlers: RawDomainRouteHandlers<CronDomainRequest, void> = {
     const job = await cronService.grantLoginPassThrough(jobId, siteOrigin);
     return { success: true, data: job } satisfies IPCResponse;
   },
+  // N-RESIDENT-SCHEDULE-KEEPALIVE-DAEMON-FU1：写授权是用户在任务详情面板的显式同意
+  // 动作（同 grantLoginPassThrough 的先例），文件夹解析在 cronWriteGrant.ts。
+  grantWriteScope: async (_ctx, payload) => {
+    const cronService = getCronService();
+    const jobId = getStringField(payload, 'jobId');
+    if (!jobId) throw new Error('Invalid cron job id');
+    const job = await cronService.grantWriteScope(jobId);
+    return { success: true, data: job } satisfies IPCResponse;
+  },
+  revokeWriteScope: async (_ctx, payload) => {
+    const cronService = getCronService();
+    const jobId = getStringField(payload, 'jobId');
+    if (!jobId) throw new Error('Invalid cron job id');
+    const job = await cronService.revokeWriteScope(jobId);
+    return { success: true, data: job } satisfies IPCResponse;
+  },
   deleteJob: async (_ctx, payload) => {
     const cronService = getCronService();
     const jobId = getStringField(payload, 'jobId');
@@ -235,6 +294,25 @@ const cronHandlers: RawDomainRouteHandlers<CronDomainRequest, void> = {
     const limit = getNumberField(payload, 'limit');
     const executions = cronService.getJobExecutions(jobId, limit);
     return { success: true, data: executions } satisfies IPCResponse;
+  },
+  getEventDecisions: async (_ctx, payload) => {
+    const jobId = getStringField(payload, 'jobId');
+    if (!jobId) throw new Error('Invalid cron job id');
+    const limit = getNumberField(payload, 'limit');
+    return { success: true, data: getCronService().getEventDecisions(jobId, limit) } satisfies IPCResponse;
+  },
+  getEventActionModeChange: async (_ctx, payload) => {
+    const jobId = getStringField(payload, 'jobId');
+    if (!jobId) throw new Error('Invalid cron job id');
+    return { success: true, data: getCronService().getEventActionModeChange(jobId) } satisfies IPCResponse;
+  },
+  setEventActionMode: async (_ctx, payload) => {
+    // 唯一能把事件自动化切到 auto 的入口（renderer 侧为确认弹窗动作）；updateJob 里的 actionMode 被忽略。
+    const jobId = getStringField(payload, 'jobId');
+    if (!jobId) throw new Error('Invalid cron job id');
+    const mode = getStringField(payload, 'mode');
+    if (mode !== 'observe' && mode !== 'auto') throw new Error('Invalid cron action mode');
+    return { success: true, data: await getCronService().setEventActionMode(jobId, mode) } satisfies IPCResponse;
   },
   getRecentExecutions: async (_ctx, payload) => {
     const cronService = getCronService();

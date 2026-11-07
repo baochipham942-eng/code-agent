@@ -48,6 +48,8 @@ import {
 } from '../artifactRepairGuard';
 import { preloadDeferredToolsForTurn } from './deferredToolPreload';
 import { runMaxModeInference } from './inferenceMaxMode';
+import { isQuotaWaitSuspendError } from '../../../model/providers/retryStrategy';
+import { settleQuotaWaitInference } from './quotaWaitTurn';
 import { createDocumentEvidenceStream } from '../documentEvidenceStream';
 import { applyEffortControls } from './effortControls';
 import { buildCompactArtifactRepairWriteRetryMessages } from './artifactRepairRetryMessages';
@@ -146,6 +148,7 @@ async function runEngineInference(
         adaptedConfig,
       )
         .catch((err: unknown) => {
+          if (isQuotaWaitSuspendError(err)) throw err;
           const errMsg = getErrorMessage(err);
         // 401/403 是持久性错误（key 过期/无效），禁用 free model 避免重复失败
         if (/401|403|unauthorized|forbidden/i.test(errMsg)) {
@@ -915,6 +918,8 @@ async function inferenceInternal(ctx: ContextAssemblyCtx): Promise<ModelResponse
       // N-CTXTRUTH: 中断路径是估算口径，清掉可能残留的真源标记
       ctx.runtime.contextHealth.setLastTurnProviderUsage(undefined);      return { type: 'text', content: '' };
     }
+
+    if (settleQuotaWaitInference(error, { runId: ctx.runtime.runId, markCancelled: () => ctx.runtime.control.markCancelled() })) return { type: 'text', content: '' };
 
     emitModelFallbackNoticeFromResponse(ctx, getModelFallbackFromError(error)); if (handleImagePayloadExceededError({ ctx, error, llmCallId, langfuse })) return { type: 'text', content: '' };
     logger.error('[AgentLoop] Model inference error:', error);

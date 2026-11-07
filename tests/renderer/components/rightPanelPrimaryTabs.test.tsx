@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import React from 'react';
-import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen, within } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const agentRowsRuntime = vi.hoisted(() => ({ rows: [] as Array<Record<string, unknown>> }));
@@ -9,7 +9,7 @@ vi.mock('../../../src/renderer/hooks/useSessionAgentRows', () => ({
   useSessionAgentRows: () => ({ rows: agentRowsRuntime.rows, conflicts: [] }),
 }));
 
-import { ExpertWorkbenchAutoOpen, WorkbenchTabs } from '../../../src/renderer/components/WorkbenchTabs';
+import { WorkbenchTabs } from '../../../src/renderer/components/WorkbenchTabs';
 import { TaskPanel } from '../../../src/renderer/components/TaskPanel';
 import { TaskDashboardSummary } from '../../../src/renderer/components/TaskPanel/RunWorkbenchCards';
 import { useAppStore } from '../../../src/renderer/stores/appStore';
@@ -44,7 +44,6 @@ beforeEach(() => {
     logsTargetTurn: null,
     logsTargetNonce: 0,
     logsPinned: false,
-    expertsDismissedBySession: {},
   });
   useSessionStore.setState({ currentSessionId: 'session-1' });
 });
@@ -80,29 +79,22 @@ describe('right panel primary task/logs/experts tabs', () => {
     expect(useAppStore.getState().workbenchTabs).toEqual(['overview']);
   });
 
-  it('auto-opens one Experts tab when members appear, retains it when they leave, then allows manual close', async () => {
+  it('never auto-opens the Experts tab when members appear; the user opens it on demand', async () => {
+    // 11-06 产品口径：专家面板多一个视觉焦点，默认不开，用户要看时从会话成员条或「＋」自己打开。
     useAppStore.getState().syncWorkbenchForSession('session-1');
-    const view = render(<><ExpertWorkbenchAutoOpen /><WorkbenchTabs /></>);
-    expect(screen.queryByTestId('workbench-tab-experts')).toBeNull();
-
+    const view = render(<WorkbenchTabs />);
     agentRowsRuntime.rows = [{ key: 'a' }, { key: 'b' }];
-    view.rerender(<><ExpertWorkbenchAutoOpen /><WorkbenchTabs /></>);
-    await waitFor(() => expect(useAppStore.getState().workbenchTabs).toEqual(['experts']));
+    view.rerender(<WorkbenchTabs />);
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(useAppStore.getState().workbenchTabs).toEqual([]);
+
+    useAppStore.getState().openWorkbenchTab('experts', { source: 'user' });
+    view.rerender(<WorkbenchTabs />);
     expect(screen.getByTestId('workbench-tab-experts')).toBeTruthy();
-
-    // 会话快照若晚于成员数据恢复，自动页仍须补回来；真机启动会走到这个时序。
-    useAppStore.setState({ workbenchTabs: [], activeWorkbenchTab: null });
-    await waitFor(() => expect(useAppStore.getState().workbenchTabs).toEqual(['experts']));
-
-    agentRowsRuntime.rows = [];
-    view.rerender(<><ExpertWorkbenchAutoOpen /><WorkbenchTabs /></>);
-    expect(useAppStore.getState().workbenchTabs).toEqual(['experts']);
-
     fireEvent.click(within(screen.getByTestId('workbench-tab-experts')).getByLabelText(
       en.workbenchTabs.closeView.replace('{view}', en.workbenchTabs.expertsLabel),
     ));
     expect(useAppStore.getState().workbenchTabs).toEqual([]);
-    expect(useRightPanelTabsStore.getState().expertsDismissedBySession['session-1']).toBe(true);
   });
 
   it('reuses the same Logs tab and moves its target when another task step opens the process', () => {

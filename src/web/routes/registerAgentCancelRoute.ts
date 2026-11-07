@@ -5,7 +5,7 @@ import { CANCELLATION_TIMEOUTS } from '../../shared/constants';
 import { AgentCancelBodySchema } from './agentBodySchemas';
 import { isDurableTerminalNativeControl } from './agentDurableRouteLifecycle';
 
-async function waitForCancelSettlement(input: {
+export async function waitForCancelSettlement(input: {
   runId: string;
   sessionId: string;
   runRegistry: RunRegistry;

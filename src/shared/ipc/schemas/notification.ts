@@ -13,10 +13,24 @@ const NotificationDomainRequestSchema = z.object({
   action: z.enum([
     'getRecent',
     'reportClientDelivery',
+    'reportPresence',
   ]),
   payload: z.unknown().optional(),
   requestId: z.string().optional(),
 });
+
+/**
+ * reportPresence 载荷（N-NOTIFY-PRESENCE-HEARTBEAT）：renderer 心跳上报桌面在场信号，
+ * host 侧 DesktopPresence 落地后供 CompanionPushOutbox 抑制普通推送。host handler 用它
+ * safeParse 拒绝畸形载荷；renderer hook 以同形类型组装，两端对称。
+ */
+export const notificationPresenceReportSchema = z.object({
+  visible: z.boolean(),
+  focused: z.boolean(),
+  lastInputAt: z.number(),
+  viewingSessionId: z.string().nullable().optional(),
+}).strict();
+export type NotificationPresenceReport = z.infer<typeof notificationPresenceReportSchema>;
 
 export type NotificationDomainRequest = z.infer<typeof NotificationDomainRequestSchema>;
 

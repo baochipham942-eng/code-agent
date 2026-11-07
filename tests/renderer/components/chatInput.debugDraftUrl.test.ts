@@ -5,16 +5,13 @@ import {
 } from '../../../src/renderer/components/features/chat/ChatInput/debugDraftUrl';
 
 describe('ChatInput debug draft URL', () => {
-  it('reads local debug draft content and submit flag', () => {
+  it('reads local debug draft content but never auto-submits (FB-430)', () => {
     const result = readDebugDraftFromLocation({
       hostname: '127.0.0.1',
       search: '?__neoDraft=%E7%9C%9F%E5%AE%9Ecowork&__neoSubmit=1',
     });
 
-    expect(result).toEqual({
-      content: '真实cowork',
-      autoSubmit: true,
-    });
+    expect(result).toEqual({ content: '真实cowork' });
   });
 
   it('ignores non-local hosts', () => {

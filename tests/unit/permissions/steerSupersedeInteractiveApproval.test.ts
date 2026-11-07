@@ -71,6 +71,10 @@ describe('转向作废交互审批卡', () => {
       sessionId: 'attended',
       forceConfirm: true,
     });
+    // 无人值守 file_write 在停车分支前先过写授权判定（N-RESIDENT-SCHEDULE-KEEPALIVE-DAEMON-FU1，
+    // 异步查会话来源）；本 describe 挂了假计时器，setImmediate 也被假掉，
+    // 用 advanceTimersByTimeAsync(0) 做同构 flush 后再断言停车在场。
+    await vi.advanceTimersByTimeAsync(0);
     const pending = island.listPendingRequests();
     const interactiveRequest = pending.find((request) => request.sessionId === 'attended');
     const parkedRequest = pending.find((request) => request.sessionId === 'parked-session');

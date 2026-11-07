@@ -281,13 +281,13 @@ describe('v2 entry 委派', () => {
   // Codex 审计：不能只证 runtime 被调用——必须断言带了正确 (db, payload)，否则丢参仍绿
   it('memoryEntryUpdate 带 (db, payload) 委派；缺 entryId 报错', async () => {
     expect((await call('memoryEntryUpdate', { entryId: 'e1', patch: { x: 1 } })).data).toEqual({ ok: true });
-    expect(rt.updateMemoryEntry).toHaveBeenCalledWith(db, { entryId: 'e1', patch: { x: 1 } });
+    expect(rt.updateMemoryEntry).toHaveBeenCalledWith(db, { entryId: 'e1', patch: { x: 1 } }, { journal: { actor: 'user_manual' } });
     expect(await call('memoryEntryUpdate', {})).toMatchObject({ success: false, error: { code: 'INTERNAL_ERROR', message: expect.stringContaining('entryId') } });
   });
 
   it('memoryEntryDelete 带 (db, payload) 委派；缺 entryId 报错', async () => {
     expect((await call('memoryEntryDelete', { entryId: 'e9' })).data).toEqual({ ok: true });
-    expect(rt.deleteMemoryEntry).toHaveBeenCalledWith(db, { entryId: 'e9' });
+    expect(rt.deleteMemoryEntry).toHaveBeenCalledWith(db, { entryId: 'e9' }, { journal: { actor: 'user_manual' } });
     expect(await call('memoryEntryDelete', {})).toMatchObject({ success: false, error: { message: expect.stringContaining('entryId') } });
   });
 

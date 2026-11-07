@@ -10,7 +10,7 @@ import {
 type EntitlementPolicy = NonNullable<CloudConfigPayload['entitlement']>;
 type EntitlementStatus = EntitlementPolicy['status'];
 
-interface ControlPlaneSubject {
+export interface ControlPlaneSubject {
   id: string;
   email?: string;
   source: 'server_token_map' | 'supabase_auth';
@@ -561,4 +561,49 @@ export async function applyServerEntitlementGateAsync(
     subject,
     entitlement,
   );
+}
+
+/**
+ * 只做「请求 → 已验证主体」的解析（N-JEV-NEO-KEY 导出）：按与 entitlement 网关同一套
+ * 鉴权材料（token map 或 Supabase access token）解析主体，不做 entitlement 过滤、
+ * 不读 entitlement 表。开放模式（无任何鉴权配置）/ 缺 token / 校验失败一律 null——
+ * 调用方（jev-judge handler）按 401 fail-closed 处理。既有网关行为不受本函数影响。
+ */
+export async function resolveControlPlaneSubject(
+  req: ControlPlaneRequestLike,
+  env: NodeJS.ProcessEnv = process.env,
+): Promise<ControlPlaneSubject | null> {
+  const tokenMap = readSubjectEntitlementMap(env);
+  const authRequired = readBooleanEnv(env, [
+    'CONTROL_PLANE_ENTITLEMENT_REQUIRED',
+    'CODE_AGENT_CONTROL_PLANE_ENTITLEMENT_REQUIRED',
+  ]);
+  const supabaseAuth = resolveSupabaseAuthMode(env);
+
+  if (!authRequired && !tokenMap && !supabaseAuth.shouldUse) {
+    return null;
+  }
+
+  const token = getBearerToken(req);
+  if (!token) {
+    return null;
+  }
+
+  if (!supabaseAuth.shouldUse) {
+    const mapping = tokenMap?.[token];
+    if (!isValidMapping(mapping)) {
+      return null;
+    }
+    return {
+      id: mapping.subject.id,
+      ...(mapping.subject.email ? { email: mapping.subject.email } : {}),
+      source: 'server_token_map',
+    };
+  }
+
+  if (!supabaseAuth.config) {
+    return null;
+  }
+
+  return verifySupabaseAccessToken(token, supabaseAuth.config, env);
 }

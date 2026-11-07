@@ -9,6 +9,27 @@ export type SessionAutomationType = 'cron' | 'heartbeat' | 'loop' | 'role_wake' 
 /** Cron 运行结果头部行解析出的紧急档位（N-CRON-INBOX-URGENCY-TIER）：must_today 置顶、can_wait 次之、fyi 兜底。 */
 export type CronUrgency = 'must_today' | 'can_wait' | 'fyi';
 
+/**
+ * N-CRON-RUN-COMPLETED-BUT-DENIED：无人值守运行里有命令没获批准且没有产出。
+ * 执行状态保持 completed（拒绝不是任务失败，不触发重试/自动停用），由这个标记
+ * 让运行列表/详情/待过目收件箱把绿色「成功」换成琥珀色「需处理」。
+ * reason 归并自 hostReason.code：user=真人拒、timeout=等批准超时、
+ * cancelled=运行取消/重启作废、other=其余（fail-closed、无审批界面等）。
+ */
+export type CronPermissionDeniedReason = 'user' | 'timeout' | 'cancelled' | 'other';
+
+export interface CronPermissionDeniedMarker {
+  /** 被拒的 ask 级工具调用条数（= steps.length）。 */
+  count: number;
+  steps: Array<{
+    /** 工具内部名（bash / mcp__… 等）。 */
+    tool: string;
+    /** 一句话摘要（命令/路径，<=80 字符，已经过审批预览同款脱敏）。 */
+    summary: string;
+    reason: CronPermissionDeniedReason;
+  }>;
+}
+
 export type SessionAutomationStatus =
   | 'active'
   | 'running'
@@ -28,7 +49,9 @@ export type SessionAutomationEventKind =
   | 'failed'
   | 'cancelled'
   | 'skipped'
-  | 'stage_ready';
+  | 'stage_ready'
+  /** Event automation switched between observe and auto (N-TRIGGER-OBSERVE-MODE). */
+  | 'action_mode_changed';
 
 export interface SessionAutomationNextStageConfig {
   /** Explicit prompt to send back into the source session when this automation reaches a terminal success state. */
@@ -115,6 +138,8 @@ export interface SessionAutomationConfig extends Record<string, unknown> {
     };
     /** 到达运行次数上限后由 cron 记录的待过目原因。 */
     maxRunsReached?: { maxRuns: number; summary?: string };
+    /** 有命令没获批准且无产出的运行标记（N-CRON-RUN-COMPLETED-BUT-DENIED）：收件箱据此显示「需处理」。 */
+    permissionDenied?: CronPermissionDeniedMarker;
   };
   /** 最近一次无人值守运行遇到登录墙；用户过目后清除。 */
   loginWall?: { siteOrigin: string; at: number };
@@ -206,4 +231,14 @@ export interface UpsertSessionAutomationInput {
   sourceRefId?: string;
   resultSessionId?: string;
   config?: SessionAutomationConfig;
+}
+
+/** 无人值守停车可见性（N-CRON-UNATTENDED-BASH-PARK-STUCK）：一条「等批准」运行（已 join 到 cron 任务）。 */
+export interface AwaitingApprovalRun {
+  jobId: string;
+  executionId: string | null;
+  requestId: string;
+  requestedAt: number;
+  /** 已脱敏的命令/路径预览（argsPreview ?? argsSummary），没有则不带。 */
+  commandPreview?: string;
 }

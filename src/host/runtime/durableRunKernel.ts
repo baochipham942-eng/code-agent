@@ -100,6 +100,7 @@ export interface DurableCheckpointInput {
   interruptCause?: RunInterruptCause;
   autoResumeCount?: number;
   clearInterruptCause?: boolean;
+  quotaWaitDueAt?: number;
 }
 
 export interface DurableTerminalInput {
@@ -355,6 +356,7 @@ export class DurableRunKernel implements RunKernelAdapter {
       autoResumeCount: input.autoResumeCount
         ?? ((envelope.autoResumeCount ?? 0) > 0 && recordsLiveProgress(input.events) ? 0 : undefined),
       clearInterruptCause: input.clearInterruptCause,
+      quotaWaitDueAt: input.quotaWaitDueAt,
     });
   }
 
@@ -380,7 +382,7 @@ export class DurableRunKernel implements RunKernelAdapter {
 
   async recoverOnStartup(now: number, limit = 100): Promise<RunRehydrationPlan[]> {
     const stores = this.requireStores();
-    // 预算耗尽的崩溃 run 与显式停靠（user_stop / guard_halt）的 run：重启后认领为本进程持有、
+    // 预算耗尽的崩溃 run 与显式停靠（user_stop / guard_halt / quota_wait）的 run：重启后认领为本进程持有、
     // 停靠成 waiting 等用户「继续」，永不进自动续跑（ADR-075 修订 2026-09-29）。
     const parked = stores.listParkedForReclaim
       ? await stores.listParkedForReclaim(now, limit)

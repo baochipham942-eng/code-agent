@@ -323,6 +323,10 @@ export class BrowserService implements Disposable {
     }
   }
 
+  setLeaseInUse(inUse: boolean): void {
+    this.leaseController.setInUse(inUse);
+  }
+
   isRunning(): boolean {
     return this.browser !== null || this.context !== null;
   }
@@ -456,6 +460,11 @@ export class BrowserService implements Disposable {
     }
   }
 
+  /** Live page URL of the target tab (tab.url is only refreshed on load events). */
+  getLiveTabUrl(tabId?: string): string {
+    return this.getTab(tabId).page.url();
+  }
+
   getActiveTab(): BrowserTab | null {
     return this.activeTabId ? this.tabs.get(this.activeTabId) || null : null;
   }
@@ -570,6 +579,10 @@ export class BrowserService implements Disposable {
 
   async getElementBoundingBox(selector: string, tabId?: string): Promise<ElementInfo['rect'] | null> {
     return getBrowserElementBoundingBox(this.getTab(tabId), selector);
+  }
+
+  async resolveTargetRef(targetRefInput: unknown, tabId?: string): Promise<{ targetRef: BrowserTargetRef }> {
+    return await this.targetRefs.resolve(targetRefInput, (id) => this.getTab(id), tabId);
   }
 
   async clickTargetRef(targetRefInput: unknown, tabId?: string): Promise<BrowserTargetRef> {

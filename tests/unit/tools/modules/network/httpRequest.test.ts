@@ -23,6 +23,7 @@ vi.mock('../../../../../src/host/connectors/oauth/providerRegistry', () => ({
 }));
 
 import { httpRequestModule } from '../../../../../src/host/tools/modules/network/httpRequest';
+import { WEB_FETCH } from '../../../../../src/shared/constants';
 
 function makeLogger(): Logger {
   return { debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() };
@@ -195,6 +196,170 @@ describe('httpRequestModule (native)', () => {
     });
   });
 
+  // N-WEBFETCH-BLOCK-PRIVATE-NET-FU1 — 字面量绕过与重定向逐跳守卫
+  describe('SSRF: literal hostname forms and per-hop redirect guard (FU1)', () => {
+    /** 按 URL 路由的 fetch mock，返回值同时记录实际请求过的 URL 序列。 */
+    function routeFetchWithRedirects(
+      routes: Record<string, { status: number; location?: string; body?: string }>,
+    ): string[] {
+      const requestedUrls: string[] = [];
+      fetchMock.mockImplementation(async (input: unknown) => {
+        const requestedUrl = typeof input === 'string' ? input : String(input);
+        requestedUrls.push(requestedUrl);
+        const route = routes[requestedUrl];
+        if (!route) throw new Error(`unexpected fetch target: ${requestedUrl}`);
+        return makeResponse({
+          status: route.status,
+          statusText: route.status >= 300 && route.status < 400 ? 'Found' : 'OK',
+          body: route.body,
+          headers: route.location
+            ? { location: route.location }
+            : { 'content-type': 'text/plain' },
+        });
+      });
+      return requestedUrls;
+    }
+
+    it.each([
+      'http://[::1]/',
+      'http://[fd00::1]/',
+      'http://a.localhost/',
+      'http://localhost./',
+    ])('refuses private/loopback literal form %s before any fetch', async (url) => {
+      fetchMock.mockResolvedValue(makeResponse({ body: 'leaked' }));
+      const result = await run({ url });
+      expect(result.ok).toBe(false);
+      if (!result.ok) {
+        expect(result.code).toBe('INVALID_ARGS');
+        expect(result.error).toMatch(/internal network/);
+        expect(result.error).toContain('curl');
+      }
+      expect(fetchMock).not.toHaveBeenCalled();
+    });
+
+    it('refuses a 302 pointing at loopback before the second request is sent', async () => {
+      const requested = routeFetchWithRedirects({
+        'https://public.example/start': { status: 302, location: 'http://127.0.0.1:8080/x' },
+        'http://127.0.0.1:8080/x': { status: 200, body: 'INTERNAL-SERVICE-SECRET' },
+      });
+      const result = await run({ url: 'https://public.example/start' });
+      expect(result.ok).toBe(false);
+      if (!result.ok) {
+        expect(result.code).toBe('INVALID_ARGS');
+        expect(result.error).toMatch(/internal network/);
+        expect(result.error).toContain('127.0.0.1');
+        expect(result.error).toContain('curl');
+      }
+      expect(fetchMock).toHaveBeenCalledTimes(1);
+      expect(requested).not.toContain('http://127.0.0.1:8080/x');
+    });
+
+    it('follows a 302 to a relative path on the same public host and returns the final body', async () => {
+      routeFetchWithRedirects({
+        'https://public.example/start': { status: 302, location: '/final' },
+        'https://public.example/final': { status: 200, body: 'final body' },
+      });
+      const result = await run({ url: 'https://public.example/start' });
+      expect(result.ok).toBe(true);
+      if (result.ok) expect(result.output).toContain('final body');
+      expect(fetchMock).toHaveBeenCalledTimes(2);
+    });
+
+    it('refuses a 302 chain that lands on the cloud metadata service', async () => {
+      const requested = routeFetchWithRedirects({
+        'https://public.example/one': { status: 302, location: 'https://public.example/two' },
+        'https://public.example/two': { status: 302, location: 'http://169.254.169.254/latest/meta-data/' },
+        'http://169.254.169.254/latest/meta-data/': { status: 200, body: 'ami-0123456789abcdef0' },
+      });
+      const result = await run({ url: 'https://public.example/one' });
+      expect(result.ok).toBe(false);
+      if (!result.ok) {
+        expect(result.error).toMatch(/internal network/);
+        expect(result.error).toContain('169.254.169.254');
+      }
+      expect(requested).not.toContain('169.254.169.254');
+      expect(fetchMock).toHaveBeenCalledTimes(2);
+    });
+
+    it('refuses redirect chains longer than WEB_FETCH.MAX_REDIRECTS', async () => {
+      const hops = WEB_FETCH.MAX_REDIRECTS + 3;
+      const routes: Record<string, { status: number; location?: string; body?: string }> = {};
+      for (let i = 0; i < hops; i++) {
+        routes[`https://public.example/hop/${i}`] = {
+          status: 302,
+          location: `https://public.example/hop/${i + 1}`,
+        };
+      }
+      routes[`https://public.example/hop/${hops}`] = { status: 200, body: 'unreachable end' };
+      routeFetchWithRedirects(routes);
+
+      const result = await run({ url: 'https://public.example/hop/0' });
+      expect(result.ok).toBe(false);
+      if (!result.ok) {
+        expect(result.error).toMatch(/Too many redirects/);
+      }
+      expect(fetchMock.mock.calls.length).toBeLessThanOrEqual(WEB_FETCH.MAX_REDIRECTS + 1);
+    });
+  });
+
+  // rework r1 — 旧 BLOCKED_HOSTS 明确拦截、收口到 ssrfGuard 后漏掉的两个云元数据地址，
+  // 必须维持基线的 deny：直连与重定向逐跳守卫都不放行。
+  describe('SSRF: retired BLOCKED_HOSTS metadata entries stay blocked (rework r1)', () => {
+    it('refuses Alibaba Cloud ECS metadata 100.100.100.200 before any fetch', async () => {
+      fetchMock.mockResolvedValue(makeResponse({ body: 'leaked' }));
+      const result = await run({ url: 'http://100.100.100.200/latest/meta-data/' });
+      expect(result.ok).toBe(false);
+      if (!result.ok) {
+        expect(result.code).toBe('INVALID_ARGS');
+        expect(result.error).toMatch(/internal network/);
+        expect(result.error).toContain('100.100.100.200');
+        expect(result.error).toContain('curl');
+      }
+      expect(fetchMock).not.toHaveBeenCalled();
+    });
+
+    it('refuses Azure IMDS hostname metadata.azure.com before any fetch', async () => {
+      fetchMock.mockResolvedValue(makeResponse({ body: 'leaked' }));
+      const result = await run({ url: 'http://metadata.azure.com/metadata/instance' });
+      expect(result.ok).toBe(false);
+      if (!result.ok) {
+        expect(result.code).toBe('INVALID_ARGS');
+        expect(result.error).toMatch(/internal network/);
+        expect(result.error).toContain('metadata.azure.com');
+        expect(result.error).toContain('curl');
+      }
+      expect(fetchMock).not.toHaveBeenCalled();
+    });
+
+    it('refuses a 302 hop landing on 100.100.100.200 before the second request is sent', async () => {
+      const ecsTarget = 'http://100.100.100.200/latest/meta-data/ram/security-credentials/';
+      const requested: string[] = [];
+      fetchMock.mockImplementation(async (input: unknown) => {
+        const requestedUrl = typeof input === 'string' ? input : String(input);
+        requested.push(requestedUrl);
+        if (requestedUrl === 'https://public.example/ecsmeta') {
+          return makeResponse({
+            status: 302,
+            statusText: 'Found',
+            headers: { location: ecsTarget },
+          });
+        }
+        if (requestedUrl === ecsTarget) {
+          return makeResponse({ status: 200, body: 'RAM-TEMP-CREDENTIALS' });
+        }
+        throw new Error(`unexpected fetch target: ${requestedUrl}`);
+      });
+      const result = await run({ url: 'https://public.example/ecsmeta' });
+      expect(result.ok).toBe(false);
+      if (!result.ok) {
+        expect(result.error).toMatch(/internal network/);
+        expect(result.error).toContain('100.100.100.200');
+      }
+      expect(fetchMock).toHaveBeenCalledTimes(1);
+      expect(requested).not.toContain(ecsTarget);
+    });
+  });
+
   describe('happy paths', () => {
     it('GET returns body and status', async () => {
       fetchMock.mockResolvedValue(
@@ -290,6 +455,104 @@ describe('httpRequestModule (native)', () => {
       if (result.ok) {
         expect(result.output).toContain('Warning: Response too large');
       }
+    });
+  });
+
+  // N-WEBFETCH-BLOCK-PRIVATE-NET-FU1 — 公网流量行为保持不变
+  describe('public traffic stays unchanged (FU1)', () => {
+    /**
+     * 按 URL 路由的 fetch mock。逐调用快照 method/body/headers——requestHeaders
+     * 是跨跳共享的可变 Headers 实例（跨域跳转会删凭证头），真实 fetch 在调用时
+     * 序列化，mock 也必须拍快照再断言。
+     */
+    function routeFetchWithRedirects(
+      routes: Record<string, { status: number; location?: string; body?: string }>,
+    ): Array<{ url: string; method: string; body: unknown; headers: Headers }> {
+      const captured: Array<{ url: string; method: string; body: unknown; headers: Headers }> = [];
+      fetchMock.mockImplementation(async (input: unknown, options: RequestInit = {}) => {
+        const requestedUrl = typeof input === 'string' ? input : String(input);
+        const route = routes[requestedUrl];
+        if (!route) throw new Error(`unexpected fetch target: ${requestedUrl}`);
+        captured.push({
+          url: requestedUrl,
+          method: options.method ?? 'GET',
+          body: options.body,
+          headers: new Headers(options.headers),
+        });
+        return makeResponse({
+          status: route.status,
+          statusText: route.status >= 300 && route.status < 400 ? 'Found' : 'OK',
+          body: route.body,
+          headers: route.location
+            ? { location: route.location }
+            : { 'content-type': 'text/plain' },
+        });
+      });
+      return captured;
+    }
+
+    it('plain public GET still returns the final body and meta', async () => {
+      fetchMock.mockResolvedValue(
+        makeResponse({ status: 200, body: 'plain body', headers: { 'content-type': 'text/plain' } }),
+      );
+      const result = await run({ url: 'https://example.com/api' });
+      expect(result.ok).toBe(true);
+      if (result.ok) {
+        expect(result.output).toContain('HTTP 200 OK');
+        expect(result.output).toContain('plain body');
+        expect(result.meta).toMatchObject({ status: 200, url: 'https://example.com/api', method: 'GET' });
+      }
+    });
+
+    it('public → public cross-origin redirect still returns the final body', async () => {
+      routeFetchWithRedirects({
+        'https://a.example/start': { status: 302, location: 'https://b.example/landing' },
+        'https://b.example/landing': { status: 200, body: 'landing body' },
+      });
+      const result = await run({ url: 'https://a.example/start' });
+      expect(result.ok).toBe(true);
+      if (result.ok) expect(result.output).toContain('landing body');
+      expect(fetchMock).toHaveBeenCalledTimes(2);
+    });
+
+    it('drops model-supplied credential headers on a cross-origin hop', async () => {
+      const captured = routeFetchWithRedirects({
+        'https://a.example/start': { status: 302, location: 'https://b.example/landing' },
+        'https://b.example/landing': { status: 200, body: 'landing body' },
+      });
+      await run({
+        url: 'https://a.example/start',
+        headers: { cookie: 'sid=steal-me', authorization: 'Bearer model-supplied', 'x-safe': 'yes' },
+      });
+      expect(captured[0].headers.get('cookie')).toBe('sid=steal-me');
+      expect(captured[1].headers.has('cookie')).toBe(false);
+      expect(captured[1].headers.has('authorization')).toBe(false);
+      expect(captured[1].headers.get('x-safe')).toBe('yes');
+    });
+
+    it('converts 302 on POST to GET without body on the next hop', async () => {
+      const captured = routeFetchWithRedirects({
+        'https://public.example/form': { status: 302, location: 'https://public.example/after' },
+        'https://public.example/after': { status: 200, body: 'after' },
+      });
+      const result = await run({ url: 'https://public.example/form', method: 'POST', body: '{"a":1}' });
+      expect(result.ok).toBe(true);
+      expect(captured[0].method).toBe('POST');
+      expect(captured[0].body).toBe('{"a":1}');
+      expect(captured[1].method).toBe('GET');
+      expect(captured[1].body).toBeUndefined();
+    });
+
+    it('keeps method and body across 307 and 308 hops', async () => {
+      const captured = routeFetchWithRedirects({
+        'https://public.example/s7': { status: 307, location: 'https://public.example/s8' },
+        'https://public.example/s8': { status: 308, location: 'https://public.example/end' },
+        'https://public.example/end': { status: 200, body: 'end' },
+      });
+      const result = await run({ url: 'https://public.example/s7', method: 'POST', body: '{"a":1}' });
+      expect(result.ok).toBe(true);
+      expect(captured[2].method).toBe('POST');
+      expect(captured[2].body).toBe('{"a":1}');
     });
   });
 

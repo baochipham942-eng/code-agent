@@ -8,6 +8,8 @@ import { useAppStore } from './appStore';
 import { useAppshotsStore } from './appshotsStore';
 import { useComposerStore } from './composerStore';
 import { isDraftOrSpaceScopeKey } from './composerScopeModel';
+import { excludeBusySessions, type DraftBusySignals } from './sessionDraftBusyGuard';
+import { toast } from '../hooks/useToast';
 
 const logger = createLogger('SessionCreate');
 
@@ -89,7 +91,7 @@ function normalizeSession(session: Session & {
   };
 }
 
-interface SessionCreateStoreSlice {
+interface SessionCreateStoreSlice extends DraftBusySignals {
   sessions: SessionCreateMeta[];
   currentSessionId: string | null;
   messages: Message[];
@@ -147,7 +149,9 @@ export async function executeCreateSession(
     if (nextTitle === '新对话') {
       useAppshotsStore.getState().clear();
       const reusableSession = findReusableNewSessionDraft({
-        sessions: get().sessions,
+        sessions: excludeBusySessions(
+          get().sessions, get().currentSessionId, get().messages, get(),
+        ),
         currentSessionId: get().currentSessionId,
         messages: get().messages,
         todos: get().todos,
@@ -286,10 +290,9 @@ export async function executeCreateSession(
     return null;
   } catch (error) {
     logger.error('Failed to create session', error);
-    set({
-      error: error instanceof Error ? error.message : 'Failed to create session',
-      isLoading: false,
-    });
+    const reason = error instanceof Error ? error.message : 'Failed to create session';
+    set({ error: reason, isLoading: false });
+    toast.error(`新建会话失败：${reason}`);
     return null;
   }
 }

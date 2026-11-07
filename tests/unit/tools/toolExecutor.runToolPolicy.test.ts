@@ -98,6 +98,40 @@ describe('ToolExecutor run tool policy gate (--tools/--disallowed-tools)', () =>
     expect(result.success).toBe(true);
   });
 
+  // FB-327：strict skill 流程面（create-role/edit-role）的 canonical 工具名是白名单的
+  // 合法补充——组装层放行后，执行层兜底闸不许二次拦截 propose_role。
+  it('skillBoundaryAllowedTools 豁免：前台白名单外的流程工具照常派发', async () => {
+    const executor = new ToolExecutor({
+      requestPermission: async () => true,
+      workingDirectory: '/tmp/workbench',
+    });
+
+    const result = await executor.execute('Bash', { command: 'echo hi' }, {
+      sessionId: 's1',
+      allowedToolNames: ['Read'],
+      skillBoundaryAllowedTools: ['propose_role', 'Bash'],
+    });
+
+    expect(resolverState.execute).toHaveBeenCalled();
+    expect(result.success).toBe(true);
+  });
+
+  it('skillBoundaryAllowedTools 不放宽显式 deny（deny 一票否决保持）', async () => {
+    const executor = new ToolExecutor({
+      requestPermission: async () => true,
+      workingDirectory: '/tmp/workbench',
+    });
+
+    const result = await executor.execute('Bash', { command: 'ls' }, {
+      sessionId: 's1',
+      deniedToolNames: ['Bash'],
+      skillBoundaryAllowedTools: ['Bash'],
+    });
+
+    expect(result.success).toBe(false);
+    expect(resolverState.execute).not.toHaveBeenCalled();
+  });
+
   it('无策略时行为不变（不触发兜底闸）', async () => {
     const executor = new ToolExecutor({
       requestPermission: async () => true,

@@ -148,9 +148,18 @@ export interface PendingProjectGoalChatSeed {
   goal: GoalRunInput;
 }
 
+/**
+ * 设置页的用户关闭落点（Stripe portal return_url 模式）：从二级页（目前只有自动化的
+ * webhook 门）「去设置」时记下来源页，用户关闭设置（X / Esc）时直接回该页而不是聊天首页。
+ * 只经 AppState 消费，不单独导出。
+ */
+type SettingsReturnTo = 'cronCenter';
+
 export interface AppState {
   // UI State
   showSettings: boolean;
+  /** 非空 = 这次设置是带返回落点打开的；closeSettings 据此决定关了落哪儿。 */
+  settingsReturnTo: SettingsReturnTo | null;
   settingsInitialTab: SettingsTab | null; // 打开设置时默认选中的 Tab
   settingsMemoryFocus: SettingsMemoryFocus | null;
   settingsCapabilityFocus: SettingsCapabilityFocus | null;
@@ -191,7 +200,10 @@ export interface AppState {
   showActivityPanel: boolean;
   showCapabilityHub: boolean;
   capabilityHubTab: CapabilityHubTab;
+  expertPanelTab: 'mine' | 'discover';
   showCronCenter: boolean;
+  /** 一次性请求：自动化中心切到「运行」页（通知点击落到待审批卡）；面板消费后清空。 */
+  cronCenterRunsRequested: boolean;
   showTimeCapabilityCenter: boolean;
   showFileExplorer: boolean;
   voicePasteStatus: 'idle' | 'recording' | 'transcribing' | 'processing';
@@ -210,6 +222,10 @@ export interface AppState {
 
   // 开发者模式：对话流中显示回合质量评分等调试信息
   developerMode: boolean;
+
+  // 首次醒来卡片当前可见的 roleId（RoleFirstWakeCard 挂载/消失时写）。
+  // ChatView 据此在空会话压掉「继续上次的会话」空态与起手卡（2026-11-05 owner 返修）。
+  firstWakeCardRoleId: string | null;
 
 
   // Chat State (messages/todos/currentSessionId 已迁移到 sessionStore)
@@ -293,6 +309,10 @@ export interface AppState {
 
   // Actions
   setShowSettings: (show: boolean) => void;
+  /** 带返回落点打开设置：用户关闭时回到 returnTo 页（深链落点不在设置页时退化为 openSettingsTab）。 */
+  openSettingsWithReturn: (tab: SettingsTab, returnTo: SettingsReturnTo) => void;
+  /** 用户关闭设置（X / Esc）：带返回落点时回该页；否则与 setShowSettings(false) 等价。 */
+  closeSettings: () => void;
   setPendingRoleChatSeed: (seed: string | null) => void;
   openSettingsTab: (tab: SettingsTab) => void; // 打开设置并跳转到指定 Tab
   openMemorySettings: (focus?: Omit<SettingsMemoryFocus, 'nonce'>) => void;
@@ -339,9 +359,12 @@ export interface AppState {
   setShowActivityPanel: (show: boolean) => void;
   setShowCapabilityHub: (show: boolean) => void;
   openCapabilityHub: (tab: CapabilityHubTab) => void;
+  setExpertPanelTab: (tab: 'mine' | 'discover') => void;
   /** 回到会话区：关掉互斥表里所有二级页。侧栏选会话/新建任务时调用。 */
   closeSecondaryPages: () => void;
   setShowCronCenter: (show: boolean) => void;
+  openCronCenterRuns: () => void;
+  clearCronCenterRunsRequest: () => void;
   setShowTimeCapabilityCenter: (show: boolean) => void;
   setShowFileExplorer: (show: boolean) => void;
   setVoicePasteStatus: (status: 'idle' | 'recording' | 'transcribing' | 'processing') => void;
@@ -352,6 +375,8 @@ export interface AppState {
   setCloudUIStrings: (strings: CloudUIStrings | null) => void;
   setDisclosureLevel: (level: DisclosureLevel) => void;
   setDeveloperMode: (enabled: boolean) => void;
+  /** 置 roleId = 可见；置 null（带 previous）= 仅在仍是自己那份时清空，防并发卡片互抹 */
+  setFirstWakeCardRoleId: (roleId: string | null, previous?: string) => void;
   setIsProcessing: (processing: boolean) => void;
   // 按会话设置处理状态
   setSessionProcessing: (sessionId: string, processing: boolean) => void;

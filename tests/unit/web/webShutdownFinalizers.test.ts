@@ -209,7 +209,9 @@ describe('接线守护：收尾步骤必须排在干净关库之前', () => {
   });
 
   it('预算在 shutdown 内创建（不是模块加载时），否则预算从进程启动就开始烧', () => {
-    const shutdownStart = source.indexOf('const shutdown = async ()');
+    // shutdown 现在带 source 参数（N-WEBSERVER-DEATH-SUPERVISE-DIAG 退出归因），
+    // 锚点跟随签名：仍钉「cap 在 shutdown 函数体内创建」这一语义。
+    const shutdownStart = source.indexOf('const shutdown = async (source');
     const capCreated = source.indexOf('createShutdownStepCap()');
 
     expect(shutdownStart).toBeGreaterThan(-1);

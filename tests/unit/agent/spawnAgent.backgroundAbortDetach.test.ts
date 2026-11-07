@@ -29,6 +29,7 @@ vi.mock('../../../src/host/agent/spawnGuard', () => ({
     getDisabledTools: () => [],
     getReadonlyDisabledTools: () => [],
     getRunningCount: () => 1,
+    onComplete: vi.fn(),
   }),
 }));
 

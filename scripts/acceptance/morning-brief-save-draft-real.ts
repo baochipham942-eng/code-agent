@@ -17,18 +17,23 @@ const MAX_OUTPUT_TOKENS = 1024;
 const CALL_TIMEOUT_MS = 120_000;
 
 let getSessionCommandCenterBrainContextForPrompt: typeof import('../../src/host/app/sessionCommandCenterBrain').getSessionCommandCenterBrainContextForPrompt;
+let getTextForegroundToolNamesForPrompt: typeof import('../../src/host/app/sessionCommandCenterBrain').getTextForegroundToolNamesForPrompt;
+let applyMorningBriefSaveDraftRoleTools: typeof import('../../src/host/app/morningBriefSaveDraftTools').applyMorningBriefSaveDraftRoleTools;
 let mailDraftSchema: ToolSchema;
 let mailSendSchema: ToolSchema;
 let delegateSessionSchema: ToolSchema;
 
 async function loadProductModules(): Promise<void> {
-  const [brain, mailDraft, mailSend, delegateSession] = await Promise.all([
+  const [brain, saveDraftTools, mailDraft, mailSend, delegateSession] = await Promise.all([
     import('../../src/host/app/sessionCommandCenterBrain'),
+    import('../../src/host/app/morningBriefSaveDraftTools'),
     import('../../src/host/tools/modules/connectors/mailDraft.schema'),
     import('../../src/host/tools/modules/connectors/mailSend.schema'),
     import('../../src/host/tools/modules/delegation/delegateSession.schema'),
   ]);
   getSessionCommandCenterBrainContextForPrompt = brain.getSessionCommandCenterBrainContextForPrompt;
+  getTextForegroundToolNamesForPrompt = brain.getTextForegroundToolNamesForPrompt;
+  applyMorningBriefSaveDraftRoleTools = saveDraftTools.applyMorningBriefSaveDraftRoleTools;
   mailDraftSchema = mailDraft.mailDraftSchema;
   mailSendSchema = mailSend.mailSendSchema;
   delegateSessionSchema = delegateSession.delegateSessionSchema;
@@ -153,10 +158,13 @@ function systemPrompt(removeRuleFive: boolean): string {
 }
 
 function wireTools(scenario: Scenario): Array<Record<string, unknown>> {
-  const schemas: ToolSchema[] = scenario === 'C'
-    ? [mailSendSchema, delegateSessionSchema]
-    : [mailDraftSchema, mailSendSchema, delegateSessionSchema];
-  return schemas.map((schema) => ({
+  const schemas = [mailDraftSchema, mailSendSchema, delegateSessionSchema];
+  const allowedToolNames = scenario === 'C'
+    ? applyMorningBriefSaveDraftRoleTools(USER_REPLY, getTextForegroundToolNamesForPrompt(USER_REPLY), ['Read']) ?? []
+    : schemas.map((schema) => schema.name);
+  if (scenario === 'C') console.log(`post_fix_no_mail_role_tools=${JSON.stringify(allowedToolNames)}`);
+  const allowed = new Set(allowedToolNames);
+  return schemas.filter((schema) => allowed.has(schema.name)).map((schema) => ({
     type: 'function',
     function: {
       name: schema.name,

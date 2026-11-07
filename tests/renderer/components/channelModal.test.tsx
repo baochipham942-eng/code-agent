@@ -149,3 +149,81 @@ describe('ChannelModal (Modal primitive 迁移验证)', () => {
     expect(enChannelsText.modal.telegramPrivacyModeWarning).toContain('group admin');
   });
 });
+
+describe('ChannelModal 按钮固定在 Modal footer（N-CHANNEL-MODAL-ADD-BUTTON-REACHABLE）', () => {
+  const editAccounts = {
+    'http-api': { type: 'http-api', apiKey: 'k' },
+    feishu: { type: 'feishu', appId: 'cli_x', appSecret: 's' },
+    telegram: { type: 'telegram', botToken: '123:abc' },
+  } as const;
+  const fillAdd = (type: 'http-api' | 'feishu' | 'telegram') => {
+    fireEvent.change(screen.getAllByRole('combobox')[0]!, { target: { value: type } });
+    fireEvent.change(screen.getByPlaceholderText(channelsText.modal.namePlaceholder), {
+      target: { value: 'acct' },
+    });
+    if (type === 'feishu') {
+      fireEvent.change(screen.getByPlaceholderText('cli_xxxxxxxxxx'), { target: { value: 'cli_x' } });
+      fireEvent.change(screen.getByRole('dialog').querySelector('input[type="password"]')!, { target: { value: 's' } });
+    }
+    if (type === 'telegram') {
+      fireEvent.change(screen.getByPlaceholderText(channelsText.modal.botTokenPlaceholder), { target: { value: '123:abc' } });
+    }
+  };
+  const expectPinned = (label: string) => {
+    const dialog = screen.getByRole('dialog');
+    const submit = screen.getByRole('button', { name: label });
+    expect(submit.getAttribute('type')).toBe('submit');
+    expect(dialog.contains(submit)).toBe(true);
+    expect(submit.closest('form')).toBeNull();
+    expect(submit.closest('[class*="overflow-y-auto"]')).toBeNull();
+    return submit;
+  };
+
+  for (const type of ['http-api', 'feishu', 'telegram'] as const) {
+    it(`新增态 ${type}：提交按钮在 dialog 内、form 外、滚动区外，点击触发 onSave 一次`, () => {
+      const onSave = vi.fn();
+      render(
+        <ChannelModal
+          channelTypes={[{ type, name: type }]}
+          onSave={onSave}
+          onClose={() => {}}
+        />
+      );
+      fillAdd(type);
+      const submit = expectPinned(channelsText.actions.add);
+      fireEvent.click(submit);
+      expect(onSave).toHaveBeenCalledTimes(1);
+    });
+
+    it(`编辑态 ${type}：保存按钮在 dialog 内、form 外、滚动区外，点击触发 onSave 一次`, () => {
+      const onSave = vi.fn();
+      render(
+        <ChannelModal
+          account={{
+            id: 'a-1',
+            name: 'acct',
+            type,
+            status: 'connected',
+            enabled: true,
+            createdAt: 1,
+            config: editAccounts[type] as never,
+          }}
+          channelTypes={[{ type, name: type }]}
+          onSave={onSave}
+          onClose={() => {}}
+        />
+      );
+      const submit = expectPinned(channelsText.actions.save);
+      fireEvent.click(submit);
+      expect(onSave).toHaveBeenCalledTimes(1);
+    });
+  }
+
+  it('名称框回车（表单提交）同样触发 onSave 一次', () => {
+    const onSave = vi.fn();
+    render(<ChannelModal channelTypes={[{ type: 'http-api', name: 'h' }]} onSave={onSave} onClose={() => {}} />);
+    fillAdd('http-api');
+    fireEvent.submit(screen.getByPlaceholderText(channelsText.modal.namePlaceholder).closest('form')!);
+    expect(onSave).toHaveBeenCalledTimes(1);
+  });
+});

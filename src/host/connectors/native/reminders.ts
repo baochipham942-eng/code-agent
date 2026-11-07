@@ -5,7 +5,9 @@
 import type { Connector, ConnectorExecutionResult, ConnectorStatus } from '../base';
 import {
   buildAppleScriptDateVar,
+  describeAppleScriptFailure,
   escapeAppleScriptString,
+  isAppleScriptFailure,
   parseAppleScriptDate,
   runAppleScript,
   sharedAppleScriptHandlers,
@@ -45,7 +47,9 @@ function parseLine(line: string): string[] {
 }
 
 function errorMessage(error: unknown): string {
-  return error instanceof Error ? error.message : String(error);
+  return isAppleScriptFailure(error)
+    ? describeAppleScriptFailure('Reminders', error).message
+    : error instanceof Error ? error.message : String(error);
 }
 
 function buildRemindersStatus(capabilities: string[]): ConnectorStatus {
@@ -163,11 +167,11 @@ async function listReminders(payload: Record<string, unknown>): Promise<Reminder
     'set rawNotes to body of reminderItem',
     'end try',
     'set reminderNotes to my sanitizeText(rawNotes)',
-    'set rawRemindDate to ""',
+    'set rawRemindDate to missing value',
     'try',
     'set rawRemindDate to remind me date of reminderItem',
     'end try',
-    'set remindDateText to my sanitizeText(rawRemindDate)',
+    'set remindDateText to my isoDateText(rawRemindDate)',
     'set reminderLine to (id of reminderItem as text) & "|" & (my sanitizeText(name of reminderList)) & "|" & (my sanitizeText(name of reminderItem)) & "|" & (completed of reminderItem as text) & "|" & reminderNotes & "|" & remindDateText',
     'set end of outputLines to reminderLine',
     'set emittedCount to emittedCount + 1',
@@ -217,11 +221,11 @@ async function getReminder(payload: Record<string, unknown>): Promise<ReminderIt
     'try',
     'set rawNotes to body of targetReminder',
     'end try',
-    'set rawRemindDate to ""',
+    'set rawRemindDate to missing value',
     'try',
     'set rawRemindDate to remind me date of targetReminder',
     'end try',
-    `return (id of targetReminder as text) & "|" & (my sanitizeText("${escapeAppleScriptString(listName)}")) & "|" & (my sanitizeText(name of targetReminder)) & "|" & (completed of targetReminder as text) & "|" & (my sanitizeText(rawNotes)) & "|" & (my sanitizeText(rawRemindDate))`,
+    `return (id of targetReminder as text) & "|" & (my sanitizeText("${escapeAppleScriptString(listName)}")) & "|" & (my sanitizeText(name of targetReminder)) & "|" & (completed of targetReminder as text) & "|" & (my sanitizeText(rawNotes)) & "|" & (my isoDateText(rawRemindDate))`,
     'end tell',
     'end tell',
   ]);

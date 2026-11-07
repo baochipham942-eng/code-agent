@@ -3,6 +3,7 @@
 // ============================================================================
 
 import * as fs from 'fs/promises';
+import { existsSync } from 'fs';
 import * as path from 'path';
 import { execFile } from 'child_process';
 import { promisify } from 'util';
@@ -258,6 +259,15 @@ function parsePorcelainChangedFiles(stdout: string): string[] {
 }
 
 async function readGitDirtyState(workingDirectory: string): Promise<CompletionSummaryDirtyState | undefined> {
+  // 规划中的会话工作目录可能尚未落盘（懒开目录）：此刻跑 git 会以 `spawn git ENOENT`
+  // 记成 dirtyState.error，看起来像 git 缺失。目录不在盘上就不存在脏状态，直接记名。
+  // 不回退到其它目录跑 git——那会报出陌生仓库的分支/脏文件（错误数据比缺数据更糟）。
+  if (!workingDirectory || !existsSync(workingDirectory)) {
+    return {
+      checkedAt: Date.now(),
+      error: 'working-directory-not-on-disk',
+    };
+  }
   try {
     const [branchResult, headResult, statusResult] = await Promise.all([
       execFileAsync('git', ['rev-parse', '--abbrev-ref', 'HEAD'], { cwd: workingDirectory, timeout: 2000 }),

@@ -48,7 +48,7 @@ export interface OverviewRunHeaderModel {
   /** 步骤计数（第 N 步 / 共 M 步）；无 TODO 为 null */
   steps: { current: number; total: number } | null;
   /** 异常态的人话结局键；非异常态为 null */
-  outcome: 'cancelled' | 'error' | null;
+  outcome: 'cancelled' | 'idle-reaped' | 'error' | null;
   /** 用时；起点未知时为 null（不假造 0） */
   elapsedMs: number | null;
   /** 活跃回合：秒表在走、给中断按钮 */
@@ -84,7 +84,9 @@ export function buildOverviewRunHeaderModel(args: {
       ? { current: tone === 'done' ? total : Math.min(completed + 1, total), total }
       : null,
     outcome: tone === 'error'
-      ? (args.run.status === 'cancelled' ? 'cancelled' : 'error')
+      ? (args.run.status === 'cancelled'
+        ? (args.run.terminalReason === 'idle_reaped' ? 'idle-reaped' : 'cancelled')
+        : 'error')
       : null,
     elapsedMs: elapsedMs(args.run, live, args.now),
     live,

@@ -28,6 +28,8 @@ import type {
 import type { ScriptRunAgentSnapshot, ScriptRunSnapshot } from '@shared/contract/scriptRun';
 import type { SwarmRunAgentRecord } from '@shared/contract/swarmTrace';
 import type { Task } from '@shared/contract/backgroundTask';
+import { describeTaskBlockedReason } from '@shared/taskReasonLanguage';
+import type { TaskBlockedCategory } from '@shared/contract/planning';
 import {
   getLongTaskStatusLabel,
   normalizeLongTaskStatus,
@@ -309,30 +311,43 @@ function formatOutputRefStep(ref: TaskRecordOutputRef): string {
   return name && name !== label ? `${label}：${name}` : label;
 }
 
-function backgroundTaskResumeHint(task: Task, outputRefs: TaskRecordOutputRef[]): string | undefined {
+interface BackgroundTaskResume {
+  hint?: string;
+  /** 失败原因是 raw 日志、被语义化清洗掉时的类别；渲染层用 taskBlockedReason[category] 兜底 */
+  blockedCategory?: TaskBlockedCategory;
+}
+
+function backgroundTaskResumeHint(task: Task, outputRefs: TaskRecordOutputRef[]): BackgroundTaskResume {
   // 完成产物由会话流承担唯一展示；右侧概览只保留“已完成”状态。
   // 这里若再返回 final ref/summary，TaskPanel 会把同一产物重新做成结果卡。
-  if (task.status === 'completed') return undefined;
+  if (task.status === 'completed') return {};
   const recoveryPlan = recordFromMetadata(task.metadata, 'recoveryPlan');
   const recoverySummary = typeof recoveryPlan?.summary === 'string' ? recoveryPlan.summary : null;
-  if (recoverySummary) return recoverySummary;
+  if (recoverySummary) return { hint: recoverySummary };
 
-  if (task.failure?.message) return task.failure.message;
-  if (task.status === 'stalled' && task.progress?.label) return task.progress.label;
+  if (task.failure?.message) {
+    // 失败原因先过语义化清洗（ADR-050 / FB-746）：「Cannot read properties of …」这类
+    // raw JS 异常清洗为空时不进行，改走 blockedCategory 的 i18n 类别文案；
+    // 原始 message 仍留在 task.failure 里供排错，不在这一行露出。
+    const { reason, category } = describeTaskBlockedReason(task.failure.message);
+    if (reason) return { hint: reason };
+    return { blockedCategory: category };
+  }
+  if (task.status === 'stalled' && task.progress?.label) return { hint: task.progress.label };
 
   const finalRef = outputRefs.find((ref) => ref.type === 'text' || ref.type === 'report' || ref.type === 'artifact' || ref.type === 'file');
   if (finalRef) {
     const name = lastPathSegment(finalRef.pathOrUrl) || finalRef.label;
-    return `最终输出：${name}`;
+    return { hint: `最终输出：${name}` };
   }
 
   const logRef = outputRefs.find((ref) => ref.type === 'log');
   if (logRef && (task.status === 'running' || task.status === 'stalled')) {
     const name = lastPathSegment(logRef.pathOrUrl) || logRef.label;
-    return `日志：${name}`;
+    return { hint: `日志：${name}` };
   }
 
-  return task.summary;
+  return task.summary ? { hint: task.summary } : {};
 }
 
 export function buildLedgerTaskRecords(tasks: Task[], currentSessionId: string | null): TaskRecord[] {
@@ -345,11 +360,13 @@ export function buildLedgerTaskRecords(tasks: Task[], currentSessionId: string |
       const status = backgroundTaskStatusToTaskStatus(task.status);
       const outputRefs = task.status === 'completed' ? [] : buildTaskOutputRefs(task);
       const duration = formatBackgroundTaskDuration(task.durationMs);
+      const resume = backgroundTaskResumeHint(task, outputRefs);
       return {
         id: `background:${task.id}`,
         scope: 'global' as const,
         title: task.title,
         status,
+        ...(status === 'blocked' ? { failed: true } : {}),
         steps: [
           {
             title: backgroundTaskStatusLabel(task),
@@ -366,7 +383,8 @@ export function buildLedgerTaskRecords(tasks: Task[], currentSessionId: string |
         ],
         ownerRunId: task.runId ?? null,
         sourceThreadId: task.sessionId ?? null,
-        resumeHint: backgroundTaskResumeHint(task, outputRefs),
+        resumeHint: resume.hint,
+        ...(resume.blockedCategory ? { resumeHintCategory: resume.blockedCategory } : {}),
         outputRefs,
       };
     });

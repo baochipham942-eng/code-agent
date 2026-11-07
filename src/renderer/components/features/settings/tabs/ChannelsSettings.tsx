@@ -22,6 +22,7 @@ import { Button, Modal } from '../../../primitives';
 import { SettingsDetails, SettingsPage, SettingsSection } from '../SettingsLayout';
 import { createLogger } from '../../../../utils/logger';
 import { IPC_CHANNELS } from '@shared/ipc';
+import { normalizeChannelAccountsPayload } from './channelAccountsPayload';
 import type {
   ChannelAccount,
   ChannelType,
@@ -208,6 +209,7 @@ export const ChannelModal: React.FC<ChannelModalProps> = ({
   onClose,
 }) => {
   const { t } = useI18n();
+  const formId = React.useId();
   const channelText = t.settings.channels;
   const privacyModeOptions = channelText.privacyModes as ChannelPrivacyModeOption[];
   const [name, setName] = useState(account?.name || '');
@@ -313,8 +315,18 @@ export const ChannelModal: React.FC<ChannelModalProps> = ({
       onClose={onClose}
       title={account ? channelText.modal.editTitle : channelText.modal.addTitle}
       size="md"
+      footer={
+        <>
+          <Button type="button" variant="ghost" onClick={onClose}>
+            {channelText.actions.cancel}
+          </Button>
+          <Button type="submit" form={formId} variant="primary">
+            {account ? channelText.actions.save : channelText.actions.add}
+          </Button>
+        </>
+      }
     >
-        <form onSubmit={handleSubmit} className="space-y-4">
+        <form id={formId} onSubmit={handleSubmit} className="space-y-4">
           {/* 名称 */}
           <div>
             <label className="block text-sm text-zinc-400 mb-1">{channelText.modal.nameLabel}</label>
@@ -611,15 +623,6 @@ export const ChannelModal: React.FC<ChannelModalProps> = ({
             </>
           )}
 
-          {/* 按钮 */}
-          <div className="flex justify-end gap-3 pt-4">
-            <Button type="button" variant="ghost" onClick={onClose}>
-              {channelText.actions.cancel}
-            </Button>
-            <Button type="submit" variant="primary">
-              {account ? channelText.actions.save : channelText.actions.add}
-            </Button>
-          </div>
         </form>
     </Modal>
   );
@@ -632,6 +635,7 @@ export const ChannelModal: React.FC<ChannelModalProps> = ({
 export const ChannelsSettings: React.FC = () => {
   const { t } = useI18n();
   const channelText = t.settings.channels;
+  const webOnlyNote = isWebMode() ? t.settings.webModeBanner.channelsManageDesktopOnly : undefined;
   const statusFilters = channelText.statusFilters as ChannelStatusFilterOption[];
   const [accounts, setAccounts] = useState<ChannelAccount[]>([]);
   const [channelTypes, setChannelTypes] = useState<ChannelTypeInfo[]>([]);
@@ -674,9 +678,8 @@ export const ChannelsSettings: React.FC = () => {
     // 监听账号变化
     const removeAccountsListener = ipcService.on(
       IPC_CHANNELS.CHANNEL_ACCOUNTS_CHANGED,
-      (newAccounts: ChannelAccount[]) => {
-        setAccounts(newAccounts);
-      }
+      // SSE 传输会展开数组参数，统一走 normalize（类型签名是单数组，此处单点 cast）
+      ((...args: unknown[]) => setAccounts(normalizeChannelAccountsPayload(...args))) as (accounts: ChannelAccount[]) => void
     );
 
     // 监听状态变化
@@ -830,10 +833,12 @@ export const ChannelsSettings: React.FC = () => {
 
       <SettingsSection
         title={channelText.accounts.title}
+        description={webOnlyNote}
         actions={(
           <Button
             size="sm"
             disabled={isWebMode()}
+            title={webOnlyNote}
             onClick={handleAdd}
             variant="primary"
             leftIcon={<Plus className="w-3 h-3" />}
@@ -893,6 +898,7 @@ export const ChannelsSettings: React.FC = () => {
                 className="mt-4"
                 size="sm"
                 disabled={isWebMode()}
+                title={webOnlyNote}
                 onClick={handleAdd}
                 variant="primary"
                 leftIcon={<Plus className="w-3 h-3" />}
@@ -981,6 +987,7 @@ export const ChannelsSettings: React.FC = () => {
                         size="sm"
                         variant="ghost"
                         disabled={isWebMode()}
+                        title={webOnlyNote}
                         onClick={() => handleToggleConnection(account)}
                         loading={connectingId === account.id}
                         leftIcon={
@@ -997,6 +1004,7 @@ export const ChannelsSettings: React.FC = () => {
                         size="sm"
                         variant="ghost"
                         disabled={isWebMode()}
+                        title={webOnlyNote}
                         onClick={() => handleEdit(account)}
                         leftIcon={<Edit className="w-3 h-3" />}
                       >
@@ -1006,6 +1014,7 @@ export const ChannelsSettings: React.FC = () => {
                         size="sm"
                         variant="ghost"
                         disabled={isWebMode()}
+                        title={webOnlyNote}
                         onClick={() => handleDelete(account.id)}
                         leftIcon={<Trash2 className="w-3 h-3 text-badge-danger" />}
                       >

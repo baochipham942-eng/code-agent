@@ -226,6 +226,34 @@ describe('ExternalImportSettings 来源选择（验收①②）', () => {
     expect(screen.queryByText('预览要导入的内容')).toBeNull();
   });
 
+  it('说明计数为 0 的来源行照常渲染标签，数字显示 0（与预览头部同口径）', async () => {
+    // 说明文件拆不出规则：来源行计数 0（host 侧只数可逐条导入的规则）
+    stubDetect(detectResult({
+      sources: [
+        {
+          sourceId: 'codex',
+          adapterId: 'codex-local-custom',
+          homePath: '~/.codex',
+          detected: true,
+          categories: [
+            { category: 'instructions', count: 0 },
+            { category: 'memories', count: 2 },
+            { category: 'skills', count: 1 },
+          ],
+        },
+      ],
+    }));
+    render(<ExternalImportSettings />);
+
+    await screen.findByTestId('external-import-sources');
+
+    const codexRow = screen.getByTestId('external-import-source-codex');
+    expect(codexRow.textContent).toContain('说明 0');
+    expect(codexRow.textContent).toContain('记忆 2');
+    // 勾选框照常在场（隐藏 0 计数勾选项不在本单范围）
+    expect(codexRow.querySelectorAll('input[type="checkbox"]').length).toBe(3);
+  });
+
   it('预览按勾选来源聚合调用既有管线 dry-run + 技能预览（验收③）', async () => {
     stubDetect(detectResult());
     render(<ExternalImportSettings />);
@@ -681,7 +709,7 @@ describe('ExternalImportSettings 导入与结果（验收④）', () => {
       return Promise.resolve(undefined);
     });
 
-    const toggle = screen.getByRole('switch');
+    const toggle = screen.getByRole('switch', { name: '读取 Claude 技能' });
     fireEvent.click(toggle);
     await waitFor(() => {
       expect(invokeDomain).toHaveBeenCalledWith(
@@ -691,7 +719,7 @@ describe('ExternalImportSettings 导入与结果（验收④）', () => {
       );
     });
     await waitFor(() => {
-      expect(screen.getByRole('switch').getAttribute('aria-checked')).toBe('false');
+      expect(screen.getByRole('switch', { name: '读取 Claude 技能' }).getAttribute('aria-checked')).toBe('false');
     });
   });
 });

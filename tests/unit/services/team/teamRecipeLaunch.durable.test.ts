@@ -65,9 +65,13 @@ vi.mock('../../../../src/host/agent/agentDefinition', () => ({
   getAgentPermissionPreset: () => 'default',
   getAgentMaxBudget: () => undefined,
 }));
-vi.mock('../../../../src/host/services/infra/logger', () => ({
-  createLogger: () => ({ info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() }),
-}));
+vi.mock('../../../../src/host/services/infra/logger', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../../../../src/host/services/infra/logger')>();
+  return {
+    ...actual,
+    createLogger: () => ({ info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() }),
+  };
+});
 
 import { resetApplicationRunRegistryForTests, getApplicationRunRegistry } from '../../../../src/host/app/applicationRunRegistry';
 import { DurableRunRepository } from '../../../../src/host/services/core/repositories/DurableRunRepository';

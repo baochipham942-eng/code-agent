@@ -8,7 +8,7 @@
 // - 走 ctx.logger（不 import services/infra/logger）
 // - 行为保真：
 //   * 父目录自动创建（recursive mkdir）
-//   * 原子写（atomicWriteFile: temp + rename）
+//   * 常规文件原子写（atomicWriteFile: temp + rename）；非常规文件就地写入
 //   * 资源锁（getResourceLockManager 独占锁，60s 持有 + 10s 等待）
 //   * 代码完整性检测（未闭合括号 / HTML/JSX 标签 / CSS 大括号 / JSON 解析 /
 //     截断关键字）—— 检测到问题时仍返回 success=true 并在 output 前置警告
@@ -365,9 +365,11 @@ class WriteHandler implements ToolHandler<Record<string, unknown>, string> {
       await fs.mkdir(dir, { recursive: true });
 
       let existed = false;
+      let existingIsRegular = false;
       try {
-        await fs.access(resolvedPath);
+        const stats = await fs.stat(resolvedPath);
         existed = true;
+        existingIsRegular = stats.isFile();
       } catch {
         // 不存在，正常创建
       }
@@ -492,7 +494,11 @@ class WriteHandler implements ToolHandler<Record<string, unknown>, string> {
         };
       }
 
-      await atomicWriteFile(resolvedPath, content, 'utf-8');
+      if (existed && !existingIsRegular) {
+        await fs.writeFile(resolvedPath, content, 'utf-8');
+      } else {
+        await atomicWriteFile(resolvedPath, content, 'utf-8');
+      }
       const newStats = await fs.stat(resolvedPath);
       const newDigest = computeContentDigest(content);
       if (fileReadTracker.getReadRecord(resolvedPath, actorId)) {
@@ -518,16 +524,18 @@ class WriteHandler implements ToolHandler<Record<string, unknown>, string> {
               `问题:\n${check.issues.map((i) => `- ${i}`).join('\n')}\n\n` +
               `**建议**: 请使用 edit_file 工具追加剩余代码，或重新生成完整文件。`,
             meta: {
-              artifact: await createFileArtifact(resolvedPath, schema.name, ctx, {
-                role: 'deliverable',
-                metadata: {
-                  action: action.toLowerCase(),
-                  completenessIssues: check.issues,
-                  contentLength: content.length,
-                  largeSingleWriteArtifact,
-                  ...(forceAudit ? { audit: forceAudit } : {}),
-                },
-              }),
+              artifact: newStats.isFile()
+                ? await createFileArtifact(resolvedPath, schema.name, ctx, {
+                  role: 'deliverable',
+                  metadata: {
+                    action: action.toLowerCase(),
+                    completenessIssues: check.issues,
+                    contentLength: content.length,
+                    largeSingleWriteArtifact,
+                    ...(forceAudit ? { audit: forceAudit } : {}),
+                  },
+                })
+                : undefined,
               outputPath: resolvedPath,
               completenessIssues: check.issues,
               largeSingleWriteArtifact,
@@ -546,13 +554,15 @@ class WriteHandler implements ToolHandler<Record<string, unknown>, string> {
       output += buildSelfValidationHint(resolvedPath, content);
 
       // LSP 诊断闭环
-      try {
-        const diagResult = await getPostEditDiagnostics(resolvedPath);
-        if (diagResult) {
-          output += diagResult.formatted;
+      if (newStats.isFile()) {
+        try {
+          const diagResult = await getPostEditDiagnostics(resolvedPath);
+          if (diagResult) {
+            output += diagResult.formatted;
+          }
+        } catch {
+          // 诊断失败不影响写入结果
         }
-      } catch {
-        // 诊断失败不影响写入结果
       }
 
       onProgress?.({ stage: 'completing', percent: 100 });
@@ -561,15 +571,17 @@ class WriteHandler implements ToolHandler<Record<string, unknown>, string> {
         ok: true,
         output,
         meta: {
-          artifact: await createFileArtifact(resolvedPath, schema.name, ctx, {
-            role: 'deliverable',
-            metadata: {
-              action: action.toLowerCase(),
-              contentLength: content.length,
-              largeSingleWriteArtifact,
-              ...(forceAudit ? { audit: forceAudit } : {}),
-            },
-          }),
+          artifact: newStats.isFile()
+            ? await createFileArtifact(resolvedPath, schema.name, ctx, {
+              role: 'deliverable',
+              metadata: {
+                action: action.toLowerCase(),
+                contentLength: content.length,
+                largeSingleWriteArtifact,
+                ...(forceAudit ? { audit: forceAudit } : {}),
+              },
+            })
+            : undefined,
           outputPath: resolvedPath,
           largeSingleWriteArtifact,
           contentLength: content.length,

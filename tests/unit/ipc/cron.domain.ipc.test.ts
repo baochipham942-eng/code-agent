@@ -271,6 +271,55 @@ describe('listMailSources', () => {
     expect(h.logWarn.mock.calls.some((args) => String(args[0]).includes('read-error'))).toBe(true);
   });
 
+  it('缓存已 ready 时 list_accounts 抛 -1743 → ok:false not-authorized（FB-541：probe 不再跑，按错误内容分类）', async () => {
+    registerMailConnector({
+      getCachedStatus: () => ({ connected: true, readiness: 'ready', capabilities: [] }),
+      getStatus: async () => ({ connected: true, readiness: 'ready', capabilities: [] }),
+      execute: async (action: string) => {
+        if (action === 'list_accounts') throw new Error('Not authorized to send Apple events to Mail. (-1743)');
+        return { data: [] };
+      },
+    });
+    expect(await call('listMailSources')).toEqual({
+      success: true,
+      data: { ok: false, reason: 'not-authorized', detail: 'Not authorized to send Apple events to Mail. (-1743)' },
+    });
+    expect(h.logWarn.mock.calls.some((args) => String(args[0]).includes('not-authorized'))).toBe(true);
+  });
+
+  it('list_mailboxes 抛 -1743 → rethrow 后整体 not-authorized，不是该账户降级空列表', async () => {
+    registerMailConnector({
+      getCachedStatus: () => ({ connected: true, readiness: 'ready', capabilities: [] }),
+      getStatus: async () => ({ connected: true, readiness: 'ready', capabilities: [] }),
+      execute: async (action: string) => {
+        if (action === 'list_accounts') return { data: [{ name: 'icloud' }] };
+        if (action === 'list_mailboxes') throw new Error('Not authorized to send Apple events to Mail. (-1743)');
+        return { data: [] };
+      },
+    });
+    expect(await call('listMailSources')).toEqual({
+      success: true,
+      data: { ok: false, reason: 'not-authorized', detail: 'Not authorized to send Apple events to Mail. (-1743)' },
+    });
+    expect(h.logWarn.mock.calls.some((args) => String(args[0]).includes('not-authorized'))).toBe(true);
+  });
+
+  it('错误只含 "authorized" 措辞、无 Apple-events/-1743 特征 → 仍 read-error', async () => {
+    registerMailConnector({
+      getCachedStatus: () => ({ connected: true, readiness: 'ready', capabilities: [] }),
+      getStatus: async () => ({ connected: true, readiness: 'ready', capabilities: [] }),
+      execute: async (action: string) => {
+        if (action === 'list_accounts') throw new Error('mail account not authorized');
+        return { data: [] };
+      },
+    });
+    expect(await call('listMailSources')).toEqual({
+      success: true,
+      data: { ok: false, reason: 'read-error', detail: 'mail account not authorized' },
+    });
+    expect(h.logWarn.mock.calls.some((args) => String(args[0]).includes('read-error'))).toBe(true);
+  });
+
   it('ready → 账号与各账号邮箱目录；unchecked 先补探测；形状异常项被过滤', async () => {
     const probed: string[] = [];
     registerMailConnector({

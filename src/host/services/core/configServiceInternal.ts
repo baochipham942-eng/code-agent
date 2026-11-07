@@ -134,5 +134,6 @@ export const SERVICE_ENV_KEY_MAP: Record<string, string> = {
   'minimax-search': 'MINIMAX_SEARCH_API_KEY',
   skillsmp: 'SKILLSMP_API_KEY',
   'neo-share': 'NEO_SHARE_UPLOAD_TOKEN',
+  'neo-cron-cloud': 'NEO_CRON_CLOUD_TOKEN',
   typesafe: 'TYPESAFE_API_KEY',
 };

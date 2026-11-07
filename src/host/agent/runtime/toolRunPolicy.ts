@@ -8,7 +8,9 @@ import { POSTHOG_EVENTS } from '../../../shared/observability/posthog-events';
 // 本文件只做 RuntimeContext 包装 + 收窄可观测性。
 import {
   isToolDeniedByRunPolicy,
+  type RunToolPolicy,
 } from '../../tools/runToolPolicy';
+import { canonicalStrictBoundaryToolNames } from '../../tools/skillBoundaryScope';
 import { detectTaskFeatures } from '../../prompts/systemReminders';
 
 const logger = createLogger('AgentLoop');
@@ -55,7 +57,21 @@ function isOneTurnDelegationBypassTool(toolName: string, ctx: RuntimeContext): b
 }
 
 export function isToolDeniedForRun(ctx: RuntimeContext, toolName: string): boolean {
-  return isToolDeniedByRunPolicy(ctx, toolName);
+  return isToolDeniedByRunPolicy(runtimeToolPolicy(ctx), toolName);
+}
+
+/**
+ * RuntimeContext → RunToolPolicy：补上 strict skill 流程面豁免名单。
+ * ctx 本身是 RunToolPolicy 形状的历史原因（零依赖叶子模块直接吃 ctx），但 ctx 没有
+ * skillBoundaryAllowedTools 字段——这里集中构造，白名单判定与执行层兜底闸用同一份语义。
+ */
+function runtimeToolPolicy(ctx: RuntimeContext): RunToolPolicy {
+  return {
+    deniedToolNames: ctx.deniedToolNames,
+    allowedToolNames: ctx.allowedToolNames,
+    toolScope: ctx.toolScope,
+    skillBoundaryAllowedTools: canonicalStrictBoundaryToolNames(ctx.turn?.skillToolBoundary),
+  };
 }
 
 export function deniedToolRetryGuidance(ctx: RuntimeContext): string {
@@ -84,7 +100,7 @@ export function filterToolsByRunPolicy(
   return tools.filter((tool) => {
     if (askUnattended && ASK_USER_QUESTION_TOOL_NAMES.some((name) => name === tool.name)) return false;
     if (isOneTurnDelegationBypassTool(tool.name, ctx)) return false;
-    return !isToolDeniedByRunPolicy(ctx, tool.name);
+    return !isToolDeniedByRunPolicy(runtimeToolPolicy(ctx), tool.name);
   });
 }
 

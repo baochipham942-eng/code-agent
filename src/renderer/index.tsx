@@ -57,6 +57,7 @@ declare global {
       getMessageCount?: () => number;
       getSurfaceExecutionDiagnostics?: () => Record<string, unknown> | null;
       injectMessages?: (messages: Message[]) => void;
+      setWorkingDirectory?: (dir: string) => void;
     };
     __surfaceExecutionEffectsE2E?: Record<string, unknown>;
   }
@@ -161,6 +162,9 @@ if (new URLSearchParams(window.location.search).get('e2e') === '1') {
     getSurfaceExecutionDiagnostics() {
       const diagnostics = window.__surfaceExecutionEffectsE2E;
       return diagnostics ? { ...diagnostics } : null;
+    },
+    setWorkingDirectory(dir: string) {
+      useAppStore.getState().setWorkingDirectory(dir);
     },
     injectMessages(messages) {
       useSessionStore.getState().setMessages(messages);

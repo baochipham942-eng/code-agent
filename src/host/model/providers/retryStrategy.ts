@@ -8,6 +8,9 @@ import { EventEmitter } from 'events';
 import { getProviderHealthMonitor } from '../providerHealthMonitor';
 import { normalizeErrorMessage } from '../../lightMemory/normalizeErrorMessage';
 import { formatThrownError } from '../../../shared/utils/providerError';
+import { isQuotaSuspendWaitMs, isQuotaWaitSuspendEligible, isQuotaWaitSuspendError, QuotaWaitSuspendError } from './quotaWaitSuspend';
+
+export { isQuotaWaitSuspendError, QuotaWaitSuspendError };
 
 /** Global retry event emitter for CLI visibility */
 export const retryEvents = new EventEmitter();
@@ -258,6 +261,83 @@ export function extractRetryAfterMs(err: unknown): number | null {
     }
   }
   return null;
+}
+
+function readRetryAfterHeader(headers: unknown): unknown {
+  if (!headers || typeof headers !== 'object') return undefined;
+  if (typeof (headers as { get?: unknown }).get === 'function') {
+    return (headers as { get: (name: string) => unknown }).get('retry-after');
+  }
+  const record = headers as Record<string, unknown>;
+  return record['retry-after'] ?? record['Retry-After'];
+}
+
+function retryAfterHeaderSources(err: object): unknown[] {
+  const record = err as { headers?: unknown; responseHeaders?: unknown; cause?: unknown };
+  const sources = [record.headers, record.responseHeaders];
+  const cause = record.cause;
+  if (cause && typeof cause === 'object') {
+    const nested = cause as { headers?: unknown; responseHeaders?: unknown };
+    sources.push(nested.headers, nested.responseHeaders);
+  }
+  return sources;
+}
+
+function retryAfterUnitMs(value: number, unit: string): number {
+  const normalized = unit.toLowerCase();
+  if (normalized.startsWith('ms') || normalized.startsWith('millisecond')) return value;
+  if (normalized.startsWith('h')) return value * 3_600_000;
+  if (normalized.startsWith('m')) return value * 60_000;
+  return value * 1000;
+}
+
+/**
+ * Same three sources as extractRetryAfterMs, without the 60s cap.
+ * Also reads AI SDK `responseHeaders` (a plain record, not `headers`).
+ * Minutes and hours are accepted in the message text. `now` is injectable.
+ */
+function extractUncappedRetryAfterMs(err: unknown, now = Date.now()): number | null {
+  if (err && typeof err === 'object') {
+    const structured = (err as { retryAfterMs?: unknown }).retryAfterMs;
+    if (typeof structured === 'number' && Number.isFinite(structured) && structured > 0) {
+      return Math.round(structured);
+    }
+    for (const headers of retryAfterHeaderSources(err)) {
+      const headerValue = readRetryAfterHeader(headers);
+      if (headerValue === undefined || headerValue === null || headerValue === '') continue;
+      const seconds = Number(headerValue);
+      const headerText = String(headerValue).trim();
+      if (Number.isFinite(seconds) && seconds > 0 && headerText !== '' && !/[a-z]/i.test(headerText)) {
+        return Math.round(seconds * 1000);
+      }
+      const dateMs = Date.parse(headerText);
+      if (Number.isFinite(dateMs)) {
+        const delta = dateMs - now;
+        if (delta > 0) return Math.round(delta);
+      }
+    }
+  }
+
+  const msg = err instanceof Error ? err.message : typeof err === 'string' ? err : '';
+  const match = msg.match(
+    /(?:retry[- ]?after|try again in)[:\s]*(\d+(?:\.\d+)?)\s*(ms|milliseconds?|s|secs?|seconds?|m|mins?|minutes?|h|hrs?|hours?)?/i,
+  );
+  if (!match) return null;
+  const value = Number(match[1]);
+  if (!Number.isFinite(value) || value <= 0) return null;
+  return Math.round(retryAfterUnitMs(value, match[2] || 's'));
+}
+
+/**
+ * A retryable quota wait in (60s, 24h] becomes a park. Callers still decide
+ * retryability: a deterministic 4xx must not reach this helper.
+ * Returns the same error when one is already in hand, so it is not rebuilt.
+ */
+export function quotaSuspendErrorFor(err: unknown, now = Date.now()): QuotaWaitSuspendError | null {
+  if (isQuotaWaitSuspendError(err)) return err;
+  const waitMs = extractUncappedRetryAfterMs(err, now);
+  if (waitMs == null || !isQuotaSuspendWaitMs(waitMs)) return null;
+  return new QuotaWaitSuspendError(now + waitMs, waitMs);
 }
 
 /**
@@ -527,6 +607,13 @@ export async function withTransientRetry<T>(
       healthMonitor.recordSuccess(providerName, Date.now() - startTime, { model });
       return fingerprintScope.observeSuccess(result);
     } catch (err) {
+      if (isQuotaWaitSuspendError(err)) throw err;
+      if (isRetryableModelCallError(err) && !signal?.aborted) {
+        // 挂起只认可停靠 run 的调用链（runWithQuotaWaitSuspendEligibility）；其余调用方
+        // 保持原路径：封顶重试 → 跨 provider 降级，绝不能静默转取消。
+        const suspend = isQuotaWaitSuspendEligible() ? quotaSuspendErrorFor(err) : null;
+        if (suspend) throw suspend;
+      }
       const msg = err instanceof Error ? err.message : String(err);
       const noted = signal?.aborted ? null : fingerprintScope.noteFailure(err, fingerprintOwner);
       let stopForFingerprint = false;

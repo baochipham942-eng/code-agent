@@ -361,6 +361,7 @@ vi.mock('../../../src/host/agent/runtime/contextAssembly/modeInjection', () => (
 }));
 
 import { ContextAssembly, MAX_SYSTEM_PROMPT_TOKENS } from '../../../src/host/agent/runtime/contextAssembly';
+import { CHANNEL_REPLY_STYLE_INSTRUCTION } from '../../../src/host/channels/channelReplyBrevity';
 import { estimateTokens } from '../../../src/host/context/tokenOptimizer';
 import { buildEnhancedSystemPrompt, injectWorkingDirectoryContext } from '../../../src/host/agent/messageHandling/contextBuilder';
 import { getPromptForTask } from '../../../src/host/prompts/builder';
@@ -685,6 +686,42 @@ describe('ContextAssembly.buildModelMessages()', () => {
       }
     },
   );
+
+  // N-CHANNEL-REPLY-BREVITY ①：channel 来源 turn 的 IM 回复纪律块经 turnSystemContext
+  // 注入后，模型面请求带着它（<user_request> 包裹原话），共享历史/落库仍只有用户原话；
+  // 桌面 turn（无注入）的模型面请求里完全不出现这个块。
+  it('channels the IM reply-style block into provider-facing messages while the transcript keeps the user original', async () => {
+    const rawUserRequest = '把对比结果整理出来';
+    const sourceMessageId = 'user-channel-reply-brevity';
+    const executionContent = applyTurnSystemContext(
+      rawUserRequest,
+      { mode: 'normal', turnSystemContext: [CHANNEL_REPLY_STYLE_INSTRUCTION] },
+      null,
+      () => null,
+    );
+    const messages = [buildMessage(sourceMessageId, 'user', rawUserRequest)];
+    const ctx = buildRuntimeContext({
+      sessionId: 'session-channel-reply-brevity',
+      messages,
+      modelFacingUserMessage: { sourceMessageId, content: executionContent },
+    });
+
+    const providerFacingMessages = await new ContextAssembly(ctx as never).buildModelMessages();
+    const serializedPayload = JSON.stringify({ messages: providerFacingMessages });
+
+    expect(serializedPayload).toContain('[IM 回复纪律]');
+    expect(serializedPayload).toContain('<user_request>');
+    expect(serializedPayload).toContain(rawUserRequest);
+    expect(messages[0].content).toBe(rawUserRequest);
+    expect(messages[0].content).not.toContain('[IM 回复纪律]');
+
+    const desktopCtx = buildRuntimeContext({
+      sessionId: 'session-channel-reply-brevity-desktop',
+      messages: [buildMessage('user-desktop-turn', 'user', rawUserRequest)],
+    });
+    const desktopPayload = JSON.stringify({ messages: await new ContextAssembly(desktopCtx as never).buildModelMessages() });
+    expect(desktopPayload).not.toContain('[IM 回复纪律]');
+  });
 
   it('does not inject hidden continuation proposal instructions into the model prompt', async () => {
     const ctx = buildRuntimeContext({

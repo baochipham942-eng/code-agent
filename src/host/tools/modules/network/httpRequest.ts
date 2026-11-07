@@ -12,8 +12,9 @@ import type {
   ToolProgressFn,
   ToolResult,
 } from '../../../protocol/tools';
-import { NETWORK_TOOL_TIMEOUTS, HTTP_MAX_RESPONSE_SIZE } from '../../../../shared/constants';
+import { WEB_FETCH, NETWORK_TOOL_TIMEOUTS, HTTP_MAX_RESPONSE_SIZE } from '../../../../shared/constants';
 import { httpRequestSchema as schema } from './httpRequest.schema';
+import { isPrivateOrLocalHost } from '../../../security/ssrfGuard';
 import {
   findConnectedOAuthProviderForHost,
   getOAuthAuthorizationHeader,
@@ -25,6 +26,8 @@ const MAX_TIMEOUT = NETWORK_TOOL_TIMEOUTS.HTTP_MAX;
 const MAX_RESPONSE_SIZE = HTTP_MAX_RESPONSE_SIZE;
 
 const VALID_METHODS = ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'HEAD', 'OPTIONS'] as const;
+// fetch 跟随的重定向状态码（300/304 不跟）
+const REDIRECT_STATUSES: readonly number[] = [301, 302, 303, 307, 308];
 const MAX_CONNECTOR_GUIDE_READS = 2_048;
 const connectorGuideReads = new Set<string>();
 
@@ -56,29 +59,12 @@ function renderConnectorGuide(providerName: string, providerId: string, hostname
   ].join('\n');
 }
 
-// SSRF 防护：内网/私网段
-const BLOCKED_IP_PATTERNS = [
-  /^127\./,                          // Localhost
-  /^10\./,                           // Private Class A
-  /^172\.(1[6-9]|2[0-9]|3[01])\./,   // Private Class B
-  /^192\.168\./,                     // Private Class C
-  /^169\.254\./,                     // Link-local
-  /^0\./,                            // Current network
-  /^::1$/,                           // IPv6 localhost
-  /^fc00:/i,                         // IPv6 private
-  /^fe80:/i,                         // IPv6 link-local
-  /^fd[0-9a-f]{2}:/i,                // IPv6 unique local
-];
-
-// 云厂商 metadata 端点
-const BLOCKED_HOSTS = [
-  'localhost',
-  'metadata.google.internal',
-  '169.254.169.254',
-  'metadata.azure.com',
-  'fd00:ec2::254',
-  '100.100.100.200', // Alibaba Cloud
-];
+// SSRF 防护（N-WEBFETCH-BLOCK-PRIVATE-NET-FU1）：规则统一收口到 ssrfGuard
+// 的 isPrivateOrLocalHost——私网/环回/链路本地/云 metadata（IPv4、带括号 IPv6、
+// *.localhost、尾点 FQDN）全量判定，不再各自维护一份会漂移的黑名单。
+const SSRF_REFUSAL_HINT =
+  'http_request only reaches public internet URLs; '
+  + 'for a local/internal service use a Bash curl command, which asks the user for approval.';
 
 function validateUrl(url: string): { valid: boolean; error?: string } {
   try {
@@ -89,14 +75,11 @@ function validateUrl(url: string): { valid: boolean; error?: string } {
         error: `Protocol not allowed: ${parsed.protocol}. Only http:// and https:// are allowed.`,
       };
     }
-    const hostname = parsed.hostname.toLowerCase();
-    if (BLOCKED_HOSTS.includes(hostname)) {
-      return { valid: false, error: `Access to ${hostname} is blocked (internal/metadata service)` };
-    }
-    for (const pattern of BLOCKED_IP_PATTERNS) {
-      if (pattern.test(hostname)) {
-        return { valid: false, error: `Access to internal network is blocked: ${hostname}` };
-      }
+    if (isPrivateOrLocalHost(parsed.hostname)) {
+      return {
+        valid: false,
+        error: `Access to internal network is blocked: ${parsed.hostname}. ${SSRF_REFUSAL_HINT}`,
+      };
     }
     return { valid: true };
   } catch {
@@ -224,16 +207,22 @@ export async function executeHttpRequest(
     const requestHeaders = new Headers({ 'User-Agent': 'CodeAgent/1.0' });
     for (const [key, value] of Object.entries(headersArg)) requestHeaders.set(key, value);
     if (authorization) requestHeaders.set('Authorization', authorization);
-    const requestOptions: RequestInit = {
-      method,
+
+    const initialBody = body && ['POST', 'PUT', 'PATCH'].includes(method) ? body : undefined;
+    let currentUrl = url;
+    let currentMethod = method;
+    let currentBody = initialBody;
+
+    const fetchHop = (): Promise<Response> => fetch(currentUrl, {
+      method: currentMethod,
       headers: requestHeaders,
+      ...(currentBody !== undefined ? { body: currentBody } : {}),
       signal: controller.signal,
-      // Never forward an injected bearer token across a provider-controlled cross-host redirect.
-      redirect: authorization ? 'manual' : 'follow',
-    };
-    if (body && ['POST', 'PUT', 'PATCH'].includes(method)) {
-      requestOptions.body = body;
-    }
+      // 手动重定向（N-WEBFETCH-BLOCK-PRIVATE-NET-FU1）：不再交给 fetch 自动跟随，
+      // 每跳目标先过 SSRF 守卫再发请求。注入 connector 凭据时同样 manual——
+      // 3xx 原样返回不跟跳，避免 bearer token 跨到 provider 控制的重定向目标。
+      redirect: 'manual',
+    });
 
     ctx.logger.info('HTTP request', {
       url,
@@ -242,7 +231,48 @@ export async function executeHttpRequest(
     });
     onProgress?.({ stage: 'running', detail: `${method} ${url}` });
 
-    const response = await fetch(url, requestOptions);
+    const connectorCredentialed = Boolean(authorization);
+    let followedRedirects = 0;
+    let response = await fetchHop();
+    for (;;) {
+      const location = response.headers.get('location');
+      if (connectorCredentialed || !REDIRECT_STATUSES.includes(response.status) || !location) break;
+      if (followedRedirects >= WEB_FETCH.MAX_REDIRECTS) {
+        return {
+          ok: false,
+          error: `Too many redirects (more than ${WEB_FETCH.MAX_REDIRECTS}) for ${url}`,
+          code: 'NETWORK_ERROR',
+          meta: { duration: Date.now() - startTime },
+        };
+      }
+      followedRedirects++;
+      const hopUrl = new URL(currentUrl);
+      const nextUrl = new URL(location, hopUrl); // 相对 Location 以当前 URL 为基解析
+      const hopValidation = validateUrl(nextUrl.toString());
+      if (!hopValidation.valid) {
+        ctx.logger.warn('SSRF attempt blocked on redirect hop', {
+          url: nextUrl.toString(),
+          error: hopValidation.error,
+        });
+        return { ok: false, error: hopValidation.error ?? 'invalid redirect target', code: 'INVALID_ARGS' };
+      }
+      // 跨域跳转不携带凭证类请求头
+      if (nextUrl.origin !== hopUrl.origin) {
+        requestHeaders.delete('authorization');
+        requestHeaders.delete('cookie');
+        requestHeaders.delete('proxy-authorization');
+      }
+      // fetch 语义：301/302 的 POST 与 303 → GET 且不带 body；307/308 原样保留
+      if (response.status === 303 && currentMethod !== 'HEAD') {
+        currentMethod = 'GET';
+        currentBody = undefined;
+      } else if ((response.status === 301 || response.status === 302) && currentMethod === 'POST') {
+        currentMethod = 'GET';
+        currentBody = undefined;
+      }
+      currentUrl = nextUrl.toString();
+      response = await fetchHop();
+    }
 
     const sizeCheck = checkContentLength(response.headers);
 

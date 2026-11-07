@@ -21,6 +21,7 @@ export * from './authInventory';
 // Domain types
 export * from './session';
 export * from './expertThread';
+export * from './executionEnvironmentMarker';
 export * from './sessionFork';
 export * from './sessionForkPortability';
 export * from './conversationHistory';

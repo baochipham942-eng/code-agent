@@ -103,6 +103,9 @@ export function applyProviderRegistryPatches(registry: Record<string, ProviderCo
   });
 
   registerModel('zhipu', textModel('glm-5.1', 'GLM-5.1', ['general', 'code', 'reasoning'], 16384, 'yearly'));
+  // glm-5.3：GLM Coding Plan 主模型（routing 常回落到它）。N-CRON-RUN-LEDGER-VISIBLE
+  // 给它配了价目，注册进 registry 才过常量表→registry 单向一致性门。
+  registerModel('zhipu', textModel('glm-5.3', 'GLM-5.3', ['general', 'code', 'reasoning'], 16384, 'yearly'));
   registerModel('zhipu', textModel('glm-4.7-flashx', 'GLM-4.7 FlashX', ['general', 'code', 'fast'], 8192, 'yearly'));
 
   registerModel('qwen', textModel('qwen3.6-plus', 'Qwen 3.6 Plus', ['general', 'code', 'longContext'], 32768));

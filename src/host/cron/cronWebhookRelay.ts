@@ -21,6 +21,7 @@ import {
   getCronAutomationType,
   readCronSourceSessionId,
 } from './cronAutomationBridge';
+import { CloudNotConfiguredError } from './cronCloudErrors';
 import { CronApiClient, type CronApiHookEvent, type CronApiHookSecret } from './cronApiClient';
 import type { WebhookDelivery, WebhookIngestOutcome } from './cronEventTrigger';
 import { getSessionAutomationService } from '../services/sessionAutomation';
@@ -34,7 +35,7 @@ export interface CronWebhookRelayDeps {
 /** webhook 任务创建护栏：中继活在云端 cron 配置后面，没配置就不许建。 */
 export function assertWebhookScheduleCloudConfigured(isConfigured: boolean): void {
   if (!isConfigured) {
-    throw new Error(
+    throw new CloudNotConfiguredError(
       'Webhook-triggered jobs require the Neo cloud scheduler to be configured; '
       + 'set the cloud scheduler URL and token in settings first.',
     );

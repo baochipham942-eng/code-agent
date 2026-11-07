@@ -400,6 +400,6 @@ describe('runDreamMemoryConsolidation', () => {
     expect(memoryIO.updateEntry).toHaveBeenCalledWith(db, {
       entryId: 'dream_old',
       status: 'stale',
-    });
+    }, { journal: { actor: 'dream' } });
   });
 });

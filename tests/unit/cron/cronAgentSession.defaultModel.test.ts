@@ -12,6 +12,8 @@ const h = vi.hoisted(() => ({
     },
   },
   sourceSession: null as null | Record<string, unknown>,
+  // UI 当前焦点会话（getCurrentSessionId 指向它）；cron 任务不该继承它的文件夹。
+  focusedSession: null as null | Record<string, unknown>,
   createSession: vi.fn(
     async (_options: { modelConfig?: unknown; [key: string]: unknown }) => ({ id: 'cron-agent-session-1' }),
   ),
@@ -20,10 +22,12 @@ const h = vi.hoisted(() => ({
 // createCronAgentSession 内部动态 import('../services') 建会话；只替身这两个入口。
 vi.mock('../../../src/host/services', () => ({
   getSessionManager: () => ({
-    getCurrentSessionId: () => null,
-    getSession: async (sessionId: string) => (
-      h.sourceSession && h.sourceSession.id === sessionId ? h.sourceSession : null
-    ),
+    getCurrentSessionId: () => (h.focusedSession ? (h.focusedSession.id as string) : null),
+    getSession: async (sessionId: string) => {
+      if (h.sourceSession && h.sourceSession.id === sessionId) return h.sourceSession;
+      if (h.focusedSession && h.focusedSession.id === sessionId) return h.focusedSession;
+      return null;
+    },
     createSession: h.createSession,
   }),
 }));
@@ -67,6 +71,7 @@ describe('createCronAgentSession default model', () => {
     h.settings.models.default = '';
     h.settings.models.providers = {};
     h.sourceSession = null;
+    h.focusedSession = null;
   });
 
   it('resolves the cron session modelConfig from the configured default provider', async () => {
@@ -101,5 +106,60 @@ describe('createCronAgentSession default model', () => {
     await createCronAgentSession(definition(), action);
 
     expect(createdModelConfig()).toMatchObject({ provider: DEFAULT_PROVIDER, model: DEFAULT_MODELS.chat });
+  });
+
+  describe('working directory', () => {
+    function createdWorkingDirectory(): unknown {
+      const call = h.createSession.mock.calls[0]?.[0] as { workingDirectory?: unknown } | undefined;
+      if (!call) throw new Error('createSession not called');
+      return call.workingDirectory;
+    }
+
+    const focused = {
+      id: 'focused-1',
+      modelConfig: { provider: 'moonshot', model: 'kimi-k2.5' },
+      workingDirectory: '/tmp/focused-chat-folder',
+    };
+
+    it('does not inherit the focused chat folder when the job has no source session', async () => {
+      h.focusedSession = focused;
+
+      await createCronAgentSession(definition(), action);
+
+      expect(createdWorkingDirectory()).toBeUndefined();
+    });
+
+    it('still takes the focused chat model config (model fallback is unchanged)', async () => {
+      h.focusedSession = focused;
+
+      await createCronAgentSession(definition(), action);
+
+      expect(createdModelConfig()).toMatchObject({ provider: 'moonshot', model: 'kimi-k2.5' });
+    });
+
+    it('keeps the source session folder even while another chat is focused', async () => {
+      h.focusedSession = focused;
+      h.sourceSession = {
+        id: 'src-1',
+        modelConfig: { provider: 'moonshot', model: 'kimi-k2.5' },
+        workingDirectory: '/tmp/src',
+      };
+
+      await createCronAgentSession(definition('src-1'), action);
+
+      expect(createdWorkingDirectory()).toBe('/tmp/src');
+    });
+
+    it('keeps the artifact parent folder for an artifact-refresh job with no source session', async () => {
+      h.focusedSession = focused;
+      const refreshDefinition: CronJobDefinition = {
+        ...definition(),
+        metadata: { artifactRefresh: { path: '/tmp/artifacts/report.md', instruction: 'refresh', cadence: 'daily' } },
+      };
+
+      await createCronAgentSession(refreshDefinition, action);
+
+      expect(createdWorkingDirectory()).toBe('/tmp/artifacts');
+    });
   });
 });

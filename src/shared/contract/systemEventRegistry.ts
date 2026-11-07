@@ -47,6 +47,11 @@ export const USER_VISIBLE_SYSTEM_EVENT_REGISTRY = {
   // 与「弹 toast 打断」的 agent:notice 通道正交（ADR：2026-08-08 notification 零消费者工单乙类）。
   agentRecoveryNotice: { presentation: 'info', attach: 'current-turn' },
   turnCheckoutNote: { presentation: 'info', attach: 'current-turn' },
+  // 建/改角色严格流程停摆出口（FB-327）：轮末无草稿也无问句时，告诉用户流程没产出、
+  // 怎么继续/放弃——替代「模型念完步骤就空闲、什么都没落」的静默死局。
+  roleFlowStalled: { presentation: 'info', attach: 'current-turn' },
+  // 后台任务结束后前台自动汇报失败：任务结果已在会话里，告诉用户这一步没成，别留空白。
+  backgroundWakeFailed: { presentation: 'info', attach: 'current-turn' },
 } as const satisfies Record<string, UserVisibleSystemEventSpec>;
 
 export type UserVisibleSystemEventKey = keyof typeof USER_VISIBLE_SYSTEM_EVENT_REGISTRY;

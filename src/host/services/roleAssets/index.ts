@@ -11,3 +11,4 @@ export * from './roleDraftQueue';
 export * from './roleFirstWake';
 export * from './rolePackInstallService';
 export * from './rolePersonalization';
+export * from './roleTrash';

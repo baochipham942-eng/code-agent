@@ -25,10 +25,13 @@ export interface SettingsEntry {
   keywords: string[];
   requiresAnyCapability?: readonly BundledHostCapabilityId[];
   requiresFeature?: AccessControlledFeature;
+  /** 仅当检测到外部 AI 应用来源时可见（与导航 tab 同条件）。 */
+  requiresExternalImport?: boolean;
 }
 
 export interface SearchSettingsOptions extends AccessSubject {
   installedCapabilities?: ReadonlySet<BundledHostCapabilityId>;
+  externalImportAvailable?: boolean;
 }
 
 /**
@@ -142,6 +145,9 @@ export const SETTINGS_INDEX: SettingsEntry[] = [
   { tab: 'channels', labelKey: 'telegram', keywords: ['telegram', 'bot', 'tg'] },
   { tab: 'channels', labelKey: 'httpApi', keywords: ['http', 'api', 'rest', 'port', 'cors'] },
 
+  // External import（从其他 AI 应用导入：检测到来源才可见）
+  { tab: 'external-import', labelKey: 'externalImport', keywords: ['Claude Code', 'Codex', 'import', 'import from other AI apps', 'keep chats in sync', 'chat sync', zh.settings.externalImport.chatsImport.sync.title, en.settings.externalImport.chatsImport.sync.title], requiresExternalImport: true },
+
   // Memory
   { tab: 'memory', labelKey: 'lightMemory', keywords: ['memory', 'file', 'memory file'] },
   { tab: 'memory', labelKey: 'sessionStats', keywords: ['session', 'stats', 'statistics', 'depth', 'active'] },
@@ -198,6 +204,7 @@ export function searchSettings(query: string, options?: SearchSettingsOptions): 
   return SETTINGS_INDEX.filter((entry, index) => {
     const opensCapabilityHub = CAPABILITY_HUB_TAB_BY_SETTINGS_TAB[entry.tab] !== undefined;
     if (!opensCapabilityHub && !canAccessSettingsTab(entry.tab, options)) return false;
+    if (entry.requiresExternalImport && options?.externalImportAvailable !== true) return false;
     if (entry.requiresFeature && !canAccessFeature(entry.requiresFeature, options)) return false;
     if (!isSettingsTabCapabilityAvailable(entry.tab, options?.installedCapabilities)) return false;
     if (

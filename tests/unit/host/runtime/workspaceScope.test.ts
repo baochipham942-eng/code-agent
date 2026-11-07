@@ -1,4 +1,4 @@
-import { existsSync, mkdtempSync, mkdirSync, realpathSync, rmSync, symlinkSync } from 'node:fs';
+import { chmodSync, existsSync, mkdtempSync, mkdirSync, realpathSync, rmSync, symlinkSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
@@ -105,5 +105,57 @@ describe('WorkspaceScopeResolver', () => {
     } finally {
       rmSync(lexical, { recursive: true, force: true });
     }
+  });
+
+  describe('canonicalizeWorkspacePath long-name handling', () => {
+    it('treats a single segment over NAME_MAX as nonexistent', () => {
+      const tmp = mkdtempSync(path.join(os.tmpdir(), 'ws-longseg-'));
+      try {
+        const long = 'x'.repeat(300);
+        expect(canonicalizeWorkspacePath(path.join(tmp, long))).toBe(path.join(realpathSync.native(tmp), long));
+      } finally {
+        rmSync(tmp, { recursive: true, force: true });
+      }
+    });
+
+    it('keeps whole-path ENAMETOOLONG (short segments past PATH_MAX, with symlink) fail-closed', () => {
+      const root = mkdtempSync(path.join(os.tmpdir(), 'ws-deeptree-'));
+      const outside = mkdtempSync(path.join(os.tmpdir(), 'ws-outside-'));
+      const startCwd = process.cwd();
+      const segment = 'd'.repeat(100);
+      try {
+        process.chdir(root);
+        for (let i = 0; i < 60; i += 1) {
+          mkdirSync(segment);
+          process.chdir(segment);
+        }
+        symlinkSync(outside, 'link');
+        const deepAbs = path.join(realpathSync.native(root), ...Array(60).fill(segment));
+        expect(deepAbs.length).toBeGreaterThan(4096);
+        process.chdir(startCwd);
+        expect(() => canonicalizeWorkspacePath(path.join(deepAbs, 'link', 'f'))).toThrow(/ENAMETOOLONG/);
+      } finally {
+        process.chdir(startCwd);
+        rmSync(root, { recursive: true, force: true });
+        rmSync(outside, { recursive: true, force: true });
+      }
+    });
+
+    it('still throws on a NUL byte', () => {
+      expect(() => canonicalizeWorkspacePath(path.join(os.tmpdir(), 'a\0b'))).toThrow();
+    });
+
+    it.skipIf(typeof process.getuid === 'function' && process.getuid() === 0)('still throws on EACCES', () => {
+      const tmp = mkdtempSync(path.join(os.tmpdir(), 'ws-eacces-'));
+      const locked = path.join(tmp, 'locked');
+      mkdirSync(locked);
+      try {
+        chmodSync(locked, 0o000);
+        expect(() => canonicalizeWorkspacePath(path.join(locked, 'child', 'f'))).toThrow(/EACCES/);
+      } finally {
+        chmodSync(locked, 0o700);
+        rmSync(tmp, { recursive: true, force: true });
+      }
+    });
   });
 });

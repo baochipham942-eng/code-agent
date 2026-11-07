@@ -11,7 +11,6 @@ import type BetterSqlite3 from 'better-sqlite3';
 
 vi.mock('../../../src/host/services/core/database/nativeLoader', () => ({
   loadBetterSqlite3: () => Database,
-  betterSqlite3CandidatePaths: () => [],
 }));
 
 import { DatabaseService } from '../../../src/host/services/core/databaseService';

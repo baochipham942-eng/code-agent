@@ -142,7 +142,7 @@ describe('AgentEngineHistoryImportService', () => {
     ]);
   });
 
-  it('maps a synthetic Claude history to a decoded provenance-tagged envelope', async () => {
+  it('maps a synthetic Claude history to a decoded provenance-tagged envelope, keeping tool use as one text line', async () => {
     const roots = await createHistoryRoots();
     const sourcePath = path.join(roots.claude, 'synthetic-project', 'claude-import.jsonl');
     await fs.mkdir(path.dirname(sourcePath), { recursive: true });
@@ -154,7 +154,7 @@ describe('AgentEngineHistoryImportService', () => {
       }),
       JSON.stringify({
         type: 'assistant', uuid: 'claude-assistant-1', sessionId: 'claude-import', timestamp: '2026-05-16T10:00:01.000Z',
-        message: { content: [{ type: 'thinking', thinking: 'private thought' }, { type: 'text', text: 'assistant reply' }, { type: 'tool_use', id: 'tool-1', name: 'synthetic_tool', input: {} }] },
+        message: { content: [{ type: 'thinking', thinking: 'private thought' }, { type: 'text', text: 'assistant reply' }, { type: 'tool_use', id: 'tool-1', name: 'synthetic_tool', input: { file_path: '/synthetic/repo/notes.md' } }] },
       }),
       JSON.stringify({
         type: 'user', uuid: 'claude-tool-result', sessionId: 'claude-import', timestamp: '2026-05-16T10:00:02.000Z',
@@ -176,13 +176,13 @@ describe('AgentEngineHistoryImportService', () => {
     expect(decoded.sessions[0].origin?.metadata).toEqual(result.provenance);
     expect(decoded.messages.map((message) => message.content)).toEqual([
       'first paragraph\n\nsecond paragraph',
-      'assistant reply',
+      'assistant reply\n\nsynthetic_tool /synthetic/repo/notes.md',
     ]);
     expect(decoded.messages[1].thinking).toBe('private thought');
     expect(decoded.messages.flatMap((message) => message.contentParts ?? []).some((part) => part.type === 'tool_call')).toBe(false);
   });
 
-  it('maps a synthetic Codex rollout to a decoded envelope and drops tool records', async () => {
+  it('maps a synthetic Codex rollout to a decoded envelope, keeping function calls as one text line', async () => {
     const roots = await createHistoryRoots();
     const sourcePath = path.join(roots.codex, '2026', '05', '16', 'rollout-2026-05-16T10-00-00-synthetic-codex.jsonl');
     await fs.mkdir(path.dirname(sourcePath), { recursive: true });
@@ -190,7 +190,7 @@ describe('AgentEngineHistoryImportService', () => {
       JSON.stringify({ type: 'session_meta', payload: { id: 'synthetic-codex', cwd: '/synthetic/workspace', timestamp: '2026-05-16T10:00:00.000Z' } }),
       JSON.stringify({ type: 'turn_context', payload: { model: 'synthetic-codex-model', sandbox_policy: 'read-only' } }),
       JSON.stringify({ type: 'event_msg', payload: { type: 'user_message', message: 'codex user', timestamp: '2026-05-16T10:00:01.000Z' } }),
-      JSON.stringify({ type: 'response_item', payload: { type: 'function_call', call_id: 'tool-2', name: 'synthetic_tool', arguments: '{}' } }),
+      JSON.stringify({ type: 'response_item', payload: { type: 'function_call', call_id: 'tool-2', name: 'synthetic_tool', arguments: '{"command":"ls -la /synthetic"}' } }),
       JSON.stringify({ type: 'response_item', payload: { type: 'function_call_output', call_id: 'tool-2', output: 'tool output' } }),
       JSON.stringify({ type: 'event_msg', payload: { type: 'agent_message', message: 'codex answer', timestamp: '2026-05-16T10:00:02.000Z' } }),
       JSON.stringify({ type: 'response_item', payload: { type: 'reasoning', summary: [{ type: 'summary_text', text: 'codex thought' }] } }),
@@ -205,26 +205,32 @@ describe('AgentEngineHistoryImportService', () => {
     const decoded = decodeSessionExportEnvelopeV2(JSON.stringify(result.envelope));
 
     expect(decoded.sessions[0].origin?.metadata).toEqual(result.provenance);
-    expect(decoded.messages.map((message) => message.content)).toEqual(['codex user', 'codex answer', '']);
-    expect(decoded.messages[2].thinking).toBe('codex thought');
+    expect(decoded.messages.map((message) => message.content)).toEqual(['codex user', 'synthetic_tool ls -la /synthetic', 'codex answer', '']);
+    expect(decoded.messages[3].thinking).toBe('codex thought');
     expect(decoded.messages.flatMap((message) => message.contentParts ?? []).some((part) => part.type === 'tool_call')).toBe(false);
   });
 
-  it('rejects histories whose messages are all dropped loss classes', async () => {
+  it('maps a tool-only Claude history to a single tool line instead of rejecting it', async () => {
     const roots = await createHistoryRoots();
     const sourcePath = path.join(roots.claude, 'synthetic-project', 'tools-only.jsonl');
     await fs.mkdir(path.dirname(sourcePath), { recursive: true });
     await fs.writeFile(sourcePath, JSON.stringify({
       type: 'assistant', uuid: 'tool-only', sessionId: 'tools-only', timestamp: '2026-05-16T10:00:00.000Z',
-      message: { content: [{ type: 'tool_use', id: 'tool-3', name: 'synthetic_tool', input: {} }] },
+      message: { content: [{ type: 'tool_use', id: 'tool-3', name: 'synthetic_tool', input: { pattern: 'import*.ts' } }] },
     }));
     const service = new AgentEngineHistoryImportService({
       roots: { codexSessionsRoot: roots.codex, claudeProjectsRoot: roots.claude },
     });
 
-    await expect(service.mapHistoryForImport({
+    const result = await service.mapHistoryForImport({
       engine: 'claude_code', sourcePath, ownerScopeId: 'synthetic-owner', projectId: 'synthetic-project',
-    })).rejects.toMatchObject({ code: 'NO_IMPORTABLE_MESSAGES' });
+    });
+    const decoded = decodeSessionExportEnvelopeV2(JSON.stringify(result.envelope), {
+      ownerScopeId: 'synthetic-owner', projectId: 'synthetic-project',
+    });
+
+    expect(decoded.messages.map((message) => message.content)).toEqual(['synthetic_tool import*.ts']);
+    expect(decoded.messages[0].role).toBe('assistant');
   });
 
   it('rejects malformed external-history provenance on decode', async () => {

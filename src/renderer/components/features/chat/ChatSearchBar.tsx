@@ -47,6 +47,11 @@ export const ChatSearchBar: React.FC<ChatSearchBarProps> = ({
   // Current session search state
   const [matches, setMatches] = useState<SearchMatch[]>([]);
   const [activeIndex, setActiveIndex] = useState(0);
+  // N-MEM-JOURNAL-SOURCEJUMP r3：空 query 的 matches 回推只在「用户清空了非空输入」
+  // 时发生。此前投影重算（turns 引用变化）也会带着空 query 回推 []，把
+  // pendingSearchJump 跳转刚种下的高亮在同一秒内抹掉（真跑诊断：MATCH branch 已
+  // 执行、amber 始终 0）。关闭搜索栏的清空（visible effect else 分支）不受影响。
+  const lastQueryRef = useRef('');
 
   // Cross-session search state
   const [crossResults, setCrossResults] = useState<CrossSessionSearchResults | null>(null);
@@ -76,11 +81,14 @@ export const ChatSearchBar: React.FC<ChatSearchBarProps> = ({
     if (tab !== 'current') return;
 
     if (!query.trim()) {
+      const clearedByUser = lastQueryRef.current.trim().length > 0;
+      lastQueryRef.current = query;
       setMatches([]);
       setActiveIndex(0);
-      onMatchesChange([], 0);
+      if (clearedByUser) onMatchesChange([], 0);
       return;
     }
+    lastQueryRef.current = query;
 
     const lowerQuery = query.toLowerCase();
     const newMatches: SearchMatch[] = [];

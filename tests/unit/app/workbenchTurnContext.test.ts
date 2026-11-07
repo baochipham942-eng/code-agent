@@ -461,15 +461,16 @@ describe('workbenchTurnContext', () => {
     });
   });
 
-  it('does not allow unchecked or failed connectors into the runtime tool scope', () => {
+  it('allows unchecked (probe-on-demand) but not failed or unavailable connectors into the runtime tool scope', () => {
     registerConnector('mail', { connected: false, readiness: 'unchecked' });
     registerConnector('calendar', { connected: false, readiness: 'failed', error: 'not authorized' });
     registerConnector('reminders', { connected: true, readiness: 'ready' });
+    registerConnector('photos', { connected: false, readiness: 'unavailable' });
 
     expect(buildWorkbenchToolScope({
-      selectedConnectorIds: ['mail', 'calendar', 'reminders'],
+      selectedConnectorIds: ['mail', 'calendar', 'reminders', 'photos'],
     })).toEqual({
-      allowedConnectorIds: ['reminders'],
+      allowedConnectorIds: ['mail', 'reminders'],
     });
   });
 

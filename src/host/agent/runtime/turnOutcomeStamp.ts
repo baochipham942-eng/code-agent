@@ -351,6 +351,7 @@ export async function recordTurnOutcomeStamp(
   ctx: TurnOutcomeStampContext,
   terminal: RunTerminalStatus,
   summary?: CompletionSummaryRecord,
+  cancelReason?: 'idle_reaped',
 ): Promise<void> {
   try {
     const outcome = await buildTurnOutcome(ctx, terminal, summary);
@@ -372,6 +373,7 @@ export async function recordTurnOutcomeStamp(
         ? gated.evidenceProblems
         : outcome.evidenceProblems,
       ...(guardSignals.length > 0 ? { guardSignals } : {}),
+      ...(cancelReason ? { cancelReason } : {}),
     });
     if (!ctx.turnTrace.flush()) logger.warn('turn outcome trace flush failed', { sessionId: ctx.sessionId });
   } catch (error) {

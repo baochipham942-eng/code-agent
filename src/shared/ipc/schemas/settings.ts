@@ -16,6 +16,7 @@ const SettingsDomainRequestSchema = z.object({
     'getAllServiceKeys',
     'getBudgetStatus',
     'getDevMode',
+    'getOutboundMaskRecords',
     'getServiceApiKey',
     'listPermissionGrants',
     'resolveProviderIconAsset',

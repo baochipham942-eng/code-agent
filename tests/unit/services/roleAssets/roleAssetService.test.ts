@@ -354,6 +354,20 @@ describe('roleAssetService', () => {
       expect(result).not.toContain('- entry-200');
     });
 
+    it('counts only index entries in the omitted tail (N-SUBAGENT-DOMAIN-MEMORY-REST1: blank/non-bullet lines do not inflate N)', async () => {
+      await ensureRoleAssetDirs('研究员');
+      // trim 去掉末尾空行后共 205 行：物理行被裁 5 行，但条目只有 3 条。
+      const bullets = Array.from({ length: ROLE_ASSETS.INDEX_MAX_LINES + 3 }, (_, index) => `- entry-${index}`);
+      const content = `${bullets.join('\n')}\n\n# tail header\n\n`;
+      await fs.writeFile(path.join(getRoleDir('研究员'), 'MEMORY.md'), content, 'utf-8');
+
+      const result = await loadScopedMemoryIndex({ scope: 'role', roleId: '研究员' });
+
+      expect(result).toContain('OmittedMemoryIndexNotice: 省略了 3 条记忆索引条目');
+      expect(result).not.toContain('省略了 5 条');
+      expect(result).not.toContain('- entry-200');
+    });
+
     it('keeps non-truncated output byte-for-byte equal to the trimmed source', async () => {
       await ensureRoleAssetDirs('研究员');
       const content = '\n# custom index\n- [entry.md](entry.md) — description\n\n';
@@ -419,6 +433,33 @@ describe('roleAssetService', () => {
       expect(block).toContain('角色记忆索引');
       expect(block).toContain('[glossary.md]');
       expect(block).toContain('MemoryRead');
+    });
+
+    it('over-budget index reaches the injected block with the correct entry count (REST1 ①②)', async () => {
+      await ensureRoleAssetDirs('研究员');
+      const lines = Array.from({ length: ROLE_ASSETS.INDEX_MAX_LINES + 5 }, (_, index) => `- entry-${index}`);
+      await fs.writeFile(path.join(getRoleDir('研究员'), 'MEMORY.md'), `${lines.join('\n')}\n`, 'utf-8');
+
+      const block = await buildRoleContextBlock('研究员');
+      expect(block).toContain('<role_assets role="研究员">');
+      expect(block).toContain('## 角色记忆索引');
+      expect(block).toContain('OmittedMemoryIndexNotice: 省略了 5 条记忆索引条目');
+      expect(block).toContain('MemoryRead');
+      expect(block).not.toContain('- entry-200');
+    });
+
+    it('at-or-under-budget index shows no omission notice in the block', async () => {
+      await ensureRoleAssetDirs('研究员');
+      const lines = Array.from({ length: ROLE_ASSETS.INDEX_MAX_LINES }, (_, index) => `- entry-${index}`);
+      await fs.writeFile(path.join(getRoleDir('研究员'), 'MEMORY.md'), `${lines.join('\n')}\n`, 'utf-8');
+
+      const block = await buildRoleContextBlock('研究员');
+      expect(block).toContain('## 角色记忆索引');
+      expect(block).not.toContain('OmittedMemoryIndexNotice');
+    });
+
+    it('generic explore agent also returns null (REST1 ③)', async () => {
+      expect(await buildRoleContextBlock('explore')).toBeNull();
     });
 
     it('injects the standing boundary into the actual role context block', async () => {

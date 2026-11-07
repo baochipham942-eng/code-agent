@@ -146,6 +146,8 @@ export const workbenchTabsZh = {
       interruptConfirmAction: '中断并打开',
       interruptConfirmOperate: '中断并操作',
       interruptConfirmCancel: '取消',
+      takeoverPausedHint: '你正在操作这个页面，Neo 已暂停',
+      takeoverContinue: '继续',
       liveInteract: '浏览器实时画面，可点击、滚动和键盘输入',
       // 二期 N1：导航 pending / 失败反馈
       navigatingStatus: '正在打开…',
@@ -314,6 +316,8 @@ export const workbenchTabsEn: typeof workbenchTabsZh = {
       interruptConfirmAction: 'Interrupt and open',
       interruptConfirmOperate: 'Interrupt and interact',
       interruptConfirmCancel: 'Cancel',
+      takeoverPausedHint: 'You are operating this page. Neo is paused',
+      takeoverContinue: 'Continue',
       liveInteract: 'Live browser view — click, scroll, and type',
       navigatingStatus: 'Opening…',
       navigationFailed: 'Failed to open: {error}',

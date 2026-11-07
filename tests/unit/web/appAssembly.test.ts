@@ -122,6 +122,8 @@ const EXPECTED_ROUTES: Array<[string, string]> = [
   ['get', '/dev/telemetry/cloud-trace'],
   // agent router
   ['post', '/run'],
+  ['get', '/cloud-runs/:runId'],
+  ['post', '/cloud-runs/:runId/cancel'],
   ['post', '/cancel'],
   ['post', '/continue'],
   ['post', '/pause'],

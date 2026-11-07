@@ -57,7 +57,12 @@ interface RoleIconProps {
   className?: string;
 }
 
+/** 按名解析 lucide 组件（缺省/未知名兜底 UserCircle）；需要把图标当 ElementType 用时取它。 */
+export function resolveRoleIcon(name?: string): LucideIcon {
+  return (name && ROLE_ICON_MAP[name]) || UserCircle;
+}
+
 export const RoleIcon: React.FC<RoleIconProps> = ({ name, className }) => {
-  const Icon = (name && ROLE_ICON_MAP[name]) || UserCircle;
+  const Icon = resolveRoleIcon(name);
   return <Icon className={className} />;
 };

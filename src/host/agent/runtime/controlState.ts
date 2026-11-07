@@ -10,6 +10,7 @@ export class ControlState {
   private _isCancelled = false;
   private _isInterrupted = false;
   private _isSettled = false;
+  private _cancelReason?: 'user' | 'session-switch' | 'idle-reaped';
   /** per-inference controller：inference 层建/清，conversationRuntime 只触发 abort */
   private _abortController: AbortController | null = null;
   /** per-run controller：conversationRuntime 建/清，下游只读 .signal 透传 */
@@ -51,8 +52,11 @@ export class ControlState {
   get emptyReinferenceAfterSteer(): boolean { return this._emptyReinferenceAfterSteer; }
   get externalDataCallCount(): number { return this._externalDataCallCount; }
 
-  markCancelled(): void {
+  get cancelReason(): 'user' | 'session-switch' | 'idle-reaped' | undefined { return this._cancelReason; }
+
+  markCancelled(reason?: 'user' | 'session-switch' | 'idle-reaped'): void {
     this._isCancelled = true;
+    this._cancelReason = reason;
   }
 
   markInterrupted(): void {

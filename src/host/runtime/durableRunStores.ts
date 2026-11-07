@@ -81,7 +81,7 @@ export interface RunStore {
   /**
    * Lists expired runs that restart must reclaim as parked (never auto-resumed):
    * crash candidates whose automatic resume budget is exhausted, plus runs
-   * explicitly parked by user_stop / guard_halt (ADR-075 修订 2026-09-29).
+   * explicitly parked by user_stop / guard_halt / budget_exhausted / quota_wait (ADR-075 修订 2026-09-29).
    */
   listParkedForReclaim?(now: number, limit: number): Promise<RunEnvelope[]>;
   /** Claims the owner, increments attempt, and appends the attempt row in one transaction. */
@@ -124,6 +124,7 @@ export interface CheckpointCommit {
   interruptCause?: RunInterruptCause;
   autoResumeCount?: number;
   clearInterruptCause?: boolean;
+  quotaWaitDueAt?: number;
 }
 
 export interface CheckpointStore {

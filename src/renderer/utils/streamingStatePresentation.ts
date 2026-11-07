@@ -84,6 +84,12 @@ export function hasCancelledRunMarker(turn: TraceTurn): boolean {
   );
 }
 
+export function isIdleReapedRun(turn: TraceTurn): boolean {
+  return turn.nodes.some(
+    (node) => node.metadata?.workbench?.runCancellation?.reason === 'idle_reaped',
+  );
+}
+
 function hasRunningTool(turn: TraceTurn): boolean {
   return turn.nodes.some((node) => {
     const toolCall = node.toolCall;

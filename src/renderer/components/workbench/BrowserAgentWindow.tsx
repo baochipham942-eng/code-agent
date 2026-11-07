@@ -42,6 +42,8 @@ import {
   setUserBrowserViewport,
 } from '../../services/userBrowserLink';
 import { useBrowserStageUserInput } from '../../hooks/useBrowserStageUserInput';
+import { confirmLiveBrowserInterrupt } from '../../hooks/requestBrowserHumanTakeover';
+import { BrowserHumanTakeoverBar } from './BrowserHumanTakeoverBar';
 import { BROWSER_STAGE_VIEWPORT } from '@shared/constants';
 import { resolveStageFollowPlan } from '@shared/utils/browserStageViewportFollow';
 import { normalizeBrowserAddressInput } from '../../utils/browserAddressBar';
@@ -357,6 +359,7 @@ export const BrowserAgentWindow: React.FC = () => {
       ?? managedSession.viewport?.height
       ?? null,
     surfaceSessionId: browserSurfaceSessionId,
+    agentSurfaceState: activeBrowserSurface && !isUserOpenedSurfaceV1(activeBrowserSurface) ? activeBrowserSurface.session.state : null,
   });
 
   // 重启/刷新后内存 frameByScope 是空的：终态会话还在（host 投影恢复），试着从盘上
@@ -963,6 +966,7 @@ export const BrowserAgentWindow: React.FC = () => {
         {pointerEvent && !annotateMode && (
           <AgentPointerOverlay event={pointerEvent} live={livePointer.isLive} />
         )}
+        <BrowserHumanTakeoverBar />
       </div>
 
       <ConfirmDialog
@@ -976,15 +980,14 @@ export const BrowserAgentWindow: React.FC = () => {
             : copy.interruptConfirmOperate
         }
         cancelText={copy.interruptConfirmCancel}
-        onConfirm={() => {
-          if (pendingInterruptUrl) {
-            const url = pendingInterruptUrl;
-            setPendingInterruptUrl(null);
-            if (url) void navigateTo(url);
-            return;
-          }
-          stageInput.confirmPreempt();
-        }}
+        onConfirm={() => void confirmLiveBrowserInterrupt({
+          pendingUrl: pendingInterruptUrl,
+          clearPendingUrl: () => setPendingInterruptUrl(null),
+          navigateTo,
+          confirmStagePreempt: () => stageInput.confirmPreempt(),
+          conversationId: currentSessionId,
+          surfaceSessionId: activeBrowserSurface?.session.sessionId ?? null,
+        })}
         onCancel={() => {
           setPendingInterruptUrl(null);
           stageInput.cancelPreempt();

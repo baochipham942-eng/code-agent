@@ -11,6 +11,8 @@
 // post：NSIS setup.exe 存在 + PE 魔数 + （有签名 key 时）updater .sig 存在。
 // ============================================================================
 
+import { Buffer } from 'node:buffer';
+import { spawnSync } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -44,8 +46,55 @@ function hasRequiredControlPlanePublicKeys(rel) {
   }
 }
 
+function verifyNativeManifest() {
+  const result = spawnSync(process.execPath, [
+    path.join(root, 'scripts/verify-native-manifest.mjs'),
+    '--root',
+    root,
+    '--platform',
+    'win32-x64',
+    '--closure',
+  ], { cwd: root, stdio: 'inherit' });
+  check('native dependency manifest and closure', result.status === 0);
+  return result.status === 0;
+}
+
+function verifyBetterSqlite3Load(manifestValid) {
+  if (process.platform !== 'win32') {
+    console.log('[verify-windows] better-sqlite3 bundled Node load skipped (not Windows)');
+    return;
+  }
+  if (!manifestValid) {
+    console.log('[verify-windows] better-sqlite3 bundled Node load skipped (invalid native manifest)');
+    return;
+  }
+
+  const manifest = JSON.parse(fs.readFileSync(path.join(root, 'dist/native/manifest.json'), 'utf8'));
+  const entry = manifest.modules['better-sqlite3'].entry;
+  console.log(`[verify-windows] running dist/bundled-node/node.exe -e <better-sqlite3 in-memory DB smoke> ${entry}`);
+  const result = spawnSync(path.join(root, 'dist/bundled-node/node.exe'), [
+    '-e',
+    `
+const Database = require(process.argv[1]);
+const db = new Database(':memory:');
+db.exec('CREATE TABLE smoke (id INTEGER PRIMARY KEY, value TEXT)');
+db.prepare('INSERT INTO smoke (value) VALUES (?)').run('ok');
+const row = db.prepare('SELECT value FROM smoke').get();
+db.close();
+if (row?.value !== 'ok') throw new Error('in-memory database round trip failed');
+console.log('[verify-windows] better-sqlite3 manifest entry loads and opens an in-memory DB with bundled Node');
+`,
+    path.join(root, entry),
+  ], { cwd: root, encoding: 'utf8' });
+  if (result.stdout) process.stdout.write(result.stdout);
+  if (result.stderr) process.stderr.write(result.stderr);
+  check('better-sqlite3 manifest entry real load and in-memory DB', result.status === 0,
+    result.error?.message || `node.exe exited with status ${result.status}`);
+}
+
 function verifyPre() {
   console.log('[verify-windows] pre-bundle 资源检查');
+  const manifestValid = verifyNativeManifest();
   check('dist/bundled-node/node.exe', existsAt('dist/bundled-node/node.exe'));
   check('dist/web/webServer.cjs', existsAt('dist/web/webServer.cjs'));
   check(
@@ -53,8 +102,6 @@ function verifyPre() {
     hasRequiredControlPlanePublicKeys('dist/web/control-plane-public-keys.json'),
   );
   check('dist/renderer/index.html', existsAt('dist/renderer/index.html'));
-  check('dist/native/better-sqlite3/prebuilds/win32-x64.node (Node-API runtime)',
-    existsAt('dist/native/better-sqlite3/prebuilds/win32-x64.node'));
   check('scripts/rtk.exe', existsAt('scripts/rtk.exe'));
   check('scripts/uv.exe', existsAt('scripts/uv.exe'));
   check('node_modules/node-pty/prebuilds/win32-x64/conpty.node',
@@ -68,10 +115,9 @@ function verifyPre() {
   check('@img/sharp-win32-x64/lib/*.dll (libvips 静态包)', sharpFiles.some((f) => f.endsWith('.dll')),
     'win32 sharp 包应内含 libvips DLL');
 
-  check('node_modules/better-sqlite3/prebuilds/win32-x64.node',
-    existsAt('node_modules/better-sqlite3/prebuilds/win32-x64.node'));
   check('node_modules/keytar build 产物', existsAt('node_modules/keytar/build/Release/keytar.node')
     || existsAt('node_modules/keytar/prebuilds'));
+  verifyBetterSqlite3Load(manifestValid);
 }
 
 function verifyPost() {

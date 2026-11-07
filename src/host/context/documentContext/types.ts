@@ -4,7 +4,7 @@
 
 export type DocumentType = 'code' | 'excel' | 'docx' | 'markdown' | 'pdf' | 'text' | 'unknown';
 
-export type SectionType = 'heading' | 'code' | 'table' | 'paragraph' | 'formula' | 'list' | 'import';
+type SectionType = 'heading' | 'code' | 'table' | 'paragraph' | 'formula' | 'list' | 'import';
 
 export interface DocumentSection {
   id: string;

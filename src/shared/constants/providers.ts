@@ -79,7 +79,7 @@ export const GROQ_DEFAULT_MODEL = 'openai/gpt-oss-20b';
 // 才走代理。新增国内 provider 时把其端点 host 加进来。
 // ============================================================================
 
-export const DIRECT_CONNECT_HOST_SUFFIXES: readonly string[] = [
+const DIRECT_CONNECT_HOST_SUFFIXES: readonly string[] = [
   '0ki.cn',        // 智谱 (OKI 代理)
   'bigmodel.cn',   // 智谱官方
   'moonshot.cn',   // Moonshot
@@ -122,7 +122,7 @@ export function isDirectConnectHost(urlOrHost: string): boolean {
 // 例外判定（如 claude 走 clawapi.vip 国内中转）。随 bundle 分发，装机后同样按 provider 身份判。
 // ============================================================================
 
-export const OVERSEAS_PROVIDERS: ReadonlySet<string> = new Set([
+const OVERSEAS_PROVIDERS: ReadonlySet<string> = new Set([
   'openai',
   'claude',
   'anthropic',
@@ -289,7 +289,7 @@ export const PROVIDER_REGISTRY: Record<BuiltInModelProvider, CanonicalProviderIn
   },
 };
 
-export const PROVIDER_ALIAS_MAP: Record<ModelProviderAlias, BuiltInModelProvider> = Object.freeze(
+const PROVIDER_ALIAS_MAP: Record<ModelProviderAlias, BuiltInModelProvider> = Object.freeze(
   Object.entries(PROVIDER_REGISTRY).reduce((acc, [provider, config]) => {
     for (const alias of config.aliases) {
       acc[alias] = provider as BuiltInModelProvider;

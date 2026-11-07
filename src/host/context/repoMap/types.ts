@@ -3,7 +3,7 @@
 // ============================================================================
 
 /** 符号类型 */
-export type SymbolKind = 'function' | 'class' | 'interface' | 'type' | 'enum' | 'const' | 'method';
+type SymbolKind = 'function' | 'class' | 'interface' | 'type' | 'enum' | 'const' | 'method';
 
 /** 单个符号条目 */
 export interface SymbolEntry {

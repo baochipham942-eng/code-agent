@@ -10,7 +10,7 @@
 // in one place.
 // ============================================================================
 
-export type PressureTrigger =
+type PressureTrigger =
   | 'none'
   | 'token-threshold'
   | 'usage-percent'

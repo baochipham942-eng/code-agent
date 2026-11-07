@@ -66,22 +66,6 @@ export const DAG_SCHEDULER = {
   DEFAULT_MAX_RETRIES: 0,
 } as const;
 
-/** 编排器超时配置 */
-export const ORCHESTRATOR_TIMEOUTS = {
-  /** 本地执行超时 */
-  LOCAL_EXECUTOR: 120_000,
-  /** 云端执行超时 */
-  CLOUD_EXECUTOR: 180_000,
-  /** Agent 委托超时 */
-  AGENT_DELEGATION: 60_000,
-  /** Agent 执行器超时 */
-  AGENT_EXECUTOR: 180_000,
-  /** 统一编排器默认超时 */
-  UNIFIED_DEFAULT: 120_000,
-  /** 统一编排器扩展超时 */
-  UNIFIED_EXTENDED: 180_000,
-} as const;
-
 /** 服务初始化超时 */
 export const SERVICE_TIMEOUTS = {
   /** MCP 连接 */
@@ -136,34 +120,6 @@ export const AUTO_MODE_RATE_LIMIT = {
   WINDOW_COUNT: 20,
   /** 滑动窗口长度（10 分钟） */
   WINDOW_MS: 10 * 60_000,
-} as const;
-
-/** 锁和资源管理超时 */
-export const LOCK_TIMEOUTS = {
-  /** 锁默认超时 */
-  DEFAULT: 300_000,
-  /** 锁清理间隔 */
-  CLEANUP_INTERVAL: 30_000,
-  /** Agent Bus 超时 */
-  AGENT_BUS: 300_000,
-  /** Agent Bus 清理间隔 */
-  AGENT_BUS_CLEANUP: 30_000,
-} as const;
-
-/** 性能阈值（毫秒） */
-export const PERFORMANCE_THRESHOLDS = {
-  /** 快速响应阈值 */
-  FAST_RESPONSE: 60_000,
-  /** 慢响应阈值 */
-  SLOW_RESPONSE: 120_000,
-  /** 策略优化阈值 */
-  STRATEGY_OPTIMIZATION: 300_000,
-  /** 模型请求超时 */
-  MODEL_REQUEST: 300_000,
-  /** 任务队列超时 */
-  TASK_QUEUE: 300_000,
-  /** 网络重试最大延迟 */
-  NETWORK_RETRY_MAX_DELAY: 30_000,
 } as const;
 
 /** 数据源路由超时配置 */
@@ -306,37 +262,9 @@ export const TEST_TIMEOUTS = {
   TIMEOUT_TRACE_GRACE: 5_000,
 } as const;
 
-/** 资源锁超时 */
-export const RESOURCE_LOCK_TIMEOUTS = {
-  /** 锁获取超时 */
-  ACQUIRE: 300_000,
-  /** 等待超时 */
-  WAIT: 30_000,
-} as const;
-
-/** 认证服务超时 */
-export const AUTH_TIMEOUTS = {
-  /** 会话获取超时 */
-  SESSION_FETCH: 5_000,
-  /** 配置文件获取超时 */
-  PROFILE_FETCH: 5_000,
-} as const;
-
-/** 状态检查超时 */
-export const STATUS_TIMEOUTS = {
-  /** API 健康检查超时 */
-  API_HEALTH_CHECK: 5_000,
-} as const;
-
 /** Startup gates must not remain blocked forever when the renderer signal is lost. */
 export const STARTUP_TIMEOUTS = {
   RENDERER_WINDOW_READY: 5_000,
-} as const;
-
-/** 任务输出超时 */
-export const TASK_OUTPUT_TIMEOUTS = {
-  /** 默认超时 */
-  DEFAULT: 30_000,
 } as const;
 
 /**
@@ -354,18 +282,6 @@ export const TASK_QUEUE_TIMEOUTS = {
   QUEUE_DRAIN_GRACE_MS: 2_000,
   /** 排队/执行落定状态轮询间隔 */
   POLL_INTERVAL_MS: 250,
-} as const;
-
-/** 后台任务超时 */
-export const BACKGROUND_TASK_TIMEOUTS = {
-  /** 默认超时 */
-  DEFAULT: 30_000,
-} as const;
-
-/** Skill 服务超时 */
-export const SKILL_TIMEOUTS = {
-  /** 安装超时 */
-  INSTALL: 30_000,
 } as const;
 
 /** LSP 服务超时 */

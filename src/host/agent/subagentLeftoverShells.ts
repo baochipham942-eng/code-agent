@@ -3,9 +3,9 @@ import {
   type SubagentLeftoverShellReportItem,
 } from '../../shared/i18n/subagentLeftoverShells';
 import type { SessionTaskSlotLocale } from '../../shared/i18n/sessionTaskSlot';
-import { mayCommandAwaitSystemPrompt } from '../../shared/utils/systemPromptCommand';
 import { getConfigService } from '../services/core/configService';
 import { createLogger } from '../services/infra/logger';
+import { commandMayAwaitSystemPrompt } from '../task/macosAutomationPrompt';
 import {
   getAllBackgroundTasks,
   getBackgroundTaskPid,
@@ -54,7 +54,7 @@ export function reportSubagentLeftoverShells(
       commandSummary: commandSummary(reportCommand),
       taskId: task.taskId,
       elapsedMs: task.duration,
-      mayAwaitSystemPrompt: mayCommandAwaitSystemPrompt(reportCommand),
+      mayAwaitSystemPrompt: commandMayAwaitSystemPrompt(reportCommand),
     };
   });
   return formatSubagentLeftoverShellReport(items, resolveLocale(executionAgentId));

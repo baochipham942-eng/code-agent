@@ -132,7 +132,6 @@ interface RunHarnessStamp {
   profile: string | null;
   /** 本 run 生效的旋钮全表（无 profile 时 = HARNESS_KNOB_DEFAULTS 原样） */
   knobs: Record<string, number>;
-  /** 本 run 实际生效的 per-model 预算（FU2）：超时与 maxTokens 进档，run 间才可比 */
   budget: UnitBudget;
 }
 
@@ -460,14 +459,7 @@ async function runOneUnit(
     const apiKey = await resolveApiKey(opts.provider);
     agent = new ctx.StandaloneAgentAdapter({
       workingDirectory: workspaceDir,
-      modelConfig: {
-        provider: opts.provider,
-        model: opts.model,
-        apiKey,
-        baseUrl: await resolveConfiguredBaseUrl(opts.provider),
-        // maxTokens = null 时不写该键 ⇒ 适配器回落 MODEL_MAX_TOKENS.DEFAULT，与 FU2 前逐字节一致
-        ...(budget.maxTokens !== null ? { maxTokens: budget.maxTokens } : {}),
-      },
+      modelConfig: { provider: opts.provider, model: opts.model, apiKey, baseUrl: await resolveConfiguredBaseUrl(opts.provider), ...(budget.maxTokens !== null ? { maxTokens: budget.maxTokens } : {}) },
       toolMode: 'deferred',
       ...(opts.knobs ? { harness: { name: opts.label, knobs: opts.knobs } } : {}),
     });
@@ -1018,9 +1010,7 @@ async function main(): Promise<void> {
 
   const profilePath = getStringOption(args, 'profile');
   const knobs = profilePath ? await loadHarnessProfile(profilePath) : undefined;
-  const timeoutMs = getNumberOption(args, 'timeout-ms');
-  const maxTokens = getNumberOption(args, 'max-tokens');
-  const opts: CliOpts = { casesPath, split: splitRaw, reps, provider, model, limit, label, outDir, ids, rep, knobs, profilePath, timeoutMs, maxTokens };
+  const opts: CliOpts = { casesPath, split: splitRaw, reps, provider, model, limit, label, outDir, ids, rep, knobs, profilePath, timeoutMs: getNumberOption(args, 'timeout-ms'), maxTokens: getNumberOption(args, 'max-tokens') };
 
   if (hasFlag(args, 'dry-run')) {
     await dryRun(opts);

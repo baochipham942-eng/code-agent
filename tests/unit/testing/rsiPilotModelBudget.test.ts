@@ -6,7 +6,7 @@
 // modelBudget.ts 按实测给它更长超时与更高 maxTokens；未知模型必须与旧行为
 // 逐字节一致（600s + 适配器默认 maxTokens 16384）。
 // ============================================================================
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
@@ -48,10 +48,6 @@ describe('rsi pilot per-model budget（N-SOL-GAME-AB-FU2）', () => {
   });
 
   it('realRun：适配器收到表选 maxTokens，超时按所选预算杀而不是 600s', async () => {
-    // 不用 fake timers：runner 的落盘链（runs.jsonl、git provenance 子进程）是真实 I/O，
-    // sinon 假时钟推进不泵 poll 阶段，fs 回调不确定结算（共享机上实测 flaky）。
-    // 改用 CLI 覆盖短超时（真实 1.5s）等价证明：所选预算真正驱动了超时竞速——
-    // 若竞速仍用旧 600_000 默认，本测试自己就会挂 10 分钟而不是红。
     const root = await fs.mkdtemp(path.join(os.tmpdir(), 'rsi-budget-'));
     const casesPath = path.join(root, 'cases.json');
     await fs.writeFile(casesPath, JSON.stringify({
@@ -61,36 +57,49 @@ describe('rsi pilot per-model budget（N-SOL-GAME-AB-FU2）', () => {
     }));
     const outDir = path.join(root, 'out');
     const seenConfigs: unknown[] = [];
+    let adapterConstructed!: () => void;
+    const adapterConstructedPromise = new Promise<void>((resolve) => { adapterConstructed = resolve; });
     class StubAdapter {
       workingDirectory: string;
-       
-      constructor(config: any) { seenConfigs.push(config); this.workingDirectory = config.workingDirectory; }
+
+      constructor(config: any) {
+        seenConfigs.push(config);
+        this.workingDirectory = config.workingDirectory;
+        adapterConstructed();
+      }
       sendMessage() { return new Promise<never>(() => {}); } // 永不结束：超时路径是唯一出口
       async finalizeSession() {}
       getSessionId() { return undefined; }
       async cancelActiveRun() {}
     }
-    const chosenTimeoutMs = 1_500;
-    await realRun({
-      casesPath, split: 'all', reps: 1, provider: 'zhipu_coding', model: 'glm-5.3',
-      label: 'budget', outDir, ids: undefined, rep: undefined, limit: 1,
-      timeoutMs: chosenTimeoutMs,
-    }, {
-       
-      StandaloneAgentAdapter: StubAdapter as any,
-      validateGameArtifact: async () => ({ passed: true, failures: [] }),
-      inferArtifactRepairIssueCodesFromText: () => [],
-      getTelemetryCollector: () => ({ getSessionData: () => null }),
-      gameValidationTimeouts: { RUNTIME_SMOKE_MS: 1, BROWSER_VISUAL_SMOKE_MS: 1, LIGHT_PLAYABILITY_SMOKE_MS: 1 },
-      HARNESS_KNOB_DEFAULTS: {},
-      ensureEvalDatabase: async () => {},
-    });
+    const chosenTimeoutMs = 90_000;
+    vi.useFakeTimers({ toFake: ['Date', 'setTimeout', 'clearTimeout'] });
+    vi.setSystemTime(new Date('2026-11-07T00:00:00.000Z'));
+    try {
+      const runPromise = realRun({
+        casesPath, split: 'all', reps: 1, provider: 'zhipu_coding', model: 'glm-5.3',
+        label: 'budget', outDir, ids: undefined, rep: undefined, limit: 1,
+        timeoutMs: chosenTimeoutMs,
+      }, {
+        StandaloneAgentAdapter: StubAdapter as any,
+        validateGameArtifact: async () => ({ passed: true, failures: [] }),
+        inferArtifactRepairIssueCodesFromText: () => [],
+        getTelemetryCollector: () => ({ getSessionData: () => null }),
+        gameValidationTimeouts: { RUNTIME_SMOKE_MS: 1, BROWSER_VISUAL_SMOKE_MS: 1, LIGHT_PLAYABILITY_SMOKE_MS: 1 },
+        HARNESS_KNOB_DEFAULTS: {},
+        ensureEvalDatabase: async () => {},
+      });
+      await adapterConstructedPromise;
+      await vi.advanceTimersByTimeAsync(chosenTimeoutMs);
+      await runPromise;
+    } finally {
+      vi.useRealTimers();
+    }
     const record = JSON.parse((await fs.readFile(path.join(outDir, 'runs.jsonl'), 'utf8')).trim());
     expect(record.timedOut).toBe(true);
     expect(record.error).toBe(`per-run hard timeout after ${chosenTimeoutMs}ms`);
     // 杀在所选超时上，而不是旧默认 600s
-    expect(record.durationMs).toBeGreaterThanOrEqual(chosenTimeoutMs - 100);
-    expect(record.durationMs).toBeLessThan(60_000);
+    expect(record.durationMs).toBe(chosenTimeoutMs);
     // 适配器构造参数：表选 maxTokens（CLI 只覆盖了超时）真传下去了
     expect(seenConfigs[0]).toMatchObject({
       modelConfig: { provider: 'zhipu_coding', model: 'glm-5.3', maxTokens: GLM_BUDGET.maxTokens },

@@ -38,7 +38,7 @@ import { RoleWakeLedger } from "./RoleWakeLedger";
 import { RoleBindingsSection } from "../settings/tabs/RoleBindingsSection";
 import { RoleMemoryActions } from "./RoleMemoryActions";
 import { useAppStore } from "../../../stores/appStore";
-import { Button } from "../../primitives/Button";
+import { Button, TimeInput24 } from "../../primitives";
 import { FullScreenPage, FullScreenPageHeader } from "../shared/FullScreenPage";
 import { RoleBasicTab } from './RoleBasicTab';
 import { RoleEquipmentTab } from './RoleEquipmentTab';
@@ -597,22 +597,26 @@ const QuietHoursEditor: React.FC<{
       <div className="mt-3 flex flex-wrap items-end gap-3">
         <label className="space-y-1 text-xs text-zinc-500">
           <span className="block">{text.quietHoursStart}</span>
-          <input
-            data-testid="role-quiet-hours-start"
-            type="time"
+          <TimeInput24
+            testId="role-quiet-hours-start"
             value={start}
-            onChange={(event) => setStart(event.target.value)}
-            className="rounded-md border border-zinc-700 bg-zinc-950 px-2.5 py-1.5 text-sm text-zinc-200 outline-none focus:border-badge-success"
+            onChange={setStart}
+            hourLabel={t.expert.roleDetail.timeHourLabel}
+            minuteLabel={t.expert.roleDetail.timeMinuteLabel}
+            disabled={busy}
+            size="sm"
           />
         </label>
         <label className="space-y-1 text-xs text-zinc-500">
           <span className="block">{text.quietHoursEnd}</span>
-          <input
-            data-testid="role-quiet-hours-end"
-            type="time"
+          <TimeInput24
+            testId="role-quiet-hours-end"
             value={end}
-            onChange={(event) => setEnd(event.target.value)}
-            className="rounded-md border border-zinc-700 bg-zinc-950 px-2.5 py-1.5 text-sm text-zinc-200 outline-none focus:border-badge-success"
+            onChange={setEnd}
+            hourLabel={t.expert.roleDetail.timeHourLabel}
+            minuteLabel={t.expert.roleDetail.timeMinuteLabel}
+            disabled={busy}
+            size="sm"
           />
         </label>
         <button /* ds-allow:button: 免打扰时段使用紧凑行内保存动作 */

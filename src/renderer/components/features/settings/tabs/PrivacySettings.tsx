@@ -543,12 +543,12 @@ const PrivacySettings: React.FC<PrivacySettingsProps> = ({ onNavigateSettings })
       >
         <p className="mb-3 text-xs text-zinc-400">
           <a
-            href="https://github.com/baochipham942-eng/code-agent/blob/main/docs/NOTICE.md"
+            href="https://github.com/neo-cowork/code-agent/blob/main/docs/NOTICE.md"
             target="_blank"
             rel="noreferrer"
             className="text-badge-info underline underline-offset-2 hover:text-badge-info"
             onClick={(event) => {
-              if (openExternalLink('https://github.com/baochipham942-eng/code-agent/blob/main/docs/NOTICE.md')) {
+              if (openExternalLink('https://github.com/neo-cowork/code-agent/blob/main/docs/NOTICE.md')) {
                 event.preventDefault();
               }
             }}

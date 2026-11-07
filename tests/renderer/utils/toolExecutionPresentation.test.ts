@@ -497,3 +497,51 @@ describe('humanizeToolFailureReason — failureCode 优先翻成一句人话', (
     expect(resolveCollapsedFailureSummary(call, zh)).toBeNull();
   });
 });
+
+describe('humanizeToolFailureReason — 裸工程错误码翻成人话 + 下一步（FB-746）', () => {
+  function codeFailedCall(code: string): ToolCall {
+    return makeToolCall({
+      name: 'Read',
+      result: {
+        toolCallId: 'tool-code-1',
+        success: false,
+        error: `ENOENT: no such file or directory, open '/x'`,
+        metadata: { code },
+      },
+    });
+  }
+
+  it('ENOENT / INVALID_ARGS / FS_ERROR 显示原因 + 下一步，不再「错误码 X」', () => {
+    for (const code of ['ENOENT', 'INVALID_ARGS', 'FS_ERROR'] as const) {
+      const reason = humanizeToolFailureReason(codeFailedCall(code), zh);
+      expect(reason, code).toBe(zh.toolStepHumanize.rawFailureCodes[code]);
+      expect(reason, code).not.toContain('错误码');
+      expect(reason, code).not.toContain(code);
+      const reasonEn = humanizeToolFailureReason(codeFailedCall(code), en);
+      expect(reasonEn, code).toBe(en.toolStepHumanize.rawFailureCodes[code]);
+    }
+  });
+
+  it('未登记的全大写码走 generic 兜底句，不漏原始码', () => {
+    const reason = humanizeToolFailureReason(codeFailedCall('E_WHATEVER'), zh);
+    expect(reason).toBe(zh.toolStepHumanize.rawFailureCodeFallback);
+    expect(reason).not.toContain('E_WHATEVER');
+    expect(humanizeToolFailureReason(codeFailedCall('E_WHATEVER'), en))
+      .toBe(en.toolStepHumanize.rawFailureCodeFallback);
+  });
+
+  it('数字退出码与 HTTP nnn 保持「错误码 …」原样', () => {
+    expect(humanizeToolFailureReason(codeFailedCall('HTTP 404'), zh))
+      .toBe(zh.toolStepHumanize.failureCode.replace('{code}', 'HTTP 404'));
+    const exitCall = makeToolCall({
+      name: 'Bash',
+      result: {
+        toolCallId: 'tool-exit-1',
+        success: false,
+        error: 'process exited with code 137',
+        metadata: { exitCode: 137 },
+      },
+    });
+    expect(humanizeToolFailureReason(exitCall, zh)).toBe(zh.toolStepHumanize.failureCode.replace('{code}', '137'));
+  });
+});

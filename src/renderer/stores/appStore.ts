@@ -145,7 +145,9 @@ export const useAppStore = create<AppState>()((set, get) => ({
   showActivityPanel: false,
   showCapabilityHub: false,
   capabilityHubTab: 'experts',
+  expertPanelTab: 'discover',
   showCronCenter: false,
+  cronCenterRunsRequested: false,
   showTimeCapabilityCenter: false,
   showFileExplorer: false,
   voicePasteStatus: 'idle' as const,
@@ -360,6 +362,7 @@ export const useAppStore = create<AppState>()((set, get) => ({
   setShowActivityPanel: (show) => set({ ...(show ? SECONDARY_PAGES_CLOSED : {}), showActivityPanel: show }),
   setShowCapabilityHub: (show) => set({ ...(show ? SECONDARY_PAGES_CLOSED : {}), showCapabilityHub: show }),
   openCapabilityHub: (tab) => {
+    const state = get();
     // 关掉设置且不回自动化：返回落点与暂存草稿一并作废（同 setShowSettings(false) 的放弃语义）。
     discardCronEditorDraft();
     set({
@@ -367,10 +370,14 @@ export const useAppStore = create<AppState>()((set, get) => ({
       showCapabilityHub: true,
       showSettings: false,
       capabilityHubTab: tab,
+      expertPanelTab: !state.showCapabilityHub && !state.expertDetailRoleId ? 'discover' : state.expertPanelTab,
       settingsReturnTo: null,
     });
   },
+  setExpertPanelTab: (tab) => set({ expertPanelTab: tab }),
   closeSecondaryPages: () => set({ ...SECONDARY_PAGES_CLOSED }),
+  openCronCenterRuns: () => set({ ...SECONDARY_PAGES_CLOSED, showCronCenter: true, cronCenterRunsRequested: true }),
+  clearCronCenterRunsRequest: () => set({ cronCenterRunsRequested: false }),
   setShowCronCenter: (show) => set({ ...(show ? SECONDARY_PAGES_CLOSED : {}), showCronCenter: show }),
   setShowTimeCapabilityCenter: (show) => set({ ...(show ? SECONDARY_PAGES_CLOSED : {}), showTimeCapabilityCenter: show }),
   setShowFileExplorer: (show) => {

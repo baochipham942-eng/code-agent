@@ -26,6 +26,7 @@ import { CronWebhookLinkBlock } from './CronWebhookLinkBlock';
 import { CronEventDecisionsPanel } from './CronEventDecisionsPanel';
 import { awaitingApprovalLabel } from './awaitingApprovalLabel';
 import { isWebhookCronJob } from '@shared/cronWebhookJob';
+import { CronWriteScopePanel } from './CronWriteScopePanel';
 
 interface CronJobDetailProps {
   job: CronJobDefinition | null;
@@ -237,6 +238,12 @@ export const CronJobDetail: React.FC<CronJobDetailProps> = ({ job, awaitingRun =
         {isWebhookCronJob(job) && <CronWebhookLinkBlock key={`${job.id}:${job.enabled}`} job={job} />}
 
         {job.schedule.type === 'event' && <CronEventDecisionsPanel job={job} />}
+
+        {/* 写授权面板：只有本地 agent 任务有「agent 写文件」这回事（shell 动作走 Bash、
+            云端任务不在本机写），其余动作面不渲染。 */}
+        {job.runsOn === 'local' && job.action.type === 'agent' && (
+          <CronWriteScopePanel job={job} />
+        )}
 
         <details className="mt-4 group" data-testid="cron-detail-advanced">
           <summary className="flex cursor-pointer list-none items-center gap-1 text-xs text-zinc-500 transition-colors hover:text-zinc-300 [&::-webkit-details-marker]:hidden">

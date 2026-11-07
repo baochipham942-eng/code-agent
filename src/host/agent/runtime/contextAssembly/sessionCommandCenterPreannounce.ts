@@ -11,12 +11,22 @@ export interface CommandCenterToolStartInput {
   emitToolStart(): void;
 }
 
+// N-FIX-DELEGATE-PREANNOUNCE-GARBLED rework r2（台账③）：extractUserRequest 的契约是
+// 「整条消息以 </user_request> 收尾 + 行首开始标签」才算包装，其余形状原样返回。凡是它
+// 没能可靠剥出原话的形状（结束标签后还有内容、嵌套包装、只有脚手架块没有包装），返回值
+// 会带着轮首系统块的标签或包装标签本身。这时宁可说固定句，也不把脚手架残片当任务转述。
+// 只认这三种标签（台账点名的判定集）：包装标签本身 + 候选能力块头。生产面所有脚手架
+// 生产者（applyTurnSystemContext / web 路由 / mergeTurnSystemContext）都经
+// wrapWithTurnSystemContext 收在包装体里，其余块标签不在此列（不扩判定面）。
+const TURN_SCAFFOLD_TAG_PATTERN = /<\/?user_request>|<background_capability_stats>/;
+
 function buildCommandCenterPreannounce(userMessage: string): string {
   const request = extractUserRequest(userMessage).replace(/\s+/g, ' ').trim();
+  if (!request || TURN_SCAFFOLD_TAG_PATTERN.test(request)) {
+    return '我先把这项任务交给后台执行，完成后回到这里交付结果。';
+  }
   const taskLabel = Array.from(request).slice(0, 28).join('');
-  return taskLabel
-    ? `我先把“${taskLabel}${Array.from(request).length > 28 ? '…' : ''}”交给后台执行，完成后回到这里交付结果。`
-    : '我先把这项任务交给后台执行，完成后回到这里交付结果。';
+  return `我先把“${taskLabel}${Array.from(request).length > 28 ? '…' : ''}”交给后台执行，完成后回到这里交付结果。`;
 }
 
 /** Emits the renderer-visible preview before the pending tool row. */

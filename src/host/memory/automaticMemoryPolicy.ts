@@ -7,7 +7,16 @@ import { recordMemoryInjectionTrace } from './memoryInjectionTrace';
 
 export function getUntrustedContentPolicy(toolName: string): UntrustedContentPolicy | undefined {
   const name = canonicalToolName(toolName);
-  return getProtocolToolSchemas()
+  const schemas = getProtocolToolSchemas();
+  // Prefix matching exists for dynamic aliases (mcp__server__tool under `mcp`).
+  // A tool with its own registered schema that explicitly declares
+  // readOnly: false is a write tool whose result is agent-/user-authored — it
+  // never inherits a read parent's policy (mail -> mail_send: a 'block' hit on
+  // a successful send would flip success=false and invite a resend). Tools
+  // without such a schema (or with their own declaration) keep prefix matching.
+  const ownSchema = schemas.find((schema) => canonicalToolName(schema.name) === name);
+  if (ownSchema?.readOnly === false && ownSchema.readsUntrustedContent === undefined) return undefined;
+  return schemas
     .filter((schema) => schema.readsUntrustedContent !== undefined
       && name.startsWith(canonicalToolName(schema.name)))
     .sort((left, right) => right.name.length - left.name.length)[0]?.readsUntrustedContent;

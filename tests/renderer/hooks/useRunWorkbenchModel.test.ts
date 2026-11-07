@@ -344,3 +344,56 @@ function makeLedgerTask(overrides: Partial<Task>): Task {
     ...overrides,
   };
 }
+
+describe('buildLedgerTaskRecords — 失败原因语义化清洗（FB-746）', () => {
+  it('raw JS 异常失败：行上不给原文，类别经 resumeHintCategory 交给渲染层兜底', () => {
+    const records = buildLedgerTaskRecords([
+      makeLedgerTask({
+        id: 'agent:codex:crash-1',
+        sessionId: 'session-1',
+        title: '整理周报',
+        status: 'failed',
+        failure: {
+          message: "TypeError: Cannot read properties of undefined (reading 'x')",
+          category: 'agent_engine',
+        },
+      }),
+    ], 'session-1');
+
+    expect(records).toHaveLength(1);
+    expect(records[0].status).toBe('blocked');
+    expect(records[0].resumeHint).toBeUndefined();
+    expect(records[0].resumeHintCategory).toBe('unknown');
+    // 行数据任何字段都不携带报错原文
+    expect(JSON.stringify(records[0])).not.toContain('Cannot read properties');
+  });
+
+  it('机内租约文案同样清洗为空 + 类别兜底', () => {
+    const [record] = buildLedgerTaskRecords([
+      makeLedgerTask({
+        id: 'agent:codex:lease-1',
+        sessionId: 'session-1',
+        title: '整理周报',
+        status: 'failed',
+        failure: { message: 'Durable Run run-77 has no live owner lease', category: 'agent_engine' },
+      }),
+    ], 'session-1');
+    expect(record.resumeHint).toBeUndefined();
+    expect(record.resumeHintCategory).toBe('unknown');
+    expect(JSON.stringify(record)).not.toContain('owner lease');
+  });
+
+  it('人话失败原因原样保留，不误伤', () => {
+    const [record] = buildLedgerTaskRecords([
+      makeLedgerTask({
+        id: 'agent:codex:prose-1',
+        sessionId: 'session-1',
+        title: '整理周报',
+        status: 'failed',
+        failure: { message: '目标网站拒绝了这次登录，需要重新授权后再试', category: 'agent_engine' },
+      }),
+    ], 'session-1');
+    expect(record.resumeHint).toBe('目标网站拒绝了这次登录，需要重新授权后再试');
+    expect(record.resumeHintCategory).toBeUndefined();
+  });
+});

@@ -14,5 +14,6 @@ export const listSessionCandidatesSchema: ToolSchema = {
   permissionLevel: 'read',
   readOnly: true,
   allowInPlanMode: true,
+  allowInTextForeground: true,
   accesses: [{ kind: 'read', expression: 'resource(session, candidates)' }],
 };

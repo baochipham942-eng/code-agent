@@ -32,6 +32,8 @@ export interface TaskRailView {
   taskCount: number;
   dependencySummary?: TaskRailDependencySummary;
   currentAction?: string;
+  /** currentAction 被清洗掉时的类别；渲染层用 taskBlockedReason[category] 兜底（ADR-050） */
+  currentActionCategory?: TaskRecord['resumeHintCategory'];
 }
 
 const UTILITY_STEP_PATTERNS = [
@@ -136,6 +138,8 @@ export function deriveTaskRailView(task: TaskRecord, run?: RunUiState | null): T
   // 后台/定时任务（global/scheduled）的 steps 是状态/时长/输出等元信息，不是子任务，
   // 不能当多任务清单渲染——否则单个后台任务会显示成"已完成 N 个任务（共 M 个）"。
   const isChecklist = task.scope === 'session' && taskSteps.length >= 2;
+  const currentAction = task.resumeHint && task.resumeHint !== task.title ? task.resumeHint : undefined;
+  const currentActionCategory = currentAction ? undefined : task.resumeHintCategory;
 
   if (!isChecklist) {
     return {
@@ -151,7 +155,8 @@ export function deriveTaskRailView(task: TaskRecord, run?: RunUiState | null): T
       total,
       taskCount,
       dependencySummary,
-      currentAction: task.resumeHint && task.resumeHint !== task.title ? task.resumeHint : undefined,
+      currentAction,
+      currentActionCategory,
     };
   }
 
@@ -168,6 +173,7 @@ export function deriveTaskRailView(task: TaskRecord, run?: RunUiState | null): T
     total,
     taskCount,
     dependencySummary,
-    currentAction: task.resumeHint && task.resumeHint !== task.title ? task.resumeHint : undefined,
+    currentAction,
+    currentActionCategory,
   };
 }

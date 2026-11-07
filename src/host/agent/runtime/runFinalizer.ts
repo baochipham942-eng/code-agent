@@ -192,6 +192,25 @@ function hasTerminalWakeNoopAfterLastUser(messages: Message[]): boolean {
   return false;
 }
 
+/**
+ * A successful tool can explicitly own the next visible UI (for example the
+ * direct-created role card plus first wake). This is a host-authored result
+ * marker, not a model argument, and is the only other valid silent terminal.
+ */
+function hasToolOwnedTerminalAfterLastUser(messages: Message[]): boolean {
+  for (let index = messages.length - 1; index >= 0; index -= 1) {
+    const message = messages[index];
+    if (message.role === 'user') return false;
+    if (
+      message.role === 'tool'
+      && message.toolResults?.some((result) => (
+        result.success && result.metadata?.endRunWithoutAssistant === true
+      ))
+    ) return true;
+  }
+  return false;
+}
+
 // ----------------------------------------------------------------------------
 // Agent Loop
 // ----------------------------------------------------------------------------
@@ -374,6 +393,7 @@ export class RunFinalizer {
       terminalStatus === 'completed'
       && !hasVisibleAssistantTextAfterLastUser(this.ctx.messages)
       && !hasTerminalWakeNoopAfterLastUser(this.ctx.messages)
+      && !hasToolOwnedTerminalAfterLastUser(this.ctx.messages)
       && !this.ctx.circuitBreaker.isTripped()
       && iterations < this.ctx.maxIterations
       && this.ctx.unattendedTurn !== true

@@ -15,6 +15,11 @@ import {
 } from './sessionTaskSlotLedger';
 import { getBackgroundTaskLedger } from '../../task/backgroundTaskLedger';
 import { createForegroundWake } from './foregroundWake';
+import {
+  buildSessionTaskResultMessage,
+  clearSessionCommandTaskMarker,
+  markSessionCommandTaskRunning,
+} from './sessionCommandTaskRestartRecovery';
 import { getConfigService } from '../core/configService';
 import {
   formatSessionCommandTaskIdleFailure,
@@ -456,6 +461,7 @@ export class SessionCommandCenter {
     task.status = 'running';
     task.updatedAt = Date.now();
     this.projectTask(task);
+    markSessionCommandTaskRunning(task);
     const failLaunch = (error: unknown): void => {
       void this.settle(task, 'failed', error instanceof Error ? error.message : String(error));
     };
@@ -762,6 +768,7 @@ export class SessionCommandCenter {
         message: error instanceof Error ? error.message : String(error),
       });
     }
+    clearSessionCommandTaskMarker(task.id);
 
     for (const slot of startable) {
       const next = this.tasks(task.sessionId).get(slot.workItemId);
@@ -847,21 +854,10 @@ async function projectTerminalResult(
   // 模型读的是 resultText（1500 封顶带截断标记），不是 240 字 summary；
   // backgroundTaskResult.metadata 的 reader 只取 taskId/artifacts，不拿它当 UI 文案。
   const resultText = task.resultText ?? task.summary;
-  await getSessionManager().addMessageToSession(task.sessionId, {
-    id: `session-task-result-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
-    role: 'system',
-    content: `[任务结果] ${task.shortName}｜${status}｜${resultText}`,
-    timestamp: Date.now(),
-    metadata: {
-      backgroundTaskResult: {
-        source: 'agent-result',
-        taskId: task.id,
-        shortName: task.shortName,
-        status,
-        summary: resultText ?? '',
-      },
-    },
-  });
+  await getSessionManager().addMessageToSession(
+    task.sessionId,
+    buildSessionTaskResultMessage(task, status, resultText),
+  );
 }
 
 let singleton: SessionCommandCenter | null = null;

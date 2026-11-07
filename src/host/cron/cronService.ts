@@ -46,8 +46,7 @@ import { addCronRunCostUsd } from '../../shared/cronRunLedger';
 import { getEventBus } from '../services/eventing/bus';
 import { persistCronMissedTrace } from './cronMissedTrace';
 import {
-  assertCloudRunnableAction,
-  assertExecutionLocationConstraints,
+  assertCloudRunnableAction, assertExecutionLocationConstraints,
   assertAgentTypeOnSave,
   computeCronFireJitterMs,
   decideOneTimeJobStartup,
@@ -356,8 +355,7 @@ export class CronService implements Disposable {
     // 重新启用已停用任务：运行计数清零、摘掉停用原因（N-CRON-BUDGET-EXPOSE）；只改 maxRuns 不动计数。
     if (updates.enabled === true && !existingJob.definition.enabled) rearmCronRunLimit(updatedJob);
     assertSupportedEveryScheduleUnit(updatedJob.schedule); assertAgentTypeOnSave(updates.action, existingJob.definition.action);
-    assertExecutionLocationConstraints(updatedJob);
-    if (updates.enabled === true || updates.action !== undefined) assertCloudRunnableAction(updatedJob);
+    assertExecutionLocationConstraints(updatedJob); if (updates.enabled === true || updates.action !== undefined) assertCloudRunnableAction(updatedJob);
     assertEventScheduleConstraints(updatedJob);
 
     // Save to database

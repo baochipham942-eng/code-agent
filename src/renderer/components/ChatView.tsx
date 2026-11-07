@@ -112,7 +112,7 @@ import { isChatSendAccepted } from '../utils/chatSendState';
 import { useImportedSessionResumeSend } from '../hooks/useImportedSessionResume';
 import { useCronRunFollowUpSend } from '../hooks/useCronRunFollowUpSend';
 import { useAssistantFeedbackEvents } from './features/chat/useAssistantFeedbackEvents';
-import { DurableResumeNotice, suppressLegacyInterruptionDecision, useDurableContinueVisible, useDurableResumeContinuation, useGuardedDurableContinue } from './features/chat/durableResume';
+import { DurableResumeNotice, suppressLegacyInterruptionDecision, useAbandonParkedRun, useDurableContinueVisible, useDurableResumeContinuation, useGuardedDurableContinue } from './features/chat/durableResume';
 import { QuotaWaitNotice } from './features/chat/quotaWaitNotice';
 import { ConnectorRequiredCards } from './features/chat/connectorRequiredCard';
 // Zustand selectors must return a referentially stable fallback. A fresh [] here makes
@@ -686,6 +686,7 @@ export const ChatView: React.FC = () => {
 
   const durableContinue = useGuardedDurableContinue(durableResume?.interruptCause, useDurableResumeContinuation(currentSessionId));
   const showDurableContinue = useDurableContinueVisible(durableResume, effectiveIsProcessing);
+  const durableAbandon = useAbandonParkedRun(currentSessionId, durableResume?.runId);
 
   // D-1「重试该轮」锚点：streamSnapshot.turnId 是每轮流式开始时现铸的 UUID（streamHandler.ts
   // beginTurn(generateMessageId())），跟触发它的用户消息 id 毫无关联，snapshot 里也没有任何
@@ -1026,6 +1027,9 @@ export const ChatView: React.FC = () => {
 
           {isDurableAutoResuming && <DurableResumeNotice text={t.chat.durableResumeNotice} />}
           {isDurableResumeQueued && <DurableResumeNotice text={t.chat.durableResumeQueuedNotice} />}
+          {showDurableContinue && <DurableResumeNotice text={t.chat.durableStoppedNotice} actions={
+            <button /* ds-allow:button: 停靠行的放弃按钮沿用 DoomLoopHandbackBar 紧凑文本按钮样式 */ type="button" className="rounded-md border border-zinc-700 px-2 py-1 text-[11px] text-zinc-200" onClick={durableAbandon.onAbandon}>{t.chat.durableAbandon}</button>
+          } />}
           <ConnectorRequiredCards />
           {durableResume?.quotaWait && <QuotaWaitNotice dueAt={durableResume.quotaWait.dueAt} duePassed={durableResume.quotaWait.duePassed} onCancel={() => { cancel(); }} onRetryNow={() => { durableContinue.onContinue(); }} />}
 
@@ -1042,6 +1046,7 @@ export const ChatView: React.FC = () => {
           <GoalStatusBar />
           <DoomLoopHandbackBar sessionId={currentSessionId} />
           {durableContinue.confirmDialog}
+          {durableAbandon.confirmDialog}
 
           {/* 后台任务面板（2026-10-11 rework）：composer 正上方的列内文档流块。
               原全局 fixed bottom-4 浮层会盖住发送键/模型切换/上下文表（无槽验收实测），

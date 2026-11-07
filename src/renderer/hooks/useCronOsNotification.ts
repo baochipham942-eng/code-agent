@@ -15,7 +15,7 @@ import {
   cronLoginWallSiteOriginFromNotification,
   openCronLoginWallSite,
 } from '../components/features/cron/cronLoginWallNotice';
-import { postOsNotification, registerNotificationClick } from '../utils/osNotification';
+import { postOsNotification, registerNotificationClick, reportNotificationHandled } from '../utils/osNotification';
 import { sessionAutomationClient } from '../services/sessionAutomationClient';
 import { listenTauriEvent } from '../services/tauriPluginFacade';
 import { isTauriMode } from '../utils/platform';
@@ -52,31 +52,27 @@ export function useCronOsNotification(
       if (siteOrigin) openCronLoginWallSite(siteOrigin, event?.jobId);
       const sessionId = event?.sessionId;
       if (sessionId) onOpenSessionRef.current(sessionId);
-      // 云端调度器不可用的失败没有本地会话：点击落 Cron Center 并选中该任务，
-      // 详情里就是这句人话和「立即重跑」——不然这次点击只是把 app 带到前台。
-      const cloudDownJobId = cronFailureCloudDownJobId(event);
-      if (cloudDownJobId) {
-        useCronStore.getState().selectJob(cloudDownJobId);
+      // 无会话失败没有本地会话可跳：点击落 Cron Center 并选中该任务，详情里就是
+      // 这句人话和「立即重跑/重新启用」——不然这次点击只是把 app 带到前台。
+      // 两类：云端调度器不可用（报文分类 cloud_unavailable）与最终停用（jobId、无 code，
+      // 停用执行可能根本没有 session，如云端 run）；登录墙走上面的同意路径，不落这里。
+      const cronCenterJobId = sessionId || siteOrigin
+        ? undefined
+        : cronFailureCloudDownJobId(event) ?? event?.jobId;
+      if (cronCenterJobId) {
+        useCronStore.getState().selectJob(cronCenterJobId);
         useAppStore.getState().setShowCronCenter(true);
       }
     };
     // 点击路由：接收端契约是壳发 `notification-clicked {id}`（id = NotificationShowEvent.id）。
     // 注意：当前壳尚未发该事件（发射端由 N-FIX-NOTIFY-DISPLAY-GAP-FU1-NATIVE 负责），
     // 在那之前桌面端只走下面的旧 onAction 路径（读最近一条事件，桌面端通常根本不触发）。
-    // 按通知类型落点，且每个 id 只处理一次。
+    // 按通知类型落点，且每个 id 只处理一次。会话/jobId/登录墙落点全在 openForEvent
+    // （含「无会话仅 jobId → Center」）；这里只补本单独有的一步：needs-input 且有待审批
+    // 卡时落自动化中心「运行」收件箱，而不是会话。
     const routeClick = async (event: NotificationShowEvent) => {
       const needsInput = event.urgent === true && event.failure !== true;
-      // 无会话仅有 jobId（任何类型）：落自动化中心并选中任务；登录墙/云端不可用仍走 openForEvent。
-      const jobOnly = !event.sessionId && !!event.jobId;
-      if (!needsInput) {
-        openForEvent(event);
-        if (jobOnly) {
-          useCronStore.getState().selectJob(event.jobId as string);
-          useAppStore.getState().setShowCronCenter(true);
-        }
-        return;
-      }
-      if (event.sessionId) {
+      if (needsInput && event.sessionId) {
         // 待审批卡只在自动化中心「运行」收件箱里，会话内没有；有 pending 项就落收件箱。
         let parked = false;
         try {
@@ -87,11 +83,6 @@ export function useCronOsNotification(
         }
         if (parked) useAppStore.getState().openCronCenterRuns();
         else onOpenSessionRef.current(event.sessionId);
-        return;
-      }
-      if (event.jobId) {
-        useCronStore.getState().selectJob(event.jobId);
-        useAppStore.getState().setShowCronCenter(true);
         return;
       }
       openForEvent(event);
@@ -121,8 +112,18 @@ export function useCronOsNotification(
     const unsubscribe = ipcService.on(
       IPC_CHANNELS.NOTIFICATION_SHOW,
       (event: NotificationShowEvent) => {
+        // 审批已裁决的撤回：只把「离开期间的提醒」队列里那条 needs-input 移掉，
+        // 不弹 OS 通知、不作点击目标（retract 本身没有任何用户可见动作）。
+        if (event.retract) {
+          missedRef.current.remove(event.dedupeKey);
+          reportNotificationHandled({ mode: 'renderer-early-return', reason: 'retract', dispatched: false, dedupeKey: event.dedupeKey });
+          return;
+        }
         // 预算窗口折起弹窗时单独送达的未读标记：只供侧栏圆点，不弹 OS 通知、不作点击目标。
-        if (event.attentionOnly) return;
+        if (event.attentionOnly) {
+          reportNotificationHandled({ mode: 'renderer-early-return', reason: 'attention-only', dispatched: false });
+          return;
+        }
         lastEventRef.current = event;
         const recent = recentEventsRef.current;
         recent.delete(event.id);

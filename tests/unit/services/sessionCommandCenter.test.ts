@@ -2,17 +2,24 @@ import { EventEmitter } from 'node:events';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { TaskManager, TaskManagerEvent } from '../../../src/host/task/TaskManager';
 import type { AgentEvent } from '../../../src/shared/contract';
+import type { CanUseToolFn, ToolContext } from '../../../src/host/protocol/tools';
 import {
   SessionCommandCenter,
+  getSessionCommandCenter,
+  resetSessionCommandCenterForTest,
   type SessionCommandTask,
 } from '../../../src/host/services/commandCenter/sessionCommandCenter';
 import { resetSessionTaskConcurrencyPoolForTest } from '../../../src/host/services/commandCenter/sessionTaskSlotLedger';
-import { describeDelegateTaskResult } from '../../../src/host/tools/modules/commandCenter/sessionCommandCenter';
+import {
+  describeDelegateTaskResult,
+  executeTaskStatus,
+} from '../../../src/host/tools/modules/commandCenter/sessionCommandCenter';
 import {
   getBackgroundTaskLedger,
   resetBackgroundTaskLedgerForTest,
 } from '../../../src/host/task/backgroundTaskLedger';
 import { createWorkspaceScope } from '../../../src/host/runtime/workspaceScope';
+import { getSessionManager } from '../../../src/host/services/infra/sessionManager';
 import {
   SESSION_COMMAND_TASK_IDLE_TIMEOUT_MS,
   SESSION_COMMAND_TASK_APPROVAL_WAIT_CAP_MS,
@@ -20,6 +27,15 @@ import {
   resolveSessionCommandTaskApprovalWaitCapMs,
 } from '../../../src/shared/constants/sessionCommandCenter';
 import { INTERACTION_TIMEOUTS } from '../../../src/shared/constants/timeouts';
+
+// N-FIX-WEBFETCH-BLOCK-PRIVATE-NET-FU2：executeTaskStatus 走单例指挥台，单例构造默认拿
+// 真实 getTaskManager()——未 initialize 时 startBackgroundTask 同步抛错，任务会被立刻
+// fail 收尾，喂不进自定义 conclusion。这里把单例的 manager 换成本文件的 FakeTaskManager。
+const singletonTaskManagerHolder = vi.hoisted(() => ({ manager: undefined as unknown }));
+vi.mock('../../../src/host/task/TaskManager', async (importOriginal) => ({
+  ...(await importOriginal<Record<string, unknown>>()),
+  getTaskManager: () => singletonTaskManagerHolder.manager,
+}));
 
 const PROJECT_SCOPE = createWorkspaceScope('project-session-a', [{
   sourceId: 'source-session-a',
@@ -665,7 +681,52 @@ describe('SessionCommandCenter idle expiry', () => {
     });
     expect(wakeForegroundBrain).toHaveBeenCalledTimes(1);
     expect(manager.cancelBackgroundTask).toHaveBeenCalledTimes(1);
+    // 空闲回收必须带 reason，下游才不会把系统动作记成「用户停止」
+    expect(manager.cancelBackgroundTask).toHaveBeenCalledWith(spawned.task.id, 'idle-reaped');
     center.dispose();
+  });
+
+  describe('system permission prompt hint on idle reap', () => {
+    const HINT = 'A system permission prompt may still be on screen; dismiss it or choose Don\'t Allow.';
+    async function reapAfter(command: string, finishBeforeReap = false) {
+      const manager = new FakeTaskManager();
+      const center = new SessionCommandCenter(manager as unknown as TaskManager, {
+        projectTerminalResult: vi.fn().mockResolvedValue(undefined),
+        wakeForegroundBrain: vi.fn().mockResolvedValue(undefined),
+        slotLedgerOptions: { slotTimeoutMs: 30_000, cleanupIntervalMs: 1_000 },
+        slotRecoveryLocale: 'en',
+      });
+      const spawned = await center.spawn(input(1, 'report'));
+      if (spawned.outcome === 'requires_choice') throw new Error('unexpected admission result');
+      manager.emitAgent('session-a', {
+        type: 'tool_call_start',
+        data: { id: 'call-1', name: 'Bash', arguments: { command } },
+      }, spawned.task.id);
+      if (finishBeforeReap) {
+        manager.emitAgent('session-a', {
+          type: 'tool_call_end',
+          data: { toolCallId: 'call-1', success: true, output: 'ok' },
+        }, spawned.task.id);
+      }
+      await vi.advanceTimersByTimeAsync(31_000);
+      const detail = center.list('session-a')[0]?.detail;
+      center.dispose();
+      return detail;
+    }
+
+    it('appends the hint when the in-flight command is an osascript call', async () => {
+      const detail = await reapAfter('osascript -e \'tell application "Reminders" to get name of every list\'');
+      expect(detail).toBe(`Background task failed: the command stopped responding for 30 seconds. ${HINT}`);
+    });
+
+    it('leaves a plain command\'s failure text unchanged', async () => {
+      expect(await reapAfter('sleep 600')).toBe('Background task failed: the command stopped responding for 30 seconds');
+    });
+
+    it('adds no hint when the osascript command already finished before the reap', async () => {
+      const detail = await reapAfter('osascript -e "return 1"', true);
+      expect(detail).not.toContain('permission prompt');
+    });
   });
 
   it('keeps running when tool_progress reports real output that resets inactivity', async () => {
@@ -796,6 +857,7 @@ describe('SessionCommandCenter idle expiry', () => {
       detail: 'Background task failed: waited more than 30 seconds for your approval, cancelled',
     });
     expect(manager.cancelBackgroundTask).toHaveBeenCalledTimes(1);
+    expect(manager.cancelBackgroundTask).toHaveBeenCalledWith(spawned.task.id, 'idle-reaped');
     expect(wakeForegroundBrain).toHaveBeenCalledTimes(1);
     expect(wakeForegroundBrain).toHaveBeenCalledWith(
       expect.objectContaining({ id: spawned.task.id }),
@@ -912,5 +974,162 @@ describe('SessionCommandCenter idle expiry', () => {
     await vi.advanceTimersByTimeAsync(1_000);
     expect(injectedCenter.list('session-a')[0]?.status).toBe('failed');
     injectedCenter.dispose();
+  });
+});
+
+// ============================================================================
+// N-FIX-WEBFETCH-BLOCK-PRIVATE-NET-FU2：模型侧结果文本（resultText）
+// FB-577 复盘：388 字结论经 240 字 summary 硬切，SSRF 拒绝提示里
+// 「use a Bash curl command instead — it asks the user for approval.」整句
+// 到不了前台，四条用户可见回复全丢下一步指引。模型侧改读 1500 封顶的
+// resultText；UI/账本 summary 维持 240 不变。
+// ============================================================================
+describe('model-facing task result text', () => {
+  beforeEach(() => {
+    resetSessionTaskConcurrencyPoolForTest();
+    resetBackgroundTaskLedgerForTest();
+  });
+
+  const HINT_SENTENCE = 'use a Bash curl command instead — it asks the user for approval.';
+  // SESSION_COMMAND_TASK_RESULT_MODEL_MAX_CHARS 的同值（该常量不导出——src 侧只有
+  // 同文件的 composeSessionCommandTaskResultText 消费它，导出会撞 knip production）
+  const MODEL_CAP = 1500;
+
+  /** FB-577 镜像：总长 388 字，提示句从第 262 字开始——240 字旧截断必然丢句。 */
+  function fb577Conclusion(): string {
+    const prefix = '后台任务已结束：只调用了 web_fetch 抓取 http://127.0.0.1:8181/，工具拒绝访问私有环回地址，'
+      .padEnd(262, '。');
+    const tail = ' 本地地址不在 web_fetch 的可达范围。'
+      .padEnd(388 - 262 - HINT_SENTENCE.length, '。');
+    return `${prefix}${HINT_SENTENCE}${tail}`;
+  }
+
+  /** 提示句落在第 1000 字：截断线（1500）之前的正文必须原样到达。 */
+  function overCapConclusion(): string {
+    return `${'前情提要。'.repeat(200)}${HINT_SENTENCE}${'x'.repeat(5000 - 1000 - HINT_SENTENCE.length)}`;
+  }
+
+  function spawnAndSettle(center: SessionCommandCenter, manager: FakeTaskManager, conclusion: string) {
+    return center.spawn(input(1)).then((spawned) => {
+      if (spawned.outcome === 'requires_choice') throw new Error('unexpected admission result');
+      manager.emitTask({
+        type: 'task_completed',
+        sessionId: 'session-a',
+        data: { taskId: spawned.task.id, conclusion },
+      });
+      return spawned;
+    });
+  }
+
+  it('keeps the full curl-approval hint in the task-result system message for a 388-char conclusion', async () => {
+    const conclusion = fb577Conclusion();
+    // 夹具钉死 FB-577 形状：388 字、提示句在 262——改文案时先在这里对齐
+    expect(conclusion).toHaveLength(388);
+    expect(conclusion.indexOf(HINT_SENTENCE)).toBe(262);
+
+    const manager = new FakeTaskManager();
+    const addMessageToSession = vi
+      .spyOn(getSessionManager(), 'addMessageToSession')
+      .mockResolvedValue(undefined);
+    const center = new SessionCommandCenter(manager as unknown as TaskManager, {
+      wakeForegroundBrain: vi.fn(),
+    });
+    try {
+      const spawned = await spawnAndSettle(center, manager, conclusion);
+      await vi.waitFor(() => expect(addMessageToSession).toHaveBeenCalledTimes(1));
+
+      const message = addMessageToSession.mock.calls[0][1];
+      expect(addMessageToSession.mock.calls[0][0]).toBe('session-a');
+      expect(message.role).toBe('system');
+      expect(message.content).toBe(`[任务结果] 任务1｜completed｜${conclusion}`);
+      expect(message.content).toContain(HINT_SENTENCE);
+      expect(message.content.length).toBeGreaterThan(300);
+      expect(message.metadata?.backgroundTaskResult?.summary).toBe(conclusion);
+
+      // UI/账本侧 summary 仍是 240 字硬切：被切的 summary 必然不含整句提示
+      const settled = center.list('session-a').find((task) => task.id === spawned.task.id);
+      expect(settled?.summary).toHaveLength(240);
+      expect(settled?.summary).not.toContain(HINT_SENTENCE);
+      expect(settled?.resultText).toBe(conclusion);
+    } finally {
+      addMessageToSession.mockRestore();
+      center.dispose();
+    }
+  });
+
+  it('caps an over-long conclusion at the model limit with an explicit truncation marker', async () => {
+    const conclusion = overCapConclusion();
+    expect(conclusion).toHaveLength(5000);
+    const marker = `…(truncated, 5000 chars total)`;
+
+    const manager = new FakeTaskManager();
+    const addMessageToSession = vi
+      .spyOn(getSessionManager(), 'addMessageToSession')
+      .mockResolvedValue(undefined);
+    const center = new SessionCommandCenter(manager as unknown as TaskManager, {
+      wakeForegroundBrain: vi.fn(),
+    });
+    try {
+      await spawnAndSettle(center, manager, conclusion);
+      await vi.waitFor(() => expect(addMessageToSession).toHaveBeenCalledTimes(1));
+
+      const message = addMessageToSession.mock.calls[0][1];
+      const expectedBody = `${conclusion.slice(0, MODEL_CAP)}${marker}`;
+      expect(message.content).toBe(`[任务结果] 任务1｜completed｜${expectedBody}`);
+      // 截断线之前的正文（含提示句）原样到达，且模型明确知道被裁过
+      expect(message.content).toContain(HINT_SENTENCE);
+      expect(message.content.endsWith(marker)).toBe(true);
+
+      // 账本/UI summary 维持 240 字上限，不随 resultText 放宽
+      const ledgerTask = getBackgroundTaskLedger().listTasks({ sessionId: 'session-a' })[0];
+      expect(ledgerTask?.summary).toHaveLength(240);
+      const settled = center.list('session-a')[0];
+      expect(settled?.summary).toHaveLength(240);
+    } finally {
+      addMessageToSession.mockRestore();
+      center.dispose();
+    }
+  });
+
+  it('task_status lists the model-facing result text, not the 240-char summary', async () => {
+    const conclusion = fb577Conclusion();
+    // 旧口径（240 字 summary）必然不含整句——这条断言防「回落悄悄复活」
+    expect(conclusion.slice(0, 240)).not.toContain(HINT_SENTENCE);
+
+    singletonTaskManagerHolder.manager = new FakeTaskManager();
+    resetSessionCommandCenterForTest();
+    const loadSession = vi.spyOn(getSessionManager(), 'getSession').mockResolvedValue(null);
+    const addMessageToSession = vi
+      .spyOn(getSessionManager(), 'addMessageToSession')
+      .mockResolvedValue(undefined);
+    try {
+      const center = getSessionCommandCenter();
+      const spawned = await center.spawn({ ...input(1), sessionId: 'session-status' });
+      if (spawned.outcome === 'requires_choice') throw new Error('unexpected admission result');
+      (singletonTaskManagerHolder.manager as FakeTaskManager).emitTask({
+        type: 'task_completed',
+        sessionId: 'session-status',
+        data: { taskId: spawned.task.id, conclusion },
+      });
+      await vi.waitFor(() => {
+        expect(center.list('session-status')).toMatchObject([{ status: 'completed' }]);
+      });
+
+      const result = await executeTaskStatus(
+        {},
+        { sessionId: 'session-status' } as unknown as ToolContext,
+        vi.fn().mockResolvedValue({ allow: true }) as CanUseToolFn,
+      );
+      expect(result).toMatchObject({ ok: true });
+      if (!result.ok) return;
+      expect(result.output).toContain(spawned.task.id);
+      expect(result.output).toContain(conclusion);
+      expect(result.output).toContain(HINT_SENTENCE);
+    } finally {
+      addMessageToSession.mockRestore();
+      loadSession.mockRestore();
+      resetSessionCommandCenterForTest();
+      singletonTaskManagerHolder.manager = undefined;
+    }
   });
 });

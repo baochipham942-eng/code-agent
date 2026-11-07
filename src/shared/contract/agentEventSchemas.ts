@@ -26,6 +26,7 @@ import type {
   ResearchModeStartedData,
   ResearchProgressData,
   RoleDraftPendingData,
+  RoleCreatedDirectData,
   RoutingResolvedEventData,
   SkillDraftPendingData,
   TaskCompleteData,
@@ -492,6 +493,7 @@ const stabilityByType = {
   memory_learned: 'experimental',
   skill_draft_pending: 'experimental',
   role_draft_pending: 'experimental',
+  role_created_direct: 'experimental',
   team_recipe_draft_pending: 'experimental',
   research_mode_started: 'experimental',
   research_progress: 'experimental',
@@ -611,7 +613,7 @@ const RoutingResolvedEventSchema = event('routing_resolved', typed<RoutingResolv
 const ConnectorRequiredEventSchema = event('connector_required', typed<ConnectorRequiredEventData>(z.object({ connectors: z.array(z.object({ id: z.string(), source: z.enum(['selected', 'expert']), reason: z.string() })) })));
 const ArtifactLocatorEventSchema = event('artifact_locator', typed<ArtifactLocatorTelemetryEventData>(z.object({ state: z.enum(['resolved', 'stale', 'blocked']), kind: z.enum(['spreadsheet', 'presentation', 'document']), reason: z.string() })));
 const AgentCompleteEventSchema = event('agent_complete', z.null());
-const AgentCancelledEventSchema = event('agent_cancelled', z.null());
+const AgentCancelledEventSchema = event('agent_cancelled', z.object({ reason: z.literal('idle_reaped') }).nullable());
 const GoalIterationEventSchema = event('goal_iteration', z.object({ turn: z.number(), maxTurns: z.number(), goalStatus: z.enum(['pending', 'paused', 'met', 'aborted']), pauseReason: z.enum(['anti_spin']).optional(), tokensUsed: z.number(), tokenBudget: z.number(), wallClockBudgetMs: z.number().optional(), parentToolUseId: z.string().optional() }));
 const GoalGateEventSchema = event('goal_gate', z.object({
   gate: z.number(), pass: z.boolean(), exitCode: z.number().nullable().optional(), timedOut: z.boolean().optional(), reason: z.string().optional(), parentToolUseId: z.string().optional(),
@@ -673,6 +675,7 @@ const BackgroundTaskLedgerChangedEventSchema = event('background_task_ledger_cha
 const MemoryLearnedEventSchema = event('memory_learned', typed<MemoryLearnedData>(z.object({ sessionId: z.string(), knowledgeExtracted: z.number(), codeStylesLearned: z.number(), toolPreferencesUpdated: z.number() })));
 const SkillDraftPendingEventSchema = event('skill_draft_pending', typed<SkillDraftPendingData>(z.object({ sessionId: z.string(), drafts: z.array(z.object({ id: z.string(), name: z.string(), description: z.string(), toolSequence: stringArraySchema, occurrences: z.number(), origin: z.enum(['telemetry-distilled', 'llm-review']) })) })));
 const RoleDraftPendingEventSchema = event('role_draft_pending', typed<RoleDraftPendingData>(z.object({ sessionId: z.string(), drafts: z.array(z.object({ id: z.string(), roleId: z.string(), description: z.string(), category: z.string().optional(), tools: stringArraySchema, editingRoleId: z.string().optional() })) })));
+const RoleCreatedDirectEventSchema = event('role_created_direct', typed<RoleCreatedDirectData>(z.object({ sessionId: z.string(), roleId: z.string(), displayName: z.string(), canDo: z.string(), willNotDo: z.string() })));
 const TeamRecipeDraftPendingEventSchema = event('team_recipe_draft_pending', typed<TeamRecipeDraftPendingData>(z.object({ sessionId: z.string(), drafts: z.array(z.object({ id: z.string(), name: z.string(), description: z.string(), lead: z.object({ roleId: z.string(), briefTemplate: z.string() }).optional(), members: z.array(z.object({ id: z.string().optional(), roleId: z.string(), taskTemplate: z.string() })), unknownRoleNames: stringArraySchema.optional() })) })));
 const ResearchModeStartedEventSchema = event('research_mode_started', typed<ResearchModeStartedData>(z.object({ topic: z.string(), reportStyle: z.enum(['default', 'academic', 'popular_science', 'news', 'social_media', 'strategic_investment']), triggeredBy: z.enum(['semantic', 'manual']).optional() })));
 const ResearchProgressEventSchema = event('research_progress', typed<ResearchProgressData>(z.object({ phase: z.enum(['planning', 'researching', 'reporting', 'complete', 'error']), message: z.string(), percent: z.number(), currentStep: z.object({ title: z.string(), status: z.enum(['running', 'completed', 'failed']) }).optional(), triggeredBy: z.enum(['semantic', 'manual']).optional(), currentIteration: z.number().optional(), maxIterations: z.number().optional(), coverage: z.number().optional(), activeSources: stringArraySchema.optional(), canDeepen: z.boolean().optional() })));
@@ -759,7 +762,7 @@ export const AgentEventSchema = z.discriminatedUnion('type', [
   SubagentActivityEventSchema, SubagentRunEndEventSchema, SkillActivatedEventSchema, MemoryInjectedEventSchema, MemoryWrittenEventSchema,
   ToolSchemaSnapshotEventSchema, ModelResponseEventSchema, ModelFallbackEventSchema, ApiKeyRequiredEventSchema,
   TaskProgressEventSchema, TaskCompleteEventSchema, BackgroundTaskLedgerChangedEventSchema, MemoryLearnedEventSchema,
-  SkillDraftPendingEventSchema, RoleDraftPendingEventSchema, TeamRecipeDraftPendingEventSchema,
+  SkillDraftPendingEventSchema, RoleDraftPendingEventSchema, RoleCreatedDirectEventSchema, TeamRecipeDraftPendingEventSchema,
   ResearchModeStartedEventSchema, ResearchProgressEventSchema, ResearchCompleteEventSchema, ResearchErrorEventSchema,
   ResearchDetectedEventSchema, BudgetWarningEventSchema, BudgetExceededEventSchema, ContextCompressedEventSchema, ContextCompressionSignalEventSchema,
   InterruptStartEventSchema, InterruptAcknowledgedEventSchema, InterruptCompleteEventSchema, InputRedirectedEventSchema, CitationsUpdatedEventSchema,

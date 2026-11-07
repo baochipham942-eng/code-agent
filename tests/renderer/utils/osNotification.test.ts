@@ -208,4 +208,80 @@ describe('osNotification', () => {
     expect(useToastStore.getState().toasts).toHaveLength(0);
     expect(notificationPlugin.sendNotification).toHaveBeenCalledTimes(1);
   });
+
+  describe('exactly one delivery report per call', () => {
+    const reports = () => domainInvoke.mock.calls.filter((c) => c[1] === 'reportClientDelivery');
+
+    it('permission read never settles -> timeout report with permissionReadTimedOut, sendNotification once', async () => {
+      vi.useFakeTimers();
+      try {
+        getNativeDesktopPermissionStatus.mockReturnValue(new Promise(() => {}));
+        const { postOsNotification } = await import('../../../src/renderer/utils/osNotification');
+        const pending = postOsNotification({ title: 't', body: 'b' });
+        await vi.advanceTimersByTimeAsync(3_000);
+        await pending;
+        expect(notificationPlugin.sendNotification).toHaveBeenCalledTimes(1);
+        expect(reports()).toHaveLength(1);
+        expect(reports()[0][2]).toEqual({ mode: 'tauri', permission: 'unknown', dispatched: true, permissionReadTimedOut: true });
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    it('toast.error throwing on urgent failure while focused -> one report with error', async () => {
+      (globalThis as Record<string, unknown>).document = { hasFocus: () => true, hidden: false };
+      const { postOsNotification } = await import('../../../src/renderer/utils/osNotification');
+      const { toast } = await import('../../../src/renderer/hooks/useToast');
+      vi.spyOn(toast, 'error').mockImplementation(() => {
+        throw new Error('toast boom');
+      });
+      await postOsNotification({ title: 't', body: 'b' }, { urgent: true, failure: true });
+      expect(reports()).toHaveLength(1);
+      expect(reports()[0][2]).toEqual({ mode: 'tauri', error: 'toast boom' });
+    });
+
+    it('denied -> one report (granted:false, dispatched:false)', async () => {
+      getNativeDesktopPermissionStatus.mockResolvedValue({ permissions: [{ kind: 'notifications', status: 'denied' }] });
+      const { postOsNotification } = await import('../../../src/renderer/utils/osNotification');
+      await postOsNotification({ title: 't', body: 'b' });
+      expect(reports()).toHaveLength(1);
+      expect(reports()[0][2]).toMatchObject({ granted: false, dispatched: false });
+    });
+
+    it('unknown -> one report', async () => {
+      getNativeDesktopPermissionStatus.mockRejectedValue(new Error('nope'));
+      const { postOsNotification } = await import('../../../src/renderer/utils/osNotification');
+      await postOsNotification({ title: 't', body: 'b' });
+      expect(reports()).toHaveLength(1);
+      expect(reports()[0][2]).toMatchObject({ permission: 'unknown', dispatched: true });
+    });
+
+    it('suppressed-focused / suppressed-viewing -> one report each', async () => {
+      (globalThis as Record<string, unknown>).document = { hasFocus: () => true, hidden: false };
+      const { postOsNotification } = await import('../../../src/renderer/utils/osNotification');
+      await postOsNotification({ title: 't', body: 'b' });
+      expect(reports()).toHaveLength(1);
+      await postOsNotification({ title: 't', body: 'b' }, { urgent: true, viewingSession: true });
+      expect(reports()).toHaveLength(2);
+      expect(reports()[1][2]).toEqual({ mode: 'suppressed-viewing', dispatched: false });
+    });
+
+    it('tauri sendNotification error -> one report with error', async () => {
+      notificationPlugin.sendNotification.mockImplementation(() => {
+        throw new Error('send boom');
+      });
+      const { postOsNotification } = await import('../../../src/renderer/utils/osNotification');
+      await postOsNotification({ title: 't', body: 'b' });
+      expect(reports()).toHaveLength(1);
+      expect(reports()[0][2]).toEqual({ mode: 'tauri', error: 'send boom' });
+    });
+
+    it('web mode -> one report', async () => {
+      (globalThis as Record<string, unknown>).window = { domainAPI: { invoke: domainInvoke } };
+      const { postOsNotification } = await import('../../../src/renderer/utils/osNotification');
+      await postOsNotification({ title: 't', body: 'b' });
+      expect(reports()).toHaveLength(1);
+      expect(reports()[0][2]).toMatchObject({ mode: 'web' });
+    });
+  });
 });

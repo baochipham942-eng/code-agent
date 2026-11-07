@@ -18,5 +18,6 @@ export const delegateSessionSchema: ToolSchema = {
   },
   category: 'planning',
   permissionLevel: 'execute',
+  allowInTextForeground: true,
   accesses: [{ kind: 'write', expression: 'resource(session, delegation)' }],
 };

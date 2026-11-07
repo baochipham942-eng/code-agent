@@ -136,6 +136,7 @@ afterEach(() => {
 });
 
 beforeEach(() => {
+  useAppStore.setState({ expertPanelTab: 'discover' });
   listRolePacks.mockResolvedValue([]);
   listTeamRecipes.mockResolvedValue([]);
   createTeamRecipe.mockImplementation(async (recipe: Omit<TeamRecipe, 'id'>) => ({ ...recipe, id: 'user-copied' }));
@@ -178,6 +179,21 @@ describe('ExpertPanel', () => {
     const create = screen.getByTestId('expert-create-role');
     expect(create.textContent).toContain('新建专家');
     expect(create.className).toContain('bg-btn-secondary');
+  });
+
+  it('选择「我的」后卸载并重新挂载仍保留选中态与专家列表', async () => {
+    listRoles.mockResolvedValue([
+      makeEntry({ roleId: '自定义客服', source: 'user', displayName: '阿问' }),
+    ]);
+    const first = render(<ExpertPanel />);
+    fireEvent.click(screen.getByTestId('expert-tab-mine'));
+    await waitFor(() => expect(screen.getByTestId('expert-card-自定义客服')).toBeTruthy());
+
+    first.unmount();
+    render(<ExpertPanel />);
+
+    await waitFor(() => expect(screen.getByTestId('expert-tab-mine').getAttribute('aria-selected')).toBe('true'));
+    expect(screen.getByTestId('expert-card-自定义客服')).toBeTruthy();
   });
 
   it('专家团词条不回潮为配方或 recipe', () => {
@@ -419,10 +435,10 @@ describe('ExpertPanel', () => {
     render(<RoleDetailPage roleId="牧之" />);
     fireEvent.click(screen.getByTestId('role-detail-tab-records'));
 
-    const start = await screen.findByTestId('role-quiet-hours-start');
-    const end = screen.getByTestId('role-quiet-hours-end');
-    fireEvent.change(start, { target: { value: '23:00' } });
-    fireEvent.change(end, { target: { value: '07:30' } });
+    await screen.findByTestId('role-quiet-hours-start');
+    fireEvent.change(screen.getByTestId('role-quiet-hours-start-hour'), { target: { value: '23' } });
+    fireEvent.change(screen.getByTestId('role-quiet-hours-end-hour'), { target: { value: '07' } });
+    fireEvent.change(screen.getByTestId('role-quiet-hours-end-minute'), { target: { value: '30' } });
     fireEvent.click(screen.getByTestId('role-quiet-hours-save'));
 
     await waitFor(() => {
@@ -452,7 +468,12 @@ describe('ExpertPanel', () => {
     render(<RoleDetailPage roleId="牧之" />);
     fireEvent.click(screen.getByTestId('role-detail-tab-records'));
 
-    fireEvent.click(await screen.findByTestId('role-quiet-hours-clear'));
+    await screen.findByTestId('role-quiet-hours-clear');
+    expect(screen.getByTestId('role-quiet-hours-start-hour')).toHaveProperty('value', '22');
+    expect(screen.getByTestId('role-quiet-hours-start-minute')).toHaveProperty('value', '00');
+    expect(screen.getByTestId('role-quiet-hours-end-hour')).toHaveProperty('value', '08');
+    expect(screen.getByTestId('role-quiet-hours-end-minute')).toHaveProperty('value', '00');
+    fireEvent.click(screen.getByTestId('role-quiet-hours-clear'));
 
     await waitFor(() => {
       expect(invokeDomain).toHaveBeenCalledWith(

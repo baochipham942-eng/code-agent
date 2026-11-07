@@ -130,8 +130,9 @@ export const ExpertPanel: React.FC = () => {
   const { t } = useI18n();
   const text = t.expert;
   const openExpertRoleDetail = useAppStore((s) => s.openExpertRoleDetail);
+  const tab = useAppStore((s) => s.expertPanelTab);
+  const setTab = useAppStore((s) => s.setExpertPanelTab);
 
-  const [tab, setTab] = useState<ExpertTab>('discover');
   const [entries, setEntries] = useState<RolePanelEntry[]>([]);
   const [rolePacks, setRolePacks] = useState<RolePackListItem[]>([]);
   const [loading, setLoading] = useState(true);

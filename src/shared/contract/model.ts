@@ -60,6 +60,20 @@ export interface ModelQuotaFailureMarker {
   model?: string;
 }
 
+/**
+ * 套餐用量窗口用尽（HTTP 429 + 「已达到 N 小时使用上限」/ 错误码 1308·1310）。
+ * 与 MODEL_QUOTA 分开：窗口过一会儿会自己恢复，卡片说「几点恢复」而不是「去充值」。
+ */
+export interface ModelUsageLimitFailureMarker {
+  code: 'MODEL_USAGE_LIMIT';
+  provider?: string;
+  model?: string;
+  /** 供应商写的窗口词（如「5 小时」）。 */
+  windowText?: string;
+  /** 重置时间，ISO-8601 UTC。 */
+  resetAt?: string;
+}
+
 /** Catalogue reasoning effort. `ultra_code` stays a UI-only effort and is not a model level. */
 export type ModelReasoningEffort = 'low' | 'medium' | 'high' | 'xhigh' | 'max';
 

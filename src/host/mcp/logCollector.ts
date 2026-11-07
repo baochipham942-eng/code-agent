@@ -5,7 +5,7 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import { app } from '../platform';
-import { redactSecrets, sanitizeLogValue } from '../security/secretRedaction';
+import { redactCommandSecrets, sanitizeLogOutput } from '../security/secretRedaction';
 
 export type LogLevel = 'INFO' | 'WARN' | 'ERROR' | 'DEBUG';
 export type LogSource = 'browser' | 'agent' | 'tool';
@@ -209,9 +209,9 @@ class LogCollector {
    * Add a log entry
    */
   log(source: LogSource, level: LogLevel, message: string, metadata?: Record<string, unknown>): void {
-    const safeMessage = redactSecrets(message);
+    const safeMessage = redactCommandSecrets(message);
     const safeMetadata = metadata
-      ? sanitizeLogValue(metadata) as Record<string, unknown>
+      ? sanitizeLogOutput(metadata) as Record<string, unknown>
       : undefined;
     const entry: LogEntry = {
       timestamp: new Date(),

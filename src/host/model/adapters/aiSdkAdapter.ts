@@ -570,7 +570,10 @@ export async function inferenceViaAiSdk(
   // 语义——开关开时出云掩码、流式/回包还原；掩码失败 fail-closed 上抛（SDK 不被调用，
   // 绝不明文外发）。主 loop / provider fallback / 子代理的公共模型入口都是本函数，
   // 只在此接一次；占位符文本二次掩码是 no-op，与 _callProvider 叠加也不会双重替换。
-  const outboundMask = applyOutboundSecretMask(messages, onStream);
+  const outboundMask = applyOutboundSecretMask(messages, onStream, {
+    provider: config.provider,
+    model: config.model,
+  });
   const requestMessages = outboundMask?.messages ?? messages;
   const requestOnStream = outboundMask?.onStream ?? onStream;
   const limiter = getProviderLimiter(config.provider);

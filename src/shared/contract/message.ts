@@ -258,6 +258,8 @@ export type AgentErrorCategory =
   | 'model_not_found'
   | 'forbidden'
   | 'rate_limited'
+  /** 套餐用量窗口用尽（429 + 用量上限措辞）：窗口会自己恢复，不给重试。 */
+  | 'usage_limit'
   | 'concurrency'
   | 'network'
   | 'context_length'
@@ -289,6 +291,9 @@ export interface AgentErrorMetadata {
   /** context_length 专用：实际/上限 tokens，供卡片模板填空 */
   requestedTokens?: number;
   maxTokens?: number;
+  /** usage_limit 专用：供应商写的窗口词（如「5 小时」）与重置时间（ISO UTC）。 */
+  usageWindowText?: string;
+  resetAt?: string;
 }
 
 export interface InputRedirectReceiptMetadata {
@@ -420,6 +425,14 @@ export interface MessageMetadata {
   roleFlowStalled?: {
     skillName: 'create-role' | 'edit-role';
   };
+  /**
+   * 后台任务终态唤醒前台失败时的用户可见说明（`role:'system'`）：任务结果已在会话里，
+   * 只是自动汇报这一步没成；reason 区分 owner lease 缺失与其它失败。
+   */
+  backgroundWakeFailed?: {
+    taskId: string;
+    reason: 'owner_missing' | 'wake_failed';
+  };
   /** User-visible audit note for atomic turn checkout / Redo, including partial outcomes. */
   turnCheckoutNote?: {
     operation: 'checkout' | 'redo';
@@ -482,7 +495,7 @@ export interface MessageMetadata {
   streamResumeNote?: { attempt: number; maxReconnects: number };
 }
 
-export type StreamInterruptionReason = 'user' | 'session-switch' | 'app-restart' | 'stream-break';
+export type StreamInterruptionReason = 'user' | 'session-switch' | 'app-restart' | 'stream-break' | 'idle-reaped';
 
 export interface Message {
   id: string;

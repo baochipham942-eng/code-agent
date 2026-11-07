@@ -452,6 +452,10 @@ export class AuditLogger {
       current.setUTCDate(current.getUTCDate() + 1);
     }
 
+    // 跨夏令时回拨时 setDate 按本地日步进会比 endDate 晚 1 小时，循环少迭代一次而漏掉当天文件
+    const endFile = this.getLogFilePath(this.getDateString(endDate));
+    if (!files.includes(endFile)) files.push(endFile);
+
     return files;
   }
 

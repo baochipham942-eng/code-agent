@@ -85,7 +85,7 @@ import { createSubagentTurnObservability } from './subagentTurnTrace';
 import { noteSubagentLiveProgress } from './backgroundSubagentLiveProgress';
 import {
   handleSubagentAbort,
-  finalizeSubagentSuccess,
+  finalizeSubagentSuccess, appendSubagentLeftoverShellReport, reportSubagentLeftoverShells,
   handleSubagentFailure,
   type SubagentCompletionDeps,
   type SubagentCompletionTerminal,
@@ -363,8 +363,8 @@ export class SubagentExecutor {
       sessionId,
       effectiveMode: subagentEffectiveMode,
       identity: turnObservability.identity,
-      allowedToolNames: allowedNames,
-      checkToolExecution: (request) => pipeline.checkToolExecution(pipelineContext, request).allowed,
+      allowedToolNames: allowedNames, policyName: effectivePreset,
+      checkToolExecution: (request) => pipeline.checkToolExecution(pipelineContext, request),
     });
     const subagentToolExecutor = toolRuntime.executor;
     const subagentPolicy = toolRuntime.policy;
@@ -449,7 +449,7 @@ export class SubagentExecutor {
         .catch(silence(logger, 'triggerSubagentStop:early-failure', 'warn'));
       return {
         success: false,
-        output: '',
+        output: appendSubagentLeftoverShellReport('', reportSubagentLeftoverShells(executionAgentId, 'early-failure')),
         error,
         toolsUsed: [],
         iterations: 0,

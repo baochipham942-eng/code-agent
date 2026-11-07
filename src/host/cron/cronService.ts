@@ -41,12 +41,13 @@ import {
   type SupportedEveryTimeUnit,
 } from './cronNormalizers';
 import { executeCronAgentAction } from './cronAgentAction';
-import { attachCronRunCost, createCronRunCostMeter, readCronRunCostUsd } from './cronRunCostMeter';
+import { attachCronRunCost, createCronRunCostMeterForExecution, readCronRunCostUsd } from './cronRunCostMeter';
 import { addCronRunCostUsd } from '../../shared/cronRunLedger';
 import { getEventBus } from '../services/eventing/bus';
 import { persistCronMissedTrace } from './cronMissedTrace';
 import {
   assertExecutionLocationConstraints,
+  assertAgentTypeOnSave,
   computeCronFireJitterMs,
   decideOneTimeJobStartup,
   intervalToCron,
@@ -79,7 +80,7 @@ import {
   classifyCronFailure,
   countTrailingCronFailures,
   cronRetryBackoffMs,
-  CronFailureNoticeGate,
+  CronFailureNoticeGate, cronDisableReasonForFailure,
   notifyCronAgentExecution,
   notifyCronJobDisabled,
 } from './cronFailurePolicy';
@@ -282,7 +283,7 @@ export class CronService implements Disposable {
         );
       }
     }
-    assertSupportedEveryScheduleUnit(definition.schedule);
+    assertSupportedEveryScheduleUnit(definition.schedule); assertAgentTypeOnSave(definition.action);
 
     const runsOn = definition.runsOn ?? 'local';
     assertExecutionLocationConstraints({ ...definition, runsOn });
@@ -353,7 +354,7 @@ export class CronService implements Disposable {
     };
     // 重新启用已停用任务：运行计数清零、摘掉停用原因（N-CRON-BUDGET-EXPOSE）；只改 maxRuns 不动计数。
     if (updates.enabled === true && !existingJob.definition.enabled) rearmCronRunLimit(updatedJob);
-    assertSupportedEveryScheduleUnit(updatedJob.schedule);
+    assertSupportedEveryScheduleUnit(updatedJob.schedule); assertAgentTypeOnSave(updates.action, existingJob.definition.action);
     assertExecutionLocationConstraints(updatedJob);
     assertEventScheduleConstraints(updatedJob);
 
@@ -948,7 +949,7 @@ export class CronService implements Disposable {
             `[CronService] Job ${definition.id} auto-disabled after permanent failure: ${execution.error}`,
           );
           await this.updateJob(definition.id, { enabled: false });
-          notifyCronJobDisabled(definition, execution, 'permanent');
+          notifyCronJobDisabled(definition, execution, cronDisableReasonForFailure(execution.error));
           disableNotified = true;
         } else if (finalKind !== 'login-wall' && countTrailingCronFailures(this.executions.get(definition.id) ?? []) >= CRON_GUARDRAILS.MAX_CONSECUTIVE_FAILURES) {
           console.error(
@@ -1031,7 +1032,8 @@ export class CronService implements Disposable {
           loadJob: (jobId) => this.jobs.get(jobId)?.definition,
           updateJob: (jobId, updates) => this.updateJob(jobId, updates),
           deliverCronResult: (job, result, execId) => this.deliverCronResult(job, result, execId),
-        }, definition, action, executionId, eventPayloadBlock);
+          recordSessionId: (execId, sessionId) => this.recordExecutionSessionId(definition.id, execId, sessionId),
+        }, definition, action, executionId, eventPayloadBlock, timeout);
       }
 
       case 'webhook': {
@@ -1066,7 +1068,7 @@ export class CronService implements Disposable {
         // 角色主动性：cadence 到点 → 完整醒来循环（内部文档）
         const { wakeRole } = await import('../services/roleAssets/roleProactivity');
         // 只计量不设闸：role-wake 历史上不吃 maxRunBudget（本单不扩权），外层闸仍是全局预算池。
-        const costMeter = createCronRunCostMeter(undefined);
+        const costMeter = createCronRunCostMeterForExecution(undefined, executionId);
         const wakeResult = await costMeter.run(() => wakeRole(action.roleId, 'cadence')).catch((error: unknown) => {
           attachCronRunCost(error, costMeter);
           throw error;
@@ -1093,6 +1095,13 @@ export class CronService implements Disposable {
     const job = this.jobs.get(definition.id);
     return job ? this.withRuntimeScheduleState(job) : definition;
   };
+
+  private async recordExecutionSessionId(jobId: string, executionId: string, sessionId: string): Promise<void> {
+    const execution = this.executions.get(jobId)?.find((e) => e.id === executionId);
+    if (!execution) return;
+    execution.sessionId = sessionId;
+    await saveCronExecution(execution);
+  }
 
   private async retryExecution(
     definition: CronJobDefinition,

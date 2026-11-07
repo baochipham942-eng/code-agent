@@ -34,14 +34,17 @@ const repoRoot = path.resolve(scriptDir, '..');
 function usage() {
   return [
     'Usage:',
-    '  node scripts/verify-slotless.mjs <ticket> [--reuse-dist] [--native <ids>] [--source-config <path>]',
+    '  node scripts/verify-slotless.mjs <ticket> [--reuse-dist] [--native <ids>] [--source-config <path>] [--clean-account]',
     '  node scripts/verify-slotless.mjs --stop <NEO_VERIFY_DATA_DIR>',
     '',
     'Starts the worktree webServer on an isolated port and signs in with the dogfood account.',
     'Copies the selected source data directory secure-storage.json + .secure-key pair by default.',
     'By default, native connectors keep the source config and no system apps are probed.',
+    'Use --clean-account to skip the cloud session-list pull so the sidebar starts truly empty (sign-in is unchanged).',
     'Use --native calendar,reminders to opt in to native connector verification on macOS.',
     `The source template defaults to ${DEFAULT_SOURCE_CONFIG}; use --source-config to select it explicitly.`,
+    'Set NEO_VERIFY_PRE_START=<script> to run that node script (with NEO_VERIFY_DATA_DIR in env) after the',
+    'data dir is staged and before the webServer spawns — e.g. to place folders the startup path must see.',
   ].join('\n');
 }
 
@@ -742,7 +745,39 @@ async function cleanupFailedStart(child, dataDir, marker, nativeConnectorIds, na
   }
 }
 
-async function startRun(ticketArg, reuseDist, nativeConnectorIds, sourceConfigArg) {
+export function buildWebServerEnv({ baseEnv = process.env, dataDir, runtimeTmpDir, port, cleanAccount }) {
+  return {
+    ...baseEnv,
+    AGENT_NEO_BUNDLED_RUNTIME_ROOT: repoRoot,
+    CODE_AGENT_DATA_DIR: dataDir,
+    CODE_AGENT_DISABLE_RENDERER_HOT_UPDATE: '1',
+    CODE_AGENT_WORKING_DIR: repoRoot,
+    ...(cleanAccount ? { CODE_AGENT_SKIP_CLOUD_SESSION_LIST: '1' } : {}),
+    TEMP: runtimeTmpDir,
+    TMP: runtimeTmpDir,
+    TMPDIR: runtimeTmpDir,
+    WEB_HOST: '127.0.0.1',
+    WEB_PORT: String(port),
+  };
+}
+
+/**
+ * Opt-in staging hook (NEO_VERIFY_PRE_START): run a node script against the staged
+ * data dir before the webServer spawns — e.g. to place folders in the default work
+ * root that the startup path under test must already see. Non-zero exit fails the start.
+ */
+function runPreStartHook(dataDir) {
+  const hook = process.env.NEO_VERIFY_PRE_START?.trim();
+  if (!hook) return;
+  const result = spawnSync(process.execPath, [hook], {
+    stdio: 'inherit',
+    env: { ...process.env, NEO_VERIFY_DATA_DIR: dataDir },
+  });
+  if (result.error) fail(`pre-start hook failed to start: ${result.error.message}`);
+  if (result.status !== 0) fail(`pre-start hook exited with ${result.status ?? 'unknown'}`);
+}
+
+async function startRun(ticketArg, reuseDist, nativeConnectorIds, sourceConfigArg, cleanAccount = false) {
   const ticket = sanitizeTicket(ticketArg);
   const credentials = readDogfoodCredentials();
   const requestedSourceConfig = resolveSourceConfigPath(sourceConfigArg);
@@ -768,6 +803,7 @@ async function startRun(ticketArg, reuseDist, nativeConnectorIds, sourceConfigAr
     const runtimeTmpDir = path.join(dataDir, 'runtime-tmp');
     mkdirSync(runtimeTmpDir, { mode: 0o700 });
     chmodSync(runtimeTmpDir, 0o700);
+    runPreStartHook(dataDir);
 
     const port = await reservePort();
     const url = `http://127.0.0.1:${port}`;
@@ -778,18 +814,7 @@ async function startRun(ticketArg, reuseDist, nativeConnectorIds, sourceConfigAr
       child = spawn(process.execPath, [webServer, `--neo-verify-run=${marker}`], {
         cwd: dataDir,
         detached: true,
-        env: {
-          ...process.env,
-          AGENT_NEO_BUNDLED_RUNTIME_ROOT: repoRoot,
-          CODE_AGENT_DATA_DIR: dataDir,
-          CODE_AGENT_DISABLE_RENDERER_HOT_UPDATE: '1',
-          CODE_AGENT_WORKING_DIR: repoRoot,
-          TEMP: runtimeTmpDir,
-          TMP: runtimeTmpDir,
-          TMPDIR: runtimeTmpDir,
-          WEB_HOST: '127.0.0.1',
-          WEB_PORT: String(port),
-        },
+        env: buildWebServerEnv({ dataDir, runtimeTmpDir, port, cleanAccount }),
         stdio: ['ignore', logFd, logFd],
       });
     } finally {
@@ -814,6 +839,7 @@ async function startRun(ticketArg, reuseDist, nativeConnectorIds, sourceConfigAr
       repoRoot,
       template,
       nativeConnectorIds: requestedNativeConnectorIds,
+      cleanAccount,
       nativeAppPidsBeforeStart: nativeAppsBeforeStart,
       launchedNativeApps,
       startedAt: new Date().toISOString(),
@@ -830,6 +856,7 @@ async function startRun(ticketArg, reuseDist, nativeConnectorIds, sourceConfigAr
     if (nativeConnectorIds !== undefined) {
       console.log(`NEO_VERIFY_NATIVE=${nativeConnectorIds.join(',')}`);
     }
+    if (cleanAccount) console.log('NEO_VERIFY_CLEAN_ACCOUNT=1');
     console.log(`NEO_VERIFY_URL=${url}`);
     console.log(`NEO_VERIFY_DATA_DIR=${dataDir}`);
   } catch (error) {
@@ -838,23 +865,21 @@ async function startRun(ticketArg, reuseDist, nativeConnectorIds, sourceConfigAr
   }
 }
 
-async function main(args = process.argv.slice(2)) {
-  if (args.includes('--help') || args.includes('-h')) {
-    console.log(usage());
-    return;
-  }
-  if (args[0] === '--stop') {
-    await stopRun(args[1]);
-    return;
-  }
+export function parseStartArgs(args) {
   let ticket;
   let reuseDist = false;
   let nativeConnectorIds;
   let sourceConfigArg;
+  let cleanAccount = false;
   for (let index = 0; index < args.length; index += 1) {
     const arg = args[index];
     if (arg === '--reuse-dist') {
       reuseDist = true;
+      continue;
+    }
+    if (arg === '--clean-account') {
+      if (cleanAccount) fail('--clean-account may only be specified once');
+      cleanAccount = true;
       continue;
     }
     if (arg === '--native') {
@@ -881,7 +906,20 @@ async function main(args = process.argv.slice(2)) {
     ticket = arg;
   }
   if (!ticket) fail(usage());
-  await startRun(ticket, reuseDist, nativeConnectorIds, sourceConfigArg);
+  return { ticket, reuseDist, nativeConnectorIds, sourceConfigArg, cleanAccount };
+}
+
+async function main(args = process.argv.slice(2)) {
+  if (args.includes('--help') || args.includes('-h')) {
+    console.log(usage());
+    return;
+  }
+  if (args[0] === '--stop') {
+    await stopRun(args[1]);
+    return;
+  }
+  const { ticket, reuseDist, nativeConnectorIds, sourceConfigArg, cleanAccount } = parseStartArgs(args);
+  await startRun(ticket, reuseDist, nativeConnectorIds, sourceConfigArg, cleanAccount);
 }
 
 const isEntrypoint = process.argv[1] && import.meta.url === pathToFileURL(path.resolve(process.argv[1])).href;

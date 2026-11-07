@@ -62,6 +62,18 @@ export const toolErrorCodesZh = {
     summary: '当前没有可用的音乐服务',
     detail: '默认的 MiniMax 音乐接口已对新账户关闭；可在设置的模型页添加支持生成音乐的模型后再试',
   },
+  WORKTREE_NO_REPO: {
+    summary: '没能为子任务建隔离副本：当前文件夹不是 git 仓库',
+    detail: '请改在 git 仓库里做这件事，或让子任务不使用隔离副本。',
+  },
+  WORKTREE_NO_COMMITS: {
+    summary: '没能为子任务建隔离副本：仓库还没有任何提交',
+    detail: '请先在仓库里做一次初始提交，再重新发起。',
+  },
+  WORKTREE_CREATE_FAILED: {
+    summary: '没能为子任务建隔离副本',
+    detail: '请确认这个文件夹是可用的 git 仓库后重试，原始报错可在下方展开查看。',
+  },
 };
 
 export const toolErrorCodesEn: typeof toolErrorCodesZh = {
@@ -124,5 +136,17 @@ export const toolErrorCodesEn: typeof toolErrorCodesZh = {
   MUSIC_SERVICE_UNAVAILABLE_NO_ALTERNATIVE: {
     summary: 'No music service is currently available',
     detail: 'The default MiniMax music API is closed to new accounts; add a music-capable model in Settings → Models, then try again',
+  },
+  WORKTREE_NO_REPO: {
+    summary: 'Couldn\'t create an isolated copy for the subtask: this folder is not a git repository',
+    detail: 'Do this work in a git repository instead, or have the subtask run without an isolated copy.',
+  },
+  WORKTREE_NO_COMMITS: {
+    summary: 'Couldn\'t create an isolated copy for the subtask: the repository has no commits yet',
+    detail: 'Make an initial commit in the repository first, then start the subtask again.',
+  },
+  WORKTREE_CREATE_FAILED: {
+    summary: 'Couldn\'t create an isolated copy for the subtask',
+    detail: 'Make sure this folder is a usable git repository and try again; the original error can be expanded below.',
   },
 };

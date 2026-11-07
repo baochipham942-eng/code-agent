@@ -73,6 +73,8 @@ vi.mock('../../../src/host/task', () => ({
 }));
 
 import { CronService } from '../../../src/host/cron/cronService';
+import { buildCronAgentPrompt } from '../../../src/host/cron/cronAgentPrompt';
+import { stripCronPromptDecoration } from '../../../src/shared/cronRunMessage';
 
 interface CronServiceHarness {
   jobs: Map<string, { definition: CronJobDefinition }>;
@@ -153,7 +155,7 @@ describe('CronService agent run snapshot wiring', () => {
 
     await expect(
       harness.executeAction(definition, definition.action, undefined, 'execution-budget'),
-    ).rejects.toThrow('Cron job run exceeded its $0.01 budget limit.');
+    ).rejects.toThrow('Cron job run exceeded its $0.01 budget limit (spent $0.0200).');
     expect(agentState.cleanup).toHaveBeenCalledWith('cron-session-1');
   });
 
@@ -201,6 +203,32 @@ describe('CronService agent run snapshot wiring', () => {
     expect(sentPrompt).toContain('【当前时间】');
     expect(sentPrompt).toContain('回复末尾请用 <cron_snapshot>...</cron_snapshot> 包住本次需要记住的简短快照，供下次对比。');
     expect(sentPrompt).not.toContain('<previous_snapshot>'); // 首次无旧快照
+  });
+
+  it('N-UI-CRON-RUN-RECORD-CLEAR：模型收到的 prompt 逐字节等于 buildCronAgentPrompt 的产出；气泡只在渲染层切尾段', async () => {
+    // 气泡「只显示任务」的实现是渲染层 stripCronPromptDecoration，host 侧发送内容
+    // 必须一字不动。这里字节级钉住：从发出的 prompt 里取回它自己的时间锚点 Date，
+    // 用同一个 now 重建期望值，逐字节相等（锚点 ms 精度随发送时刻，不能另取 now）。
+    await runAgentAction(
+      {
+        [CRON_AGENT_SNAPSHOT.ENABLED_KEY]: true,
+        [CRON_AGENT_SNAPSHOT.CONTEXT_KEY]: '标题 A\n状态：开放',
+      },
+      '本次结果',
+    );
+
+    const [sentPrompt] = agentState.sendMessage.mock.calls[0] as [string, unknown, unknown];
+    const anchorIso = /【当前时间】([^（]+)（UTC）/.exec(String(sentPrompt))?.[1];
+    expect(anchorIso).toBeTruthy();
+    const expected = buildCronAgentPrompt(
+      '检查网页',
+      '标题 A\n状态：开放',
+      true,
+      new Date(anchorIso!),
+    );
+    expect(sentPrompt).toBe(expected);
+    // 展示层切完只剩任务原文——切掉的就是机器尾段整体。
+    expect(stripCronPromptDecoration(String(sentPrompt))).toBe('检查网页');
   });
 
   it('开了追踪但模型没吐标记：不拿整段回答顶替', async () => {

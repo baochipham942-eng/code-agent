@@ -1,6 +1,7 @@
 import type { Response } from 'express';
 import type { AgentEvent, SessionStatus } from '../../shared/contract';
 import { IPC_CHANNELS } from '../../shared/ipc';
+import { notificationService } from '../../host/services/infra/notificationService';
 import { MessageDeltaAccumulator } from '../../host/protocol/messageDeltaAccumulator';
 import { createAgentRunSSEBatcher } from '../helpers/agentRunSSEBatcher';
 import { broadcastSSE, sendSSE } from '../helpers/sse';
@@ -8,6 +9,7 @@ import { envelopeWebAgentEvent } from '../helpers/agentStreamCursor';
 import type { AgentSessionManagerLike } from './agentRouteTypes';
 import type { WebRouteLogger } from './routeTypes';
 import type { RunHandle } from '../../host/runtime/runContext';
+import { isBackgroundContinueActive } from '../../host/services/daemon/quitIntent';
 import {
   shouldDeliverAgentEvent,
   type AgentEventFilter,
@@ -47,6 +49,8 @@ function isTerminalErrorEvent(event: AgentEvent): boolean {
 export class AgentRunController {
   private runSettled = false;
   private clientDisconnected = false;
+  /** 壳以「后台继续」退出：SSE 断了但 run 继续，事件改走全局广播。 */
+  private detachedForBackground = false;
   private runHadTerminalError = false;
   private terminalFailure: unknown = null;
   private terminalErrorData: Record<string, unknown> | null = null;
@@ -55,7 +59,13 @@ export class AgentRunController {
   private readonly agentSSEBatcher;
 
   readonly cancelForDisconnect = (): void => {
-    if (this.runSettled || this.clientDisconnected) return;
+    if (this.runSettled || this.clientDisconnected || this.detachedForBackground) return;
+    // ADR-083：壳选了「后台继续」后断开的 SSE 不是用户取消，run 要跑完并落库。
+    // 显式 Stop 走 POST /api/cancel，不依赖 SSE close，不受影响。
+    if (isBackgroundContinueActive()) {
+      this.detachedForBackground = true;
+      return;
+    }
     this.clientDisconnected = true;
     const runHandle = this.deps.runHandle;
     if (!runHandle) return;
@@ -111,7 +121,7 @@ export class AgentRunController {
   }
 
   emitSSE(event: string, data: unknown): void {
-    if (this.deps.mirrorToBroadcast || this.shouldBroadcastAfterStreamClosed(event)) {
+    if (this.deps.mirrorToBroadcast || this.detachedForBackground || this.shouldBroadcastAfterStreamClosed(event)) {
       // 必须包成 agent:event 信封再广播，不能把原始事件名当 channel 直接发。
       //
       // 直连轮走的是 /api/agent/run 的响应流：httpTransport 的 processStream 把流上每条
@@ -145,7 +155,39 @@ export class AgentRunController {
     }
   }
 
+  /**
+   * 前台桌面链路的 needs-input 横幅（N-NOTIFY-FAILURE-FOREGROUND-BANNER-FU3-FU1）。
+   * TaskManager 落库口（taskManagerEventPersistence）只覆盖后台任务；前台路由的
+   * permission_request 此前没有通知出口——用户切到别的会话或收起聊天列（专注模式）时，
+   * 审批卡就挂在屏幕外无人知晓。文案与 dedupeKey（请求 id）和落库口保持一致：
+   * 同一条请求从停车口/落库口/这里多路到达时，notificationService 同键只投一条。
+   * resolved:true（超时/被取代/companion 收口）不是待办，绝不通知；且这些收口事件
+   * 只经此出口（落库口看不见），必须像落库口一样按 id 撤回已投递的横幅——否则用户
+   * 回到前台还会被一条指向已失效审批的「需要授权」补提醒误导。没投递过则
+   * retractNeedsInput 自身是 no-op。
+   */
+  private maybeNotifyNeedsInput(event: AgentEvent): void {
+    if (event.type !== 'permission_request' || !event.data) return;
+    const data = event.data as { id?: unknown; tool?: unknown; command?: unknown; resolved?: unknown };
+    if (typeof data.id !== 'string' || data.id.length === 0) return;
+    try {
+      if (data.resolved) {
+        notificationService.retractNeedsInput(data.id);
+        return;
+      }
+      notificationService.notifyNeedsInput({
+        sessionId: this.deps.sessionId,
+        title: '需要授权',
+        body: data.tool ? `${data.tool}: ${data.command || '请求执行权限'}` : '请求执行权限',
+        dedupeKey: data.id,
+      });
+    } catch (error) {
+      this.deps.logger.warn(`[AgentRouter] Failed to sync needs-input notification for ${this.deps.sessionId}:`, error);
+    }
+  }
+
   emitAgentEvent(event: AgentEvent): boolean {
+    this.maybeNotifyNeedsInput(event);
     if (isTerminalErrorEvent(event)) {
       this.runHadTerminalError = true;
       const payload = event.data && typeof event.data === 'object'

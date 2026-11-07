@@ -129,6 +129,7 @@ export const enSettingsCore = {
       feishu: 'Feishu',
       telegram: 'Telegram',
       httpApi: 'HTTP API',
+      externalImport: 'Import from other AI apps',
       lightMemory: 'Light Memory',
       sessionStats: 'Session stats',
       modelUsage: 'Model usage',
@@ -192,6 +193,17 @@ export const enSettingsCore = {
       fontSizeSaveFailed: 'Failed to save font size. Previous setting restored.',
     },
     general: {
+      notifications: {
+        title: 'System notifications',
+        on: 'On',
+        off: 'Off in macOS',
+        unknown: 'Cannot confirm',
+        onDescription: 'Task-finished and failure alerts can appear as system notifications.',
+        offDescription: 'Task-finished and failure alerts will not pop up.',
+        unknownDescription: 'Neo cannot read the macOS setting; check System Settings.',
+        openSettings: 'Open system settings',
+        openSettingsFailed: 'Unable to open System Settings. Open Notifications manually.',
+      },
       permissions: {
         pageTitle: 'Permissions & security',
         pageDescription: 'Manage permission checks for sensitive Agent actions and the permission inheritance policy for sub-agents.',
@@ -418,6 +430,7 @@ export const enSettingsCore = {
         runtimePrefix: 'Cleaned ',
         runtimeMiddle: ' times · freed ',
         runtimeSuffix: ' tokens',
+        runtimeEmpty: 'No cleanups yet',
       },
       details: {
         title: 'Cleanup thresholds and audit trail',

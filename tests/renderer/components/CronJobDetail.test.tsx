@@ -11,6 +11,8 @@ vi.mock('../../../src/renderer/services/cronClient', () => ({
     listJobs: vi.fn().mockResolvedValue([]),
     getStats: vi.fn().mockResolvedValue(null),
     getExecutions: vi.fn().mockResolvedValue([]),
+    grantWriteScope: vi.fn(),
+    revokeWriteScope: vi.fn(),
   },
 }));
 
@@ -97,6 +99,41 @@ describe('CronJobDetail', () => {
       editingJobId: null,
       copyingJobId: 'job-1',
     });
+  });
+
+  it('本地 agent 任务显示文件写入授权面板；云端任务与 shell 动作不显示', () => {
+    const local = render(<CronJobDetail job={makeJob({})} />);
+    expect(screen.getByTestId('cron-write-scope-panel')).toBeTruthy();
+    local.unmount();
+
+    const cloud = render(<CronJobDetail job={makeJob({ runsOn: 'cloud' })} />);
+    expect(screen.queryByTestId('cron-write-scope-panel')).toBeNull();
+    cloud.unmount();
+
+    const shell = render(
+      <CronJobDetail job={makeJob({ action: { type: 'shell', command: 'echo hi' } })} />,
+    );
+    expect(screen.queryByTestId('cron-write-scope-panel')).toBeNull();
+    shell.unmount();
+  });
+
+  // N-CRON-DETAIL-TIME-FORMAT-MIXED ②：中文界面详情时间统一 24 小时制带年份，
+  // 不再跟机器 locale 出 12 小时制 / 月在前美式格式。
+  it('中文界面下次运行/创建/更新用 24 小时制且带年份，无 AM/PM', () => {
+    const initialLanguage = useAppStore.getState().language;
+    useAppStore.setState({ language: 'zh' });
+    try {
+      const at = new Date(2026, 10, 9, 16, 5, 0).getTime();
+      render(<CronJobDetail job={makeJob({ nextRunAt: at, createdAt: at, updatedAt: at })} />);
+      const nextRun = screen.getByTestId('cron-detail-next-run');
+      expect(nextRun.textContent).toContain('2026/11/09 16:05');
+      expect(nextRun.textContent).not.toMatch(/AM|PM/);
+      const advanced = screen.getByTestId('cron-detail-advanced');
+      expect(advanced.textContent).toContain('2026/11/09 16:05');
+      expect(advanced.textContent).not.toMatch(/AM|PM/);
+    } finally {
+      useAppStore.setState({ language: initialLanguage });
+    }
   });
 });
 

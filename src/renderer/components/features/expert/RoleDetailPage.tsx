@@ -38,7 +38,7 @@ import { RoleWakeLedger } from "./RoleWakeLedger";
 import { RoleBindingsSection } from "../settings/tabs/RoleBindingsSection";
 import { RoleMemoryActions } from "./RoleMemoryActions";
 import { useAppStore } from "../../../stores/appStore";
-import { Button } from "../../primitives/Button";
+import { Button, TimeInput24 } from "../../primitives";
 import { FullScreenPage, FullScreenPageHeader } from "../shared/FullScreenPage";
 import { RoleBasicTab } from './RoleBasicTab';
 import { RoleEquipmentTab } from './RoleEquipmentTab';
@@ -47,6 +47,7 @@ import { RoleSecurityTab } from './RoleSecurityTab';
 import { RolePersonalizationTab } from './RolePersonalizationTab';
 import { RoleRecordsTab } from './RoleRecordsTab';
 import { RoleRoutinesSection } from './RoleRoutinesSection';
+import { RoleDeleteControl, shouldMountRoleDeleteControl } from './RoleDeleteControl';
 
 const logger = createLogger("RoleDetailPage");
 
@@ -286,8 +287,6 @@ const VisualEditor: React.FC<{
 
   return (
     <SettingsSection title={text.title} description={text.description}>
-      {/* E6-3 接入 locallyModified 前，内置角色统一提示：这里拿不到角色包的本地修改状态。 */}
-      {detail.isBuiltin ? <p className="mb-3 rounded-md bg-amber-500/10 px-3 py-2 text-xs text-badge-warning">{text.builtinNotice}</p> : null}
       <div className="grid gap-3 md:grid-cols-2">
         <label className="space-y-1 text-xs text-zinc-400">
           <span>{text.displayName}</span>
@@ -596,22 +595,26 @@ const QuietHoursEditor: React.FC<{
       <div className="mt-3 flex flex-wrap items-end gap-3">
         <label className="space-y-1 text-xs text-zinc-500">
           <span className="block">{text.quietHoursStart}</span>
-          <input
-            data-testid="role-quiet-hours-start"
-            type="time"
+          <TimeInput24
+            testId="role-quiet-hours-start"
             value={start}
-            onChange={(event) => setStart(event.target.value)}
-            className="rounded-md border border-zinc-700 bg-zinc-950 px-2.5 py-1.5 text-sm text-zinc-200 outline-none focus:border-badge-success"
+            onChange={setStart}
+            hourLabel={t.expert.roleDetail.timeHourLabel}
+            minuteLabel={t.expert.roleDetail.timeMinuteLabel}
+            disabled={busy}
+            size="sm"
           />
         </label>
         <label className="space-y-1 text-xs text-zinc-500">
           <span className="block">{text.quietHoursEnd}</span>
-          <input
-            data-testid="role-quiet-hours-end"
-            type="time"
+          <TimeInput24
+            testId="role-quiet-hours-end"
             value={end}
-            onChange={(event) => setEnd(event.target.value)}
-            className="rounded-md border border-zinc-700 bg-zinc-950 px-2.5 py-1.5 text-sm text-zinc-200 outline-none focus:border-badge-success"
+            onChange={setEnd}
+            hourLabel={t.expert.roleDetail.timeHourLabel}
+            minuteLabel={t.expert.roleDetail.timeMinuteLabel}
+            disabled={busy}
+            size="sm"
           />
         </label>
         <button /* ds-allow:button: 免打扰时段使用紧凑行内保存动作 */
@@ -866,6 +869,7 @@ export const RoleDetailPage: React.FC<RoleDetailPageProps> = ({ roleId }) => {
               = 切到本页「技能」tab，详情页本身就是配置处) + 原有 tab 分段控件 */}
           <Button variant="primary" size="sm" data-testid="role-detail-go-thread" onClick={() => void goToExpertThread(roleId, { title: detail?.visual.displayName || roleId })}>{expertText.invite}</Button>
           <Button variant="secondary" size="sm" data-testid="role-detail-configure" onClick={() => setTab('skills')}>{expertText.configure}</Button>
+          {detail && shouldMountRoleDeleteControl(detail) ? <RoleDeleteControl roleId={roleId} displayName={detail.visual.displayName || roleId} onDeleted={closeDetail} onRestored={loadDetail} /> : null}
           <div className="flex rounded-md border border-zinc-700 p-0.5" role="tablist">{ROLE_DETAIL_TABS.map((key) => <button /* ds-allow:button: 详情页内部 tab 使用语义分段控件 */ key={key} type="button" role="tab" aria-selected={tab === key} data-testid={`role-detail-tab-${key}`} onClick={() => setTab(key)} className={`rounded px-2.5 py-1 text-xs transition-colors ${tab === key ? 'bg-zinc-700 text-zinc-100' : 'text-zinc-400 hover:text-zinc-200'}`}>{expertText.detailTabs[key]}</button>)}</div>
         </div>}
       />

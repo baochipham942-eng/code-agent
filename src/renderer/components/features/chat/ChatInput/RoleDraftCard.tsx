@@ -14,6 +14,7 @@ import { IPC_DOMAINS } from '@shared/ipc';
 import { toast } from '../../../../hooks/useToast';
 import { useI18n } from '../../../../hooks/useI18n';
 import { useSessionStore } from '../../../../stores/sessionStore';
+import { getRoleToolCapabilities } from '../../../../utils/roleToolCapabilities';
 import { RoleFirstWakeCard } from '../RoleFirstWakeCard';
 import {
   RoleCreatedDirectCard,
@@ -295,7 +296,14 @@ export const RoleDraftCard: React.FC<RoleDraftCardProps> = ({ drafts, onResolved
 
       {drafts.map((draft) => {
         const expanded = expandedId === draft.id;
-        const toolsLine = draft.tools.length > 0 ? draft.tools.join('、') : r.defaultToolsFallback;
+        const capabilityLabels = getRoleToolCapabilities({
+          toolNames: draft.tools,
+          capabilityLabels: t.receiptPresentation.roleCapabilityLabels,
+          humanToolLabels: t.receiptPresentation.humanToolLabels,
+        });
+        const toolsLine = capabilityLabels.length > 0
+          ? capabilityLabels.join(t.receiptPresentation.roleCapabilityLabels.separator)
+          : r.defaultToolsFallback;
         const isEdit = Boolean(draft.editingRoleId);
         return (
           <div key={draft.id} className="py-1">

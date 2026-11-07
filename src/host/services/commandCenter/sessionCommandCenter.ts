@@ -29,6 +29,7 @@ import {
 } from '../../../shared/constants/sessionCommandCenter';
 import type { RuntimeInputMode } from '../../../shared/contract/conversationEnvelope';
 import { RUNTIME_INPUT_REDIRECT_LINE, RUNTIME_INPUT_SUPPLEMENT_LINE } from '../../../shared/constants/runtimeInput';
+import { commandMayAwaitSystemPrompt } from '../../task/macosAutomationPrompt';
 
 const logger = createLogger('SessionCommandCenter');
 
@@ -447,7 +448,7 @@ export class SessionCommandCenter {
   private mayAwaitSystemPrompt(taskId: string): boolean {
     const prefix = `${taskId}:`;
     for (const [key, command] of this.shellCommandsByCallId) {
-      if (key.startsWith(prefix) && /osascript|tell application|system events/i.test(command)) return true;
+      if (key.startsWith(prefix) && commandMayAwaitSystemPrompt(command)) return true;
     }
     return false;
   }

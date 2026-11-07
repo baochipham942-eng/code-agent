@@ -114,7 +114,7 @@ import {
   listScopedMemories,
 } from '../../../src/host/services/roleAssets/roleAssetService';
 import type { RolePanelDetail, RolePanelEntry } from '../../../src/shared/contract/roleAssets';
-import { BUILTIN_ROLES } from '../../../src/host/services/roleAssets/builtinRoles';
+import { BUILTIN_ROLES, installBuiltinRoles } from '../../../src/host/services/roleAssets/builtinRoles';
 
 // 捕获注册的 handler，模拟 ipcHost
 type Handler = (event: unknown, request: IPCRequest) => Promise<IPCResponse>;
@@ -295,6 +295,42 @@ describe('roles.ipc (domain:roles)', () => {
       const res = await invoke<RolePanelDetail>('detail', { roleId: '孤儿角色' });
       expect(res.success).toBe(true);
       expect(res.data?.definition).toBeNull();
+    });
+
+    it('tracks built-in edits against the installed factory definition and clears them on restore', async () => {
+      const role = BUILTIN_ROLES.find((candidate) => candidate.id === '牧之')!;
+      const installed = await installBuiltinRoles();
+      expect(installed.installedAgents).toContain(role.id);
+
+      const fresh = await invoke<RolePanelDetail>('detail', { roleId: role.id });
+      expect(fresh.data?.locallyModified).toBe(false);
+
+      const update = await invoke('updateVisual', {
+        roleId: role.id,
+        visual: { displayName: '改过的牧之' },
+      });
+      expect(update.success).toBe(true);
+      const modified = await invoke<RolePanelDetail>('detail', { roleId: role.id });
+      expect(modified.data?.locallyModified).toBe(true);
+
+      const restore = await invoke('restoreFactory', { roleId: role.id });
+      expect(restore.success).toBe(true);
+      const restored = await invoke<RolePanelDetail>('detail', { roleId: role.id });
+      expect(restored.data?.locallyModified).toBe(false);
+    });
+
+    it('omits locallyModified when a built-in definition file or factory template is missing', async () => {
+      const activeRole = BUILTIN_ROLES.find((candidate) => candidate.id === '牧之')!;
+      await ensureRoleAssetDirs(activeRole.id);
+      const missingFile = await invoke<RolePanelDetail>('detail', { roleId: activeRole.id });
+      expect(missingFile.data?.locallyModified).toBeUndefined();
+
+      const agentsDir = path.join(mockConfigDir.dir, 'agents');
+      await fs.mkdir(agentsDir, { recursive: true });
+      await fs.writeFile(path.join(agentsDir, '研究员.md'), '---\nname: 研究员\n---\n退役定义', 'utf8');
+      await ensureRoleAssetDirs('研究员');
+      const retired = await invoke<RolePanelDetail>('detail', { roleId: '研究员' });
+      expect(retired.data?.locallyModified).toBeUndefined();
     });
   });
 

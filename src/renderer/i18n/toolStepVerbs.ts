@@ -1,4 +1,5 @@
 import type { ToolStepLabelKey, ToolStepStatus } from '@shared/contract';
+import { PARKED_APPROVAL_CLOSURE_SENTENCES } from '@shared/parkedApprovalClosure';
 
 type DeclaredVerbForms = Record<ToolStepLabelKey, string>;
 
@@ -98,6 +99,11 @@ interface ToolStepVerbBundle {
   };
   /** 登记表外仍未翻译的全大写码（^[A-Z][A-Z0-9_]*$）的兜底句；数字退出码 / HTTP nnn 不走这里 */
   rawFailureCodeFallback: string;
+  /**
+   * 停车审批自动收口句（键 = PARKED_APPROVAL_CLOSURE_SENTENCES 的名字；zh 直接用原句，保证字节一致）。
+   * 按 Record<共享键联合, string> 收口：host 新增收口原因而任一语言表漏配时，这里直接编译红。
+   */
+  parkedClosure: Record<keyof typeof PARKED_APPROVAL_CLOSURE_SENTENCES, string>;
   failureCodes: {
     'worktree-create-failed': string;
     'gateway-timeout': string;
@@ -193,6 +199,7 @@ export const toolStepVerbsZh: ToolStepVerbBundle = {
     FS_ERROR: '文件读写失败，请确认文件没被占用且有权限',
   },
   rawFailureCodeFallback: '这一步没有成功，展开可查看详情',
+  parkedClosure: { ...PARKED_APPROVAL_CLOSURE_SENTENCES },
   failureCodes: {
     'worktree-create-failed': '无法为这次任务准备运行环境',
     'gateway-timeout': '服务暂时没有响应',
@@ -241,6 +248,12 @@ export const toolStepVerbsEn: ToolStepVerbBundle = {
     FS_ERROR: 'Reading or writing the file failed; make sure it is not in use and you have access',
   },
   rawFailureCodeFallback: 'This step did not succeed; expand for details',
+  parkedClosure: {
+    expiredAfterRestart24h: 'This step waited for your confirmation for over 24 hours, so it was voided automatically and did not run.',
+    workingDirectoryUnavailable: "This conversation has no working directory, so it can't be run safely after a restart. It did not run.",
+    runEndedAfterRestart: 'The run this step belonged to has already ended, so it did not run; you will be asked again the next time it triggers.',
+    argsUnavailable: 'After the app restarted, the full details of this step could not be found, so it was not run for safety.',
+  },
   failureCodes: {
     'worktree-create-failed': 'Could not prepare the workspace for this task',
     'gateway-timeout': 'The service did not respond in time',

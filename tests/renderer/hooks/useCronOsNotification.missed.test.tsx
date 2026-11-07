@@ -18,6 +18,7 @@ vi.mock('../../../src/renderer/services/ipcService', () => ({
 vi.mock('../../../src/renderer/utils/osNotification', () => ({
   postOsNotification: vi.fn(),
   registerNotificationClick: vi.fn(async () => undefined),
+  reportNotificationHandled: vi.fn(),
 }));
 
 import { useCronOsNotification } from '../../../src/renderer/hooks/useCronOsNotification';

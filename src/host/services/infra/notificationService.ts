@@ -21,7 +21,7 @@ import {
   getNotificationDigestText,
   type NotificationDigestLocale,
 } from '../../../shared/i18n/notificationDigest';
-import { NotificationBudget, type NotificationBudgetItem } from './notificationBudget';
+import { NotificationBudget, type NotificationBudgetDisposition, type NotificationBudgetItem } from './notificationBudget';
 
 const logger = createLogger('NotificationService');
 
@@ -203,6 +203,7 @@ class NotificationService implements Disposable {
 
   private deliverDigest(items: readonly BudgetedNotification[]): void {
     const text = getNotificationDigestText(readNotificationLocale());
+    logger.info('Notification folded into digest', { reason: 'budget-digest', count: items.length });
     this.deliverNow({
       intent: 'task_complete',
       type: 'digest',
@@ -238,11 +239,14 @@ class NotificationService implements Disposable {
     });
   }
 
-  private enqueueBudgeted(item: BudgetedNotification): void {
-    if (this.budget.enqueue(item) !== 'held') return;
-    if (!item.delivery.markSessionUnread) return;
+  private enqueueBudgeted(item: BudgetedNotification): NotificationBudgetDisposition {
+    const disposition = this.budget.enqueue(item);
+    if (disposition !== 'held') return disposition;
+    logger.info('Notification held by budget', { reason: 'budget-held', intent: item.intent, sessionId: item.sessionId });
+    if (!item.delivery.markSessionUnread) return disposition;
     this.broadcastSessionAttentionMark(item.sessionId);
     delete item.delivery.markSessionUnread;
+    return disposition;
   }
 
   private isIntentAllowed(intent: NotificationIntent): boolean {
@@ -279,7 +283,7 @@ class NotificationService implements Disposable {
 
     if (data.dedupeKey) {
       if (this.deliveredNeedsInputKeys.has(data.dedupeKey)) {
-        logger.debug('Skip duplicate needs-input notification', { dedupeKey: data.dedupeKey });
+        logger.info('Notification not delivered', { reason: 'dedupe-duplicate', dedupeKey: data.dedupeKey });
         return;
       }
       this.deliveredNeedsInputKeys.add(data.dedupeKey);
@@ -369,7 +373,7 @@ class NotificationService implements Disposable {
     body += `\n耗时: ${this.formatDuration(duration)}`;
 
     const title = `${data.succeeded === false ? '任务失败' : '任务完成'} - ${sessionTitle}`;
-    this.enqueueBudgeted({
+    const disposition = this.enqueueBudgeted({
       intent,
       urgent: options?.urgent,
       type: intent,
@@ -385,7 +389,7 @@ class NotificationService implements Disposable {
         ...(intent === 'task_failed' ? { urgent: true, failure: true, markSessionUnread: true } : {}),
       },
     });
-    logger.info('Notification dispatched to renderer', { sessionTitle });
+    if (disposition === 'delivered') logger.info('Notification dispatched to renderer', { sessionTitle });
   }
 
   /** Background restart-resume is silent in the chat surface, so expose one system signal. */

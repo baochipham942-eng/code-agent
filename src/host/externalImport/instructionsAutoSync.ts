@@ -15,6 +15,7 @@ import { getHomeDir } from '../config';
 import {
   confirmMemoryHarnessDirective,
   dryRunMemoryHarnessImport,
+  type MemoryImporterDiscoveryOptions,
 } from '../memory/importers';
 import { listUnifiedMemoryEntries } from '../memory/memoryEntryRuntime';
 import { createLogger } from '../services/infra/logger';
@@ -75,11 +76,13 @@ async function resolveDatabase(options: InstructionsAutoSyncOptions): Promise<In
   return getDatabase();
 }
 
-function discoveryOptions(options: InstructionsAutoSyncOptions) {
+function discoveryOptions(
+  options: InstructionsAutoSyncOptions,
+): Pick<MemoryImporterDiscoveryOptions, 'adapterIds' | 'homeDir'> {
   return {
     adapterIds: [CODEX_ADAPTER_ID],
     homeDir: options.homeDir ?? getHomeDir(),
-  } as const;
+  };
 }
 
 function hasImportedCodexDirective(entries: MemoryEntry[]): boolean {

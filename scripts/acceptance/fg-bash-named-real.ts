@@ -37,6 +37,7 @@ type Provider = 'xiaomi' | 'zhipu' | 'stepfun';
 interface ReplayTier {
   model: string;
   baseUrl: string;
+  disableThinking?: boolean;
 }
 
 interface ToolCall {
@@ -184,6 +185,7 @@ async function chatCall(
       tool_choice: 'auto',
       temperature: TEMPERATURE,
       max_tokens: MAX_OUTPUT_TOKENS,
+      ...(tier.disableThinking ? { thinking: { type: 'disabled' } } : {}),
     }),
     signal: AbortSignal.timeout(CALL_TIMEOUT_MS),
   });
@@ -313,7 +315,7 @@ async function main(): Promise<void> {
   const { provider, expectAfter } = parseArgs(process.argv.slice(2));
   const xiaomiBaseUrl = (process.env.XIAOMI_API_URL ?? '').trim().replace(/\/+$/, '');
   const tier: ReplayTier = provider === 'xiaomi'
-    ? { model: 'mimo-v2.6-flash', baseUrl: xiaomiBaseUrl }
+    ? { model: 'mimo-v2.6-flash', baseUrl: xiaomiBaseUrl, disableThinking: true }
     : provider === 'zhipu' ? ZHIPU_CODING_TIER : STEPFUN_TIER;
   const keyEnv = provider === 'xiaomi'
     ? 'XIAOMI_API_KEY'

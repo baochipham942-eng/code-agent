@@ -1,0 +1,5 @@
+blank_issues_enabled: true
+contact_links:
+  - name: Documentation
+    url: https://github.com/baochipham942-eng
+    about: Check the repository documentation before opening a new issue.

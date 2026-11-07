@@ -23,6 +23,7 @@ import { SqliteBackgroundTaskStore } from '../../../../src/host/task/backgroundT
 import { createWorkspaceScope } from '../../../../src/host/runtime/workspaceScope';
 import { runStartupSweeps } from '../../../../src/web/startupSweeps';
 import type { TaskManager } from '../../../../src/host/task/TaskManager';
+import type { Message } from '../../../../src/shared/contract';
 
 const coreDatabase = vi.hoisted(() => ({ current: null as unknown }));
 const uiLanguage = vi.hoisted(() => ({ value: 'zh' as 'zh' | 'en' }));
@@ -97,7 +98,7 @@ describe('指挥台任务：宿主重启后的收口', () => {
     await runStartupSweeps(startupLog);
   }
 
-  async function transcript(): Promise<Array<{ content: string; metadata?: Record<string, unknown> }>> {
+  async function transcript(): Promise<Message[]> {
     const session = await getSessionManager().getSession(SESSION_ID, 100);
     return (session?.messages ?? []).filter((m) => m.content.startsWith('[任务结果]'));
   }

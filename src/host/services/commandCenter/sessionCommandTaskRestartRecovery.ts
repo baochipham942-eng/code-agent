@@ -19,7 +19,7 @@ import { SqliteBackgroundTaskStore } from '../../task/backgroundTaskStore';
 
 const logger = createLogger('SessionCommandRestartRecovery');
 
-export const SESSION_COMMAND_TASK_INTERRUPTED_REASON = 'session_command_task_interrupted_by_restart';
+const SESSION_COMMAND_TASK_INTERRUPTED_REASON = 'session_command_task_interrupted_by_restart';
 const MARKER_DIR = 'session-command-running';
 
 interface RunningMarker {

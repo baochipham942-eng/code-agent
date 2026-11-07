@@ -42,6 +42,7 @@ import { ConfirmDialog } from '../../../composites/ConfirmDialog';
 import { SettingsSection } from '../SettingsLayout';
 import { ExternalChatsImportSection } from './ExternalChatsImportSection';
 import { ExternalSkillsSyncSection } from './ExternalSkillsSyncSection';
+import { ExternalInstructionsSyncSection } from './ExternalInstructionsSyncSection';
 import { ExternalImportHistory } from './ExternalImportHistory';
 import { countImportableRules, ExternalImportInstructionRules, type DirectiveState } from './ExternalImportInstructionRules';
 
@@ -321,6 +322,7 @@ export const ExternalImportSettings: React.FC = () => {
 
         <ExternalChatsImportSection />
         <ExternalSkillsSyncSection />
+        <ExternalInstructionsSyncSection />
 
         {claudeSkills && (
           <div

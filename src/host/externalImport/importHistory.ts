@@ -3,6 +3,7 @@ import * as fs from 'node:fs/promises';
 import * as path from 'node:path';
 import type { RecentExternalChatImportResult } from '../../shared/contract/agentEngine';
 import type { ExternalSkillsApplyResultItem } from '../../shared/contract/externalImport';
+import type { MemoryEntry } from '../../shared/contract/memory';
 import type {
   ImportHistoryEntry,
   ImportHistoryItem,
@@ -34,12 +35,20 @@ function isEntry(value: unknown): value is ImportHistoryEntry {
   return typeof entry.id === 'string'
     && typeof entry.at === 'number'
     && Number.isFinite(entry.at)
-    && (entry.trigger === 'manual' || entry.trigger === 'auto')
-    && (entry.category === 'chats' || entry.category === 'skills')
+    && (entry.trigger === 'manual' || entry.trigger === 'auto' || entry.trigger === 'confirm')
+    && (entry.category === 'chats' || entry.category === 'skills' || entry.category === 'instructions')
     && typeof entry.source === 'string'
     && typeof entry.count === 'number'
     && Array.isArray(entry.items)
-    && entry.items.every((item) => item && typeof item.label === 'string' && typeof item.outcome === 'string');
+    && entry.items.every((item) => {
+      if (!item || typeof item.label !== 'string' || typeof item.outcome !== 'string') return false;
+      if (entry.category === 'instructions') {
+        return item.outcome === 'imported'
+          && typeof item.memoryFilename === 'string'
+          && typeof item.contentHash === 'string';
+      }
+      return true;
+    });
 }
 
 async function readEntries(): Promise<ImportHistoryEntry[]> {
@@ -133,6 +142,27 @@ export async function recordSkillsImportHistory(
       ...(item.digest ? { digest: item.digest } : {}),
     })),
   })), options);
+}
+
+export async function recordInstructionImportHistory(
+  entry: MemoryEntry,
+  options: RecordOptions & { trigger: 'confirm' },
+): Promise<void> {
+  const sourceHash = entry.source.importProvenance?.sourceHash;
+  const memoryFilename = entry.source.filePath;
+  if (!sourceHash || !memoryFilename) return;
+  await appendEntries([{
+    trigger: 'confirm',
+    category: 'instructions',
+    source: 'codex',
+    count: 1,
+    items: [{
+      label: entry.title,
+      outcome: 'imported',
+      memoryFilename,
+      contentHash: sourceHash,
+    }],
+  }], options);
 }
 
 export async function listImportHistory(): Promise<ImportHistoryEntry[]> {

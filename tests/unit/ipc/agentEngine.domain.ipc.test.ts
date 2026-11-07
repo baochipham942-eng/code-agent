@@ -43,6 +43,14 @@ const env = vi.hoisted(() => {
       list: vi.fn(async (): Promise<unknown> => [{ id: 'entry-1', category: 'chats' }]),
       recordChats: vi.fn(async (): Promise<void> => {}),
     },
+    instructionsSync: {
+      get: vi.fn(async (): Promise<unknown> => ({ mode: 'off', available: false, pending: [] })),
+      set: vi.fn(async (mode: string): Promise<unknown> => ({ mode, available: true, pending: [] })),
+      confirm: vi.fn(async (instructionId: string): Promise<unknown> => ({
+        confirmation: { instructionId, confirmed: true, imported: true },
+        state: { mode: 'on', available: true, pending: [] },
+      })),
+    },
     session: {
       getSession: vi.fn(async (): Promise<unknown> => null),
       updateSession: vi.fn(async () => {}),
@@ -84,6 +92,11 @@ vi.mock('../../../src/host/externalImport/skillsSyncPreference', () => ({
   readSkillsSyncState: () => ({ mode: 'off' }),
   readSkillsSyncStored: () => ({ mode: 'off', handled: { codex: [], cursor: [] } }),
   writeSkillsSyncStored: () => {},
+}));
+vi.mock('../../../src/host/externalImport/instructionsAutoSync', () => ({
+  getInstructionsSyncState: env.instructionsSync.get,
+  setInstructionsSyncMode: env.instructionsSync.set,
+  confirmInstructionsSyncItem: env.instructionsSync.confirm,
 }));
 vi.mock('../../../src/host/services/sessionFork/ownerScope', () => ({
   currentSessionForkOwnerScopeId: () => 'owner-fixture',
@@ -173,6 +186,27 @@ describe('agentEngine.ipc dispatch 特征：只读委派', () => {
       fail('INVALID_PAYLOAD', 'setSkillsSync requires mode off | on | paused.'),
     );
     expect(await call('setSkillsSync')).toMatchObject({ success: false });
+  });
+
+  it('instructions sync actions validate payloads and delegate get/set/per-item confirm', async () => {
+    expect(await call('getInstructionsSync')).toEqual({
+      success: true,
+      data: { mode: 'off', available: false, pending: [] },
+    });
+    expect(await call('setInstructionsSync', { mode: 'on' })).toEqual({
+      success: true,
+      data: { mode: 'on', available: true, pending: [] },
+    });
+    expect(env.instructionsSync.set).toHaveBeenCalledWith('on');
+    expect(await call('setInstructionsSync', { mode: 'sometimes' })).toEqual(
+      fail('INVALID_PAYLOAD', 'setInstructionsSync requires mode off | on | paused.'),
+    );
+    expect(await call('confirmInstructionsSyncItem', { instructionId: 'instruction:hash' }))
+      .toMatchObject({ success: true, data: { confirmation: { imported: true } } });
+    expect(env.instructionsSync.confirm).toHaveBeenCalledWith('instruction:hash');
+    expect(await call('confirmInstructionsSyncItem')).toEqual(
+      fail('INVALID_PAYLOAD', 'confirmInstructionsSyncItem requires instructionId.'),
+    );
   });
 });
 

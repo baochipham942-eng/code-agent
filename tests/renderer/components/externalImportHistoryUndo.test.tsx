@@ -75,7 +75,8 @@ describe('ExternalImportHistory undo', () => {
     const confirm = screen.getByTestId('external-import-history-undo-confirm-undoable').textContent ?? '';
     expect(confirm).toContain('2 个聊天');
     expect(confirm).toContain('0 个技能');
-    expect(confirm).toContain('不会再被自动导入');
+    expect(confirm).toContain('0 条说明');
+    expect(confirm).toContain('不会被同步带回');
 
     fireEvent.click(screen.getByText('确认撤销'));
     const undone = await screen.findByTestId('external-import-history-undone-undoable');
@@ -104,6 +105,6 @@ describe('ExternalImportHistory undo', () => {
     render(<ExternalImportHistory />);
     fireEvent.click(await screen.findByText('Undo this import'));
     expect(screen.getByTestId('external-import-history-undo-confirm-undoable').textContent)
-      .toBe('Remove 2 chats and 0 skills. Chats you already continued and skills you edited are kept. Undone chats will not be auto-imported again.');
+      .toBe('Remove 2 chats, 0 skills, and 0 instructions. Continued chats and edited skills or instructions are kept. Undone items do not come back through sync.');
   });
 });

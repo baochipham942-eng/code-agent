@@ -164,7 +164,8 @@ function HistoryRow({
               <div className="text-[11px] text-zinc-300" data-testid={`external-import-history-undo-confirm-${entry.id}`}>
                 {historyCopy.undoConfirm
                   .replace('{chats}', String(entry.category === 'chats' ? undoable : 0))
-                  .replace('{skills}', String(entry.category === 'skills' ? undoable : 0))}
+                  .replace('{skills}', String(entry.category === 'skills' ? undoable : 0))
+                  .replace('{instructions}', String(entry.category === 'instructions' ? undoable : 0))}
               </div>
               {failed && <div className="text-[11px] text-badge-danger">{historyCopy.undoFailed}</div>}
               <div className="flex gap-2">

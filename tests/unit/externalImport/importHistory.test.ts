@@ -13,8 +13,10 @@ vi.mock('../../../src/host/services/infra/logger', () => ({
 import {
   listImportHistory,
   recordChatImportHistory,
+  recordInstructionImportHistory,
   recordSkillsImportHistory,
 } from '../../../src/host/externalImport/importHistory';
+import type { MemoryEntry } from '../../../src/shared/contract/memory';
 
 let tmpRoot: string;
 let dataDir: string;
@@ -44,6 +46,31 @@ function chat(index: number, status: RecentExternalChatImportResult['status'] = 
 }
 
 describe('import history ledger', () => {
+  it('records a confirmed instruction with its light-memory filename and content hash', async () => {
+    const entry = {
+      title: 'Keep replies brief',
+      source: {
+        filePath: 'import-rule.md',
+        importProvenance: { sourceHash: 'rule-hash' },
+      },
+    } as MemoryEntry;
+    await recordInstructionImportHistory(entry, { trigger: 'confirm', now: () => 500 });
+
+    expect(await listImportHistory()).toMatchObject([{
+      at: 500,
+      trigger: 'confirm',
+      category: 'instructions',
+      source: 'codex',
+      count: 1,
+      items: [{
+        label: 'Keep replies brief',
+        outcome: 'imported',
+        memoryFilename: 'import-rule.md',
+        contentHash: 'rule-hash',
+      }],
+    }]);
+  });
+
   it('round-trips grouped chat and skill entries newest first with an injected clock', async () => {
     await recordChatImportHistory([
       chat(1),

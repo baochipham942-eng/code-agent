@@ -1,5 +1,5 @@
-export type ImportHistoryTrigger = 'manual' | 'auto';
-type ImportHistoryCategory = 'chats' | 'skills';
+export type ImportHistoryTrigger = 'manual' | 'auto' | 'confirm';
+type ImportHistoryCategory = 'chats' | 'skills' | 'instructions';
 export type ImportHistorySource = 'claude_code' | 'codex_cli' | 'codex' | 'cursor';
 export type ImportHistoryOutcome =
   | 'imported'
@@ -16,6 +16,10 @@ export interface ImportHistoryItem {
   sourceSessionId?: string;
   /** 技能：复制完成时目录内容摘要，撤销时据此判断是否被改过。 */
   digest?: string;
+  /** 说明：确认写入的 Light Memory 文件名，撤销时据此定位。 */
+  memoryFilename?: string;
+  /** 说明：确认时的规则内容摘要，撤销时用于保护用户编辑。 */
+  contentHash?: string;
 }
 
 export type ImportHistoryKeptReason = 'continued' | 'edited' | 'missing';
@@ -39,5 +43,6 @@ export interface ImportHistoryEntry {
 
 export function isUndoableImportItem(entry: Pick<ImportHistoryEntry, 'category'>, item: ImportHistoryItem): boolean {
   if (entry.category === 'chats') return item.outcome === 'imported' && !!item.sourceSessionId;
-  return item.outcome === 'copied' && !!item.digest;
+  if (entry.category === 'skills') return item.outcome === 'copied' && !!item.digest;
+  return item.outcome === 'imported' && !!item.memoryFilename && !!item.contentHash;
 }

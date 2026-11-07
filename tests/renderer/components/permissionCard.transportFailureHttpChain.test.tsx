@@ -164,7 +164,9 @@ async function expectFailureKeepsCardThenRetryDelivers(
       'session-current',
     );
   });
-  expect(fetchMock).toHaveBeenCalledTimes(2);
+  // 网络层失败会触发 serverConnectionMonitor 的 /health 探测（同一个 fetch），不属于审批应答。
+  const permissionPosts = fetchMock.mock.calls.filter(([url]) => !String(url).includes('/health'));
+  expect(permissionPosts).toHaveLength(2);
 }
 
 describe('PermissionCard transport failure over the real HTTP chain', () => {

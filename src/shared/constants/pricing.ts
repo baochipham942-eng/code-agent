@@ -254,12 +254,6 @@ export const VIDEO_PRICING_CNY_PER_SEC: Record<string, number> = {
   default: 0.03,
 };
 
-/** 设计画布视频产物默认模型 id（供 composer 预估成本查表）。 */
-export const DESIGN_VIDEO_MODELS = {
-  t2v: 'wan2.7-t2v',
-  i2v: 'wanx2.1-i2v-turbo',
-} as const;
-
 /**
  * 音乐生成定价（每首，人民币元）。单一真源——禁在业务代码散落音乐价格字面量。
  * key 为音乐模型 id（与 generateMusic 返回的 actualModel 对齐）。

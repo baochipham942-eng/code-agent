@@ -27,7 +27,7 @@ export type DisplayNode =
  * 最小聚合阈值：1 = 所有非 Edit/Write 工具都包成 tool_group，基础态就是 inline 灰字一行
  * （Codex 风格）。Edit/Write 依然走独立卡片路径。
  */
-export const MIN_GROUP_SIZE = 1;
+const MIN_GROUP_SIZE = 1;
 
 /**
  * 判断 tool_call 节点是否归 TurnDiffSummary 管

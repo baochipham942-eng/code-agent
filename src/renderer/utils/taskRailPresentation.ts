@@ -1,7 +1,7 @@
 import { isClosedTaskStatus, statusRequiresWaitReason } from '@shared/contract/planning';
 import type { RunUiState, TaskRecord } from '../types/runWorkbench';
 
-export type TaskRailMode = 'simple' | 'checklist';
+type TaskRailMode = 'simple' | 'checklist';
 
 export interface TaskRailStepView {
   title: string;

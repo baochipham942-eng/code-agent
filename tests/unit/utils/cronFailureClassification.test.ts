@@ -122,3 +122,39 @@ describe('classifyCronFailure', () => {
     });
   });
 });
+
+// N-CRON-CLOUD-DOWN-NOTICE-MIXED-LANG：runJob 抛 Error(固定句, { cause: 英文原始报文 })，
+// 落库收链若把 cause 也拼上，中文界面的失败通知/详情/Toast 就中英混排（FB-547）。
+describe('cronFailureSourceText：云端调度器不可用固定句截断 cause 链', () => {
+  it('zh 固定句：只有中文句，不追加英文 cause', () => {
+    const wrapped = new Error(CRON_CLOUD_UNAVAILABLE_MESSAGE_ZH, {
+      cause: new Error('Cloud cron API is not configured.'),
+    });
+    const text = cronFailureSourceText(wrapped);
+    expect(text).toBe(CRON_CLOUD_UNAVAILABLE_MESSAGE_ZH);
+    expect(text).not.toContain('Cloud cron API');
+  });
+
+  it('en 固定句：只有英文句', () => {
+    const wrapped = new Error(CRON_CLOUD_UNAVAILABLE_MESSAGE_EN, {
+      cause: new Error('Cloud cron API is unavailable.'),
+    });
+    expect(cronFailureSourceText(wrapped)).toBe(CRON_CLOUD_UNAVAILABLE_MESSAGE_EN);
+  });
+
+  it('截断后的落库报文仍归 cloud_unavailable', () => {
+    const wrapped = new Error(CRON_CLOUD_UNAVAILABLE_MESSAGE_ZH, {
+      cause: new Error('Cloud cron API is not configured.'),
+    });
+    expect(classifyCronFailure(cronFailureSourceText(wrapped))).toEqual({ kind: 'cloud_unavailable' });
+  });
+
+  it('固定句出现在 cause 深处同样止步；普通错误链仍逐层收', () => {
+    const deep = new Error('Retry stopped: repeated failures.', {
+      cause: new Error(CRON_CLOUD_UNAVAILABLE_MESSAGE_ZH, { cause: new Error('fetch failed') }),
+    });
+    expect(cronFailureSourceText(deep))
+      .toBe(`Retry stopped: repeated failures.\n${CRON_CLOUD_UNAVAILABLE_MESSAGE_ZH}`);
+    expect(cronFailureSourceText(new Error('outer', { cause: new Error('inner') }))).toBe('outer\ninner');
+  });
+});

@@ -74,10 +74,6 @@ export const CHECKPOINT_SECTIONS: CheckpointSection[] = [
   },
 ];
 
-export const CHECKPOINT_SECTION_BUDGETS = Object.fromEntries(
-  CHECKPOINT_SECTIONS.map((section) => [`§${section.number}`, section.budgetTokens]),
-) as Record<string, number>;
-
 export const MEMORY_TEMPLATE = [
   '# Project Memory',
   '',
@@ -115,7 +111,7 @@ export function createCheckpointTemplate(): string {
   ].join('\n');
 }
 
-export function getSectionHeading(sectionNumber: number): string {
+function getSectionHeading(sectionNumber: number): string {
   const section = CHECKPOINT_SECTIONS.find((item) => item.number === sectionNumber);
   if (!section) {
     throw new Error(`Unknown checkpoint section §${sectionNumber}`);

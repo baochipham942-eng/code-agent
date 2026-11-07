@@ -47,18 +47,6 @@ export const UI = {
  */
 export const SESSION_LIST_PAGE_SIZE = 50;
 
-/** 窗口配置 */
-export const WINDOW = {
-  /** 默认宽度 */
-  DEFAULT_WIDTH: 1200,
-  /** 默认高度 */
-  DEFAULT_HEIGHT: 800,
-  /** 最小宽度 */
-  MIN_WIDTH: 800,
-  /** 最小高度 */
-  MIN_HEIGHT: 600,
-} as const;
-
 export const TELEMETRY_TRUNCATION = {
   USER_PROMPT: 50000,
   ASSISTANT_RESPONSE: 50000,

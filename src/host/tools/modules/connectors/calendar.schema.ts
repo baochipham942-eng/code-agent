@@ -45,5 +45,8 @@ ${CONNECTION_STATE_HONESTY}`,
   category: 'mcp',
   permissionLevel: 'read',
   readOnly: true,
+  // Invite organizers (arbitrary external senders) control event title/location;
+  // policy is per tool, so get_status/list_calendars ride the same declaration.
+  readsUntrustedContent: 'block',
   allowInPlanMode: true,
 };

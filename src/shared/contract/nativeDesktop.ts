@@ -2,6 +2,7 @@ export type NativePermissionKind =
   | 'microphone'
   | 'screenCapture'
   | 'accessibility'
+  | 'inputMonitoring'
   | 'notifications'
   | 'automation';
 

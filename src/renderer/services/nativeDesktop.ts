@@ -193,7 +193,10 @@ export interface NativeVoiceAecStartResult {
   outputEvent: string;
 }
 
-type SettingsPaneKind = Extract<NativePermissionKind, 'screenCapture' | 'accessibility' | 'microphone' | 'notifications'>;
+type SettingsPaneKind = Extract<
+  NativePermissionKind,
+  'screenCapture' | 'accessibility' | 'microphone' | 'inputMonitoring' | 'notifications'
+>;
 
 async function invoke<T>(cmd: string, args?: Record<string, unknown>): Promise<T> {
   const internals = window.__TAURI_INTERNALS__;

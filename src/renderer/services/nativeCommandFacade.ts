@@ -44,6 +44,16 @@ export interface AppshotsLastFrontApp {
   reasonCode?: 'app_closed' | 'finder_desktop' | null;
 }
 
+/** 左右 Cmd 热键的可装性快照（`appshots_hotkey_status` / `appshots_request_hotkey_access`）。 */
+export interface AppshotsHotkeyStatus {
+  /** 「输入监控」TCC 已授权（preflight 语义，不弹框）。 */
+  permissionGranted: boolean;
+  /** 本进程内 listen tap 已装上（重启前授权的旧 shell 需重启才为 true）。 */
+  tapInstalled: boolean;
+  /** Dev 通道（`.dev[N]` bundle id）：启动路径一律不装热键，设置页显式请求仍放行。 */
+  devChannel: boolean;
+}
+
 export interface GlobalHotkeyBinding {
   actionId: KeybindingActionId;
   accelerator: string;
@@ -97,6 +107,14 @@ export interface NativeCommandActionMap {
     payload: { enabled: boolean };
     result: unknown;
   };
+  getAppshotsHotkeyStatus: {
+    payload: undefined;
+    result: AppshotsHotkeyStatus;
+  };
+  requestAppshotsHotkeyAccess: {
+    payload: undefined;
+    result: AppshotsHotkeyStatus;
+  };
   showPip: {
     payload: undefined;
     result: unknown;
@@ -148,6 +166,8 @@ const NATIVE_COMMANDS: {
   setAppshotsTargetSession: 'appshots_set_target_session',
   setAppshotsMotionEnabled: 'appshots_set_motion_enabled',
   setAppshotsEnabled: 'appshots_set_enabled',
+  getAppshotsHotkeyStatus: 'appshots_hotkey_status',
+  requestAppshotsHotkeyAccess: 'appshots_request_hotkey_access',
   showPip: 'pip_show',
   framePip: 'pip_frame',
   setPipControls: 'pip_controls',

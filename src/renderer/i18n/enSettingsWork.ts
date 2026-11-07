@@ -1,4 +1,5 @@
 // Settings namespace translations (en/Work) — 纯平移拆分（债务门）
+import { enAppshotsSettingsBase } from './appshotsSettingsBase';
 import { permissionGrantsEn } from './permissionGrants';
 export const enSettingsWork = {
     workspace: {
@@ -945,28 +946,14 @@ export const enSettingsWork = {
       },
     },
     appshots: {
-      enableTitle: 'Enable app screenshots',
-      enableDescriptionPrefix: 'Hold',
-      enableDescriptionShortcut: ' Left + Right Command ',
-      enableDescriptionSuffix: 'to capture the frontmost app window and send its text into the input box.',
-      triggerTitle: 'Trigger',
-      triggerText: 'Press left and right Command together',
-      targetTitle: 'Send target',
-      targetDescription: 'Choose which conversation receives screenshots',
-      targetOptions: {
-        current: {
-          label: 'Current conversation',
-          description: 'Insert into the active conversation',
-        },
-        new: {
-          label: 'Create a new conversation each time',
-          description: 'Start a new conversation for each screenshot',
-        },
-      },
-      permissionsTitle: 'System permissions',
-      permissionsDescription: 'App screenshots need Screen Recording to capture windows and Accessibility to read window text. If the shortcut does not respond, grant permissions in System Settings and restart the app.',
-      openScreenCapture: 'Open Screen Recording permissions',
-      openAccessibility: 'Open Accessibility permissions',
+      ...enAppshotsSettingsBase,
+      hotkeyTitle: 'Shortcut (⌘+⌘) · Input Monitoring',
+      hotkeyDescription: 'Input Monitoring is only needed for the left+right Command shortcut; you can still attach app screenshots from the "+" menu.',
+      hotkeyStatusOff: 'Off',
+      hotkeyStatusOn: 'On',
+      hotkeyStatusNeedsRestart: 'Granted — restart Neo to take effect',
+      hotkeyEnable: 'Enable shortcut',
+      hotkeyOpenSettings: 'Open Input Monitoring permissions',
     },
     hooks: {
       title: 'Hooks',

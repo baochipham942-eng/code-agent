@@ -48,6 +48,12 @@ describe('nativeCommandFacade', () => {
     await invokeNativeCommandAction('setAppshotsEnabled', { enabled: false });
     expect(tauriInvoke).toHaveBeenLastCalledWith('appshots_set_enabled', { enabled: false });
 
+    await invokeNativeCommandAction('getAppshotsHotkeyStatus');
+    expect(tauriInvoke).toHaveBeenLastCalledWith('appshots_hotkey_status', undefined);
+
+    await invokeNativeCommandAction('requestAppshotsHotkeyAccess');
+    expect(tauriInvoke).toHaveBeenLastCalledWith('appshots_request_hotkey_access', undefined);
+
     await invokeNativeCommandAction('showPip');
     expect(tauriInvoke).toHaveBeenLastCalledWith('pip_show', undefined);
 

@@ -2281,6 +2281,9 @@ pub fn desktop_open_system_settings(request: OpenSystemSettingsRequest) -> Resul
             "microphone" => {
                 "x-apple.systempreferences:com.apple.preference.security?Privacy_Microphone"
             }
+            "inputMonitoring" => {
+                "x-apple.systempreferences:com.apple.preference.security?Privacy_ListenEvent"
+            }
             "notifications" => {
                 "x-apple.systempreferences:com.apple.Notifications-Settings.extension"
             }

@@ -17,6 +17,7 @@ import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { Clock3, WalletCards } from 'lucide-react';
 import { IPC_DOMAINS } from '@shared/ipc';
 import { useCronStore } from '../../../stores/cronStore';
+import { useAppStore } from '../../../stores/appStore';
 import { useI18n } from '../../../hooks/useI18n';
 import ipcService from '../../../services/ipcService';
 import { sessionAutomationClient } from '../../../services/sessionAutomationClient';
@@ -103,6 +104,12 @@ export const CronCenterPanel: React.FC<CronCenterPanelProps> = ({ onClose }) => 
   const [activeTab, setActiveTab] = useState<CronCenterTab>(
     () => (readCronSearchParam('cronTab') === 'runs' ? 'runs' : 'jobs'),
   );
+  const runsRequested = useAppStore((s) => s.cronCenterRunsRequested);
+  useEffect(() => {
+    if (!runsRequested) return;
+    setActiveTab('runs');
+    useAppStore.getState().clearCronCenterRunsRequest();
+  }, [runsRequested]);
   const [selectedExecutionId, setSelectedExecutionId] = useState<string | null>(
     () => readCronSearchParam('execution'),
   );

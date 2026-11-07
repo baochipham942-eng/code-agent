@@ -29,6 +29,14 @@ const MACHINE_NOISE_PATTERNS: RegExp[] = [
   /\bTraceback \(most recent call last\)/,
   /\bstatus\s*code\s*\d{3}\b/i,
   /<\/?[a-z]+[^>]*>/i,              // HTML 片段
+  // JS 运行时异常文案（V8 固定输出，无 "TypeError:" 前缀也命中，FB-746；
+  // 兼容旧版单数形式 Cannot read property 'x' of undefined）
+  /Cannot read propert(?:y|ies)(?: '[^']*')? of (?:undefined|null)/,
+  /\bis not a function\b/,
+  /\bis not defined\b/,
+  /\bUnexpected token\b/,
+  // 运行时租约术语（如 Durable Run … has no live owner lease）——机内状态机文案
+  /\bowner lease\b/i,
 ];
 
 function looksMachineGenerated(text: string): boolean {

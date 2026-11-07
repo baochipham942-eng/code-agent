@@ -7,6 +7,29 @@ import { isStreamRecoveryMessage } from './streamRecoveryMessage';
 
 const PROTOCOL_MARKERS = /\[cancelled\]|\[未完成\s*[—-]\s*切换会话中断\]/giu;
 
+function hasStreamRecoveryInSameTurn(msg: Message, all: Message[]): boolean {
+  const messageIndex = all.indexOf(msg);
+  if (messageIndex < 0) return false;
+
+  let turnStart = 0;
+  for (let index = messageIndex - 1; index >= 0; index -= 1) {
+    if (all[index].role === 'user') {
+      turnStart = index;
+      break;
+    }
+  }
+
+  let turnEnd = all.length;
+  for (let index = messageIndex + 1; index < all.length; index += 1) {
+    if (all[index].role === 'user') {
+      turnEnd = index;
+      break;
+    }
+  }
+
+  return all.slice(turnStart, turnEnd).some((message) => isStreamRecoveryMessage(message));
+}
+
 export function bareInterruptionNode(
   msg: Message,
   all: Message[],
@@ -15,7 +38,7 @@ export function bareInterruptionNode(
   if (reason !== 'user' && reason !== 'session-switch') return null;
   if (isStreamRecoveryMessage(msg) || msg.toolCalls?.length) return null;
   if (msg.content.replace(PROTOCOL_MARKERS, '').trim()) return null;
-  if (all.some((m) => isStreamRecoveryMessage(m))) return null;
+  if (hasStreamRecoveryInSameTurn(msg, all)) return null;
   return {
     id: `${msg.id}-text`,
     messageId: msg.id,

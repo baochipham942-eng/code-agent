@@ -22,7 +22,8 @@ import { writeDurableFacts } from '../../lightMemory/durableFactWriter';
 import { getLangfuseService, getBudgetService, BudgetAlertLevel } from '../../services';
 import { RUN_ERROR_CODE_MAX_ITERATIONS } from '../../../shared/constants';
 import { logCollector } from '../../mcp/logCollector.js';
-import { createLogger } from '../../services/infra/logger'; import { buildEmptyFinalError } from './emptyFinalError';
+import { createLogger } from '../../services/infra/logger';
+import { buildEmptyFinalError, hasVisibleAssistantTextAfterLastUser } from './emptyFinalError';
 import { trackNode } from '../../observability/posthogNode';
 import { silence } from '../../utils/errorHandling';
 import type { BudgetEventData } from '../../../shared/contract';
@@ -150,33 +151,6 @@ function formatTerminalError(error: unknown): string {
   // 先过模型错误分类：鉴权失败/欠费等换成人话 + 建议（内部错误如 runId 原样透出）
   const raw = error === undefined ? 'Unknown runtime error' : formatThrownError(error);
   return summarizeModelErrorForUser(raw, getModelErrorStatus(error));
-}
-
-/**
- * 「这轮有没有看得见的最终回复」判定：最后一条 user 之后存在正文非空的 assistant。
- * （N-CHAT-EMPTY-FINAL-NO-EXIT：完成必须有非空最终回复，不许用排除法兜底）。
- * 运行中转向（injectSteerMessage）会把 role:'user' 推进同一轮 history，最终回复在转向之后。
- */
-function hasVisibleAssistantTextAfterLastUser(messages: Message[]): boolean {
-  let seenLastUser = false;
-
-  for (let index = messages.length - 1; index >= 0; index -= 1) {
-    const message = messages[index];
-    if (message.role === 'user') {
-      seenLastUser = true;
-      break;
-    }
-
-    if (message.role !== 'assistant') {
-      continue;
-    }
-
-    if (typeof message.content === 'string' && message.content.trim().length > 0) {
-      return true;
-    }
-  }
-
-  return !seenLastUser;
 }
 
 function hasTerminalWakeNoopAfterLastUser(messages: Message[]): boolean {

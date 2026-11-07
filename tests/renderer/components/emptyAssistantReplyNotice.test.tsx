@@ -38,7 +38,7 @@ function renderHistory(messages: Message[]): string {
   return document.body.textContent ?? '';
 }
 
-const user = (id: string): Message => ({ id, role: 'user', content: '只回答两个字：收到', timestamp: 1 });
+const user = (id: string, timestamp = 1): Message => ({ id, role: 'user', content: '只回答两个字：收到', timestamp });
 const failed = (id: string, ts: number): Message => ({
   id, role: 'assistant', content: '', timestamp: ts,
   metadata: { agentError: { category: 'generic', code: 'RUN_FAILED', rawMessage: '您已达到每周/每月使用上限', timestamp: ts } },
@@ -73,5 +73,30 @@ describe.each(['zh', 'en'] as const)('空回复行呈现 (%s)', (language) => {
     expect(text).not.toContain('[cancelled]');
     expect(text).not.toContain('切换会话中断]');
     expect(text.replace('只回答两个字：收到', '').trim().length).toBeGreaterThan(0);
+  });
+
+  it('早先 turn 的 recovery 不会吃掉后续 turn 的 [cancelled] 说明', async () => {
+    lang = language;
+    renderHistory([
+      user('u-old'),
+      {
+        id: 'a-recovery',
+        role: 'assistant',
+        content: '早先轮次的部分回答',
+        timestamp: 2,
+        metadata: { streamRecovery: { turnId: 'turn-old' }, streamInterruptionReason: 'app-restart' },
+      },
+      user('u-later', 3),
+      { ...cancelledOnly, id: 'a-later-cancelled', timestamp: 4 },
+    ]);
+    const { zh } = await import('../../../src/renderer/i18n/zh');
+    const { en } = await import('../../../src/renderer/i18n/en');
+    const t = language === 'zh' ? zh : en;
+    const notes = Array.from(document.querySelectorAll('[data-testid="bare-interruption-note"]'));
+    console.log(`[${language}] multi-turn bare notes:`, JSON.stringify(notes.map((node) => node.textContent)));
+    expect(notes.map((node) => node.textContent)).toContain(
+      t.outcomeWords['cancelled-by-user'].timeline.reason,
+    );
+    expect(document.body.textContent).not.toContain('[cancelled]');
   });
 });

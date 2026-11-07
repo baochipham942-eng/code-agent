@@ -5,6 +5,28 @@ import { createLogger } from '../../services/infra/logger';
 
 const logger = createLogger('EmptyFinalError');
 
+/**
+ * 「这轮有没有看得见的最终回复」判定：最后一条 user 之后存在正文非空的 assistant。
+ * （N-CHAT-EMPTY-FINAL-NO-EXIT：完成必须有非空最终回复，不许用排除法兜底）。
+ * 运行中转向（injectSteerMessage）会把 role:'user' 推进同一轮 history，最终回复在转向之后。
+ */
+export function hasVisibleAssistantTextAfterLastUser(messages: Message[]): boolean {
+  let seenLastUser = false;
+
+  for (let index = messages.length - 1; index >= 0; index -= 1) {
+    const message = messages[index];
+    if (message.role === 'user') {
+      seenLastUser = true;
+      break;
+    }
+
+    if (message.role !== 'assistant') continue;
+    if (typeof message.content === 'string' && message.content.trim().length > 0) return true;
+  }
+
+  return !seenLastUser;
+}
+
 export function buildEmptyFinalError(messages: Message[]): Error {
   let lastUser = -1;
   for (let i = messages.length - 1; i >= 0; i--) {

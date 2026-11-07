@@ -1,5 +1,5 @@
 import { EventEmitter } from 'node:events';
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi, type Mock } from 'vitest';
 
 vi.unmock('better-sqlite3');
 import Database from 'better-sqlite3';
@@ -80,8 +80,8 @@ describe('background task settlement wake with a real RunRegistry', () => {
   let registry: RunRegistry;
   let manager: FakeTaskManager;
   let center: SessionCommandCenter;
-  let warn: ReturnType<typeof vi.fn>;
-  let info: ReturnType<typeof vi.fn>;
+  let warn: Mock<(message: string, details?: unknown) => void>;
+  let info: Mock<(message: string, details?: unknown) => void>;
   let queued: boolean;
   let wakeBody: (options: AgentRunOptions) => Promise<void>;
   let wakeSends: number;
@@ -91,8 +91,8 @@ describe('background task settlement wake with a real RunRegistry', () => {
     resetBackgroundTaskLedgerForTest();
     ({ registry, db } = makeRegistry());
     manager = new FakeTaskManager(registry);
-    warn = vi.fn();
-    info = vi.fn();
+    warn = vi.fn<(message: string, details?: unknown) => void>();
+    info = vi.fn<(message: string, details?: unknown) => void>();
     queued = false;
     wakeSends = 0;
     wakeBody = async () => undefined;
@@ -127,6 +127,7 @@ describe('background task settlement wake with a real RunRegistry', () => {
       loadSession: async () => session,
       hasQueuedUserInput: () => queued,
       isVoiceSession: () => false,
+      recordWakeFailureNote: async () => undefined,
       logger: { info, warn },
     };
     center = new SessionCommandCenter(manager as unknown as TaskManager, {

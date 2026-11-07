@@ -1,17 +1,3 @@
-/** 网络配置 */
-export const NETWORK = {
-  /** API 请求超时 (ms) */
-  API_TIMEOUT: 30000,
-  /** 重试延迟 (ms) */
-  RETRY_DELAY: 1000,
-  /** 最大并发请求数 */
-  MAX_CONCURRENT: 5,
-  /** WebSocket 重连延迟 (ms) */
-  WS_RECONNECT_DELAY: 3000,
-  /** 健康检查间隔 (ms) */
-  HEALTH_CHECK_INTERVAL: 30000,
-} as const;
-
 /** MCP 配置 */
 export const MCP = {
   /** 连接超时 (ms) */
@@ -34,22 +20,6 @@ export const CACHE = {
   SESSION_TTL: 604800000,
   /** Prompt 缓存 TTL (1 小时) */
   PROMPT_TTL: 3600000,
-} as const;
-
-/** 工具缓存配置 */
-export const TOOL_CACHE = {
-  /** 默认 TTL (5 分钟) */
-  DEFAULT_TTL: 300000,
-  /** 读取文件 TTL (5 分钟) */
-  READ_FILE_TTL: 300000,
-  /** 目录列表 TTL (2 分钟) */
-  LIST_DIRECTORY_TTL: 120000,
-  /** Glob TTL (2 分钟) */
-  GLOB_TTL: 120000,
-  /** Grep TTL (2 分钟) */
-  GREP_TTL: 120000,
-  /** Web Fetch TTL (15 分钟) */
-  WEB_FETCH_TTL: 900000,
 } as const;
 
 /** Web Fetch 配置 */
@@ -293,7 +263,7 @@ function assertHttpRolloutPolicyUrl(value: string): void {
   );
 }
 
-export function getRendererBundleChannel(env: RendererBundleEndpointEnv = getRendererBundleEndpointEnv()): string {
+function getRendererBundleChannel(env: RendererBundleEndpointEnv = getRendererBundleEndpointEnv()): string {
   const channel = env[RENDERER_BUNDLE_CHANNEL_ENV]?.trim() || RENDERER_BUNDLE_DEFAULT_CHANNEL;
   if (channel === RENDERER_BUNDLE_DEFAULT_CHANNEL) return RENDERER_BUNDLE_DEFAULT_CHANNEL;
   if (!RENDERER_BUNDLE_CHANNEL_PATTERN.test(channel)) {
@@ -338,7 +308,7 @@ export function resolveRendererBundleEndpoint(
   };
 }
 
-export function getRendererBundleManifestUrl(
+function getRendererBundleManifestUrl(
   env: RendererBundleEndpointEnv = getRendererBundleEndpointEnv(),
 ): string {
   return resolveRendererBundleEndpoint(env).manifestUrl;

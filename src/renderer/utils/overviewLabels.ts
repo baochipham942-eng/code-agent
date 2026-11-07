@@ -6,7 +6,7 @@
 // ============================================================================
 
 /** 原始内部 ID 形态：tool-result/tool-call 前缀，或带 ≥9 位连续数字的标识串 */
-export function looksLikeInternalId(label: string): boolean {
+function looksLikeInternalId(label: string): boolean {
   return /tool[-_ ]?(result|call)/i.test(label) || /\d{9,}/.test(label);
 }
 

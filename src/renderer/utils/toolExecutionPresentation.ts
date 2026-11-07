@@ -38,7 +38,7 @@ export function formatToolDuration(duration?: number): string | null {
 }
 
 /** 工具错误类别（驱动 banner 升级 + 操作按钮决策，P0 失败去噪）。 */
-export type ToolErrorKind =
+type ToolErrorKind =
   | 'quota'        // 额度/余额/欠费耗尽
   | 'rate_limit'   // 429 限流
   | 'auth'         // 401/403 鉴权
@@ -48,7 +48,7 @@ export type ToolErrorKind =
   | 'auto_loaded'; // 工具自动加载重试（benign）
 
 /** 建议的主操作（驱动「重试 / 去设置」按钮）。 */
-export type ToolErrorAction = 'retry' | 'settings';
+type ToolErrorAction = 'retry' | 'settings';
 
 export interface HumanizedToolError {
   /** 一行人话摘要，替代满屏原始报错 */

@@ -84,12 +84,6 @@ export const GREP = {
   MAX_CONTEXT_LINES: 10,
 } as const;
 
-/** 沙箱配置 */
-export const SANDBOX = {
-  /** 默认执行超时 (5 秒) */
-  DEFAULT_TIMEOUT: 5000,
-} as const;
-
 /** AskUserQuestion 在 provider / 兼容层的两个等价名字。 */
 export const ASK_USER_QUESTION_TOOL_NAMES = ['AskUserQuestion', 'ask_user_question'] as const;
 

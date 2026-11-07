@@ -10,6 +10,23 @@
 const USER_REQUEST_OPEN = '<user_request>';
 const USER_REQUEST_CLOSE = '</user_request>';
 
+/**
+ * 定位包装体真正的开始标签：必须独占一行的行首（整条消息的开头，或紧跟换行符）。
+ * wrapWithTurnSystemContext 写出的开始标签永远在行首（`\n\n<user_request>\n`）；
+ * 而 prose 行中提到的同名标签不算——真机实录（realrun35 / FB-596）：候选能力块的
+ * 措辞里有「…下面 <user_request> 里的用户原话。」，indexOf 的首个命中落在块内
+ * 行中间，preannounce 把「 里的用户原话。）统计内容：…」当成了用户任务去转述。
+ */
+function findLineStartOpenTag(text: string): number {
+  let from = 0;
+  for (;;) {
+    const at = text.indexOf(USER_REQUEST_OPEN, from);
+    if (at === -1) return -1;
+    if (at === 0 || text[at - 1] === '\n') return at;
+    from = at + 1;
+  }
+}
+
 /** 把系统上下文拼在前面，用户原话用 <user_request> 包住。空上下文原样返回。 */
 export function wrapWithTurnSystemContext(blocks: string[], content: string): string {
   if (blocks.length === 0) return content;
@@ -25,7 +42,7 @@ export function mergeTurnSystemContext(blocks: string[], content: string): strin
   if (additions.length === 0) return content;
 
   const trimmed = content.trimEnd();
-  const requestOpen = trimmed.indexOf(USER_REQUEST_OPEN);
+  const requestOpen = findLineStartOpenTag(trimmed);
   if (requestOpen !== -1 && trimmed.endsWith(USER_REQUEST_CLOSE)) {
     const prefix = trimmed.slice(0, requestOpen).trimEnd();
     const request = trimmed.slice(requestOpen);
@@ -39,13 +56,13 @@ export function mergeTurnSystemContext(blocks: string[], content: string): strin
  * 不是「有没有系统上下文」，所以对没走 turnSystemContext 的路径零影响。
  *
  * 判据钉在「整条消息**以结束标签收尾**」：包装总是把结束标签放在最末一个字符上。
- * 用户原话里出现同名标签是可能的（他在问这个标签怎么用），按「首个开始标签 + 末尾结束标签」
+ * 用户原话里出现同名标签是可能的（他在问这个标签怎么用），按「首个行首开始标签 + 末尾结束标签」
  * 取中间那段，才不会把他的话截断——这条被测试钉住。
  */
 export function extractUserRequest(message: string): string {
   const trimmed = message.trimEnd();
   if (!trimmed.endsWith(USER_REQUEST_CLOSE)) return message;
-  const open = trimmed.indexOf(USER_REQUEST_OPEN);
+  const open = findLineStartOpenTag(trimmed);
   if (open === -1) return message;
   return trimmed.slice(open + USER_REQUEST_OPEN.length, trimmed.length - USER_REQUEST_CLOSE.length).trim();
 }

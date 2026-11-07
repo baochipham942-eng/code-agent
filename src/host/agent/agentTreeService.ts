@@ -73,6 +73,13 @@ const STATUS_PRIORITY: Record<AgentTreeNodeSource, number> = {
   spawnGuard: 100,
 };
 
+/**
+ * 本进程启动时刻。subagent 都活在宿主进程内、没有跨重启存活的形态——
+ * 一条 context 记录的最后更新早于这个时刻，说明写它的执行方已随上一次
+ * 退出死亡（N-STALE-AGENT-CHIP-AFTER-QUIT：重启后成员条谎报「N 个代理工作中」）。
+ */
+const HOST_PROCESS_BOOT_MS = Date.now() - process.uptime() * 1000;
+
 function defaultWorktreeState(): AgentTreeWorktreeState {
   return { status: 'none' };
 }
@@ -409,7 +416,15 @@ function mergeContextRecord(
   const role = record.snapshot?.previews[0]?.role ?? 'agent';
   const node = ensureNode(nodes, record.agentId, role);
   addSource(node, 'subagentContext');
-  applyStatus(node, 'unknown', 'subagentContext', statusPriorities);
+  // 重启孤儿收口：context 记录本身不携带生命周期，活着的证据只来自「本进程刚
+  // 更新过它」。上一进程写下的记录（updatedAt 早于本进程启动）没有活着的执行
+  // 方，收成 cancelled（已停）；renderer 的口径是 unknown→工作中，照旧落 unknown
+  // 就是重启后幽灵「工作中」行的来源。本进程内的记录维持 unknown（宁可在干），
+  // 与 spawnGuard/registry 的活状态由优先级自然裁决。
+  const status: AgentTreeNodeStatus = record.updatedAt < HOST_PROCESS_BOOT_MS
+    ? 'cancelled'
+    : 'unknown';
+  applyStatus(node, status, 'subagentContext', statusPriorities);
   node.updatedAt = Math.max(node.updatedAt ?? 0, record.updatedAt);
   const activeTool = activeToolFromContext(record);
   if (activeTool) node.activeTool = activeTool;

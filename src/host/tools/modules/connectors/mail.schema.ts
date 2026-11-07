@@ -56,5 +56,8 @@ ${CONNECTION_STATE_HONESTY}`,
   category: 'mcp',
   permissionLevel: 'read',
   readOnly: true,
+  // Any internet sender controls subject/sender-name/body of list_messages and
+  // read_message rows — anonymous-outsider text, same reach class as web_fetch.
+  readsUntrustedContent: 'block',
   allowInPlanMode: true,
 };

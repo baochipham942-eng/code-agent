@@ -24,9 +24,19 @@ describe('首次醒来卡压空态接线', () => {
 
   it('ChatView 订阅 firstWakeCardRoleId，卡可见时 welcome 让位为 null（骨架/空白分支不受影响）', () => {
     expect(chatViewSource).toContain('const firstWakeCardRoleId = useAppStore((state) => state.firstWakeCardRoleId);');
-    expect(chatViewSource).toContain('welcome={firstWakeCardRoleId ? null : (');
+    expect(chatViewSource).toContain('const isEmptySessionWelcomeVisible = projection.turns.length === 0');
+    expect(chatViewSource).toContain('welcome={isEmptySessionWelcomeVisible ? (');
     // 让位只压 welcome：EmptySessionArea 的 hydration 骨架与冷启动空白分支原样保留
     expect(chatViewSource).toContain('isHydratingSession={isHydratingSession}');
+  });
+
+  it('专家空态 welcome 承接 wake proposals 时，顶部 banner 用同一可见条件让位', () => {
+    expect(chatViewSource).toContain(
+      '<RoleFirstWakeThreadBanner suppressWakeProposals={isEmptySessionWelcomeVisible} />',
+    );
+    expect(cardSource).toContain(
+      '{!suppressWakeProposals && <RoleWakeProposalsCard roleId={roleId} framed />}',
+    );
   });
 
   it('卡可见写信号、卸载/消失按 roleId 清回（并发两张卡不互抹）', () => {

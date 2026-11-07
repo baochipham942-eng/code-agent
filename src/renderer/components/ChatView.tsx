@@ -506,6 +506,13 @@ export const ChatView: React.FC = () => {
       voiceCallPhase, voiceCallSessionId, voicePartialUser, voicePartialAssistant, voiceStartedAt,
     ],
   );
+  // EmptySessionArea 真正展示 NewSessionWelcome 的同一条件。专家空态已经把 pending
+  // wake proposals 画成起手卡，此时顶部 banner 必须让位，避免同一提议出现两次。
+  const isEmptySessionWelcomeVisible = projection.turns.length === 0
+    && !isHydratingSession
+    && Boolean(currentSessionId)
+    && !isSessionLoading
+    && !firstWakeCardRoleId;
 
   useEffect(() => {
     recordStreamingPerformanceCounter('stream.projection.base_commit');
@@ -884,7 +891,7 @@ export const ChatView: React.FC = () => {
 
         <SurfaceExecutionChatPanel conversationId={currentSessionId} />
 
-        <RoleFirstWakeThreadBanner />
+        <RoleFirstWakeThreadBanner suppressWakeProposals={isEmptySessionWelcomeVisible} />
 
         {/* Messages - Turn-based trace view（查看某位成员时整块换成他的对话）
             负 margin 把主栏让出的滚动条窄带要回：Virtuoso 滚动条摆进窄带，
@@ -903,7 +910,7 @@ export const ChatView: React.FC = () => {
             <EmptySessionArea
               isHydratingSession={isHydratingSession}
               settled={!!currentSessionId && !isSessionLoading}
-              welcome={firstWakeCardRoleId ? null : (
+              welcome={isEmptySessionWelcomeVisible ? (
                 <NewSessionWelcome
                   onSend={handleSendMessage}
                   // FB-580：composer 有字/附件/chip 时点示例卡改为填充草稿（不发送、
@@ -914,7 +921,7 @@ export const ChatView: React.FC = () => {
                   workbenchSnapshot={currentSession?.workbenchSnapshot}
                   session={currentSession}
                 />
-              )}
+              ) : null}
             />
           ) : (
             // 会话级错误边界：消息区一旦渲染失败（如虚拟列表反馈环打满 React 嵌套

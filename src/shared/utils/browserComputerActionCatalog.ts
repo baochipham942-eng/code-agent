@@ -183,6 +183,15 @@ const BROWSER_ACTION_CATALOG: ActionCatalogMap = {
   // loop escalates approval itself (payment/delete/auth forceConfirm); catalog
   // matches handle_dialog: write + tool_executor, not high_risk.
   execute_goal: { ...WRITE_BROWSER_DEFAULTS, consequence: "external_side_effect" },
+  // OS-level system-browser actions exposed by the model-facing `Browser` tool.
+  // They drive the user's real browser, so they keep asking.
+  open: { ...WRITE_BROWSER_DEFAULTS, consequence: "external_side_effect" },
+  nav_back: { ...WRITE_BROWSER_DEFAULTS, consequence: "external_side_effect" },
+  nav_forward: { ...WRITE_BROWSER_DEFAULTS, consequence: "external_side_effect" },
+  refresh: { ...WRITE_BROWSER_DEFAULTS, consequence: "external_side_effect" },
+  close_window: { ...WRITE_BROWSER_DEFAULTS, consequence: "external_side_effect" },
+  newTab: { ...WRITE_BROWSER_DEFAULTS, consequence: "external_side_effect" },
+  switchTab: { ...WRITE_BROWSER_DEFAULTS, consequence: "external_side_effect" },
   list_tabs: {
     ...READ_BROWSER_DEFAULTS,
     consequence: "no_external_side_effect",
@@ -377,7 +386,7 @@ export function normalizeBrowserComputerCatalogToolName(
   toolName: unknown,
 ): BrowserComputerCatalogTool | null {
   if (typeof toolName !== "string") return null;
-  if (toolName === "browser_action") return "browser_action";
+  if (toolName === "browser_action" || toolName === "Browser") return "browser_action";
   if (toolName === "computer_use" || toolName === "Computer" || toolName === "computer") {
     return "computer_use";
   }

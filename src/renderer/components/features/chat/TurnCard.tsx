@@ -64,6 +64,7 @@ import { hasPendingPermissionForSession, hasQueuedPermissionForSession } from '.
 import { useSessionTurnActive } from '../../../hooks/useSessionTurnActive';
 import { resolveBusySignal } from '../../../utils/turnBusySignal';
 import { hasFoldHiddenMiddle, isNodeSkippedInMiddle } from './turnFoldVisibility';
+import { hasParkedApprovalClosure } from './cronRunSessionStatus';
 
 interface TurnCardProps {
   turn: TraceTurn;
@@ -181,10 +182,9 @@ export const TurnCard: React.FC<TurnCardProps> = ({
   // + 折叠真藏得住中间内容（纯问答轮藏了个寂寞，不出「用时」空开关）。
   // 语音任务卡不套这条阈值——电话里派出去的活不管几步都折成卡（用户在打电话，不看屏幕），
   // 流式期间也折：live 信号由卡身底部的呼吸态指示承担，过程默认不铺开。
-  // 定时任务运行记录首轮由 afterUserMessage（CronRunSessionStatusBar）展示唯一状态行
-  // （运行中流逝时间 / 等你批准 / 已中断 / 已完成·用时），内部工具组与用时开关默认收起，
-  // 避免静态「运行中 · 正在运行命令」或重复的「用时」行跟状态行打架。
-  const hasExternalStatusLine = Boolean(afterUserMessage);
+  // 定时任务运行记录首轮由 afterUserMessage 展示唯一状态行，内部工具组默认收起，
+  // 但停车审批作废步骤必须展开，说明哪条命令没有运行及原因。
+  const hasExternalStatusLine = Boolean(afterUserMessage) && !hasParkedApprovalClosure(turn);
   const canFold = isVoiceTurn
     ? turn.nodes.length > 0
     : hasExternalStatusLine

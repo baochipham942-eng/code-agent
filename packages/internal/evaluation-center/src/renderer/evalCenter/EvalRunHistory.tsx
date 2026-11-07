@@ -26,7 +26,7 @@ import {
 import { EvalRunBaselineControls, EvalRunBaselineHeader } from './EvalRunBaselineControls';
 import { EvalRunCaseResults } from './EvalRunCaseResults';
 
-const EVALUATION_GUIDE_URL = 'https://github.com/baochipham942-eng/code-agent/blob/main/docs/architecture/decisions/ADR-036-eval-scoring-credibility-and-redline-jail.md';
+const EVALUATION_GUIDE_URL = 'https://github.com/neo-cowork/code-agent/blob/main/docs/architecture/decisions/ADR-036-eval-scoring-credibility-and-redline-jail.md';
 interface GroupComparison {
   currentExperimentId: string;
   currentRate?: number;

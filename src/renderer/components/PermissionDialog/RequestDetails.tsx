@@ -27,10 +27,22 @@ interface RequestDetailsProps {
 
 function sandboxStatusCopy(
   sandbox: NonNullable<PermissionRequest['details']['sandbox']>,
-  labels: { sandboxApplied: string; sandboxDegraded: string; sandboxDegradedUnsandboxable: string; sandboxDegradedUnavailable: string; sandboxDegradedDisabled: string },
+  labels: {
+    sandboxApplied: string;
+    sandboxDegraded: string;
+    sandboxDegradedUnsandboxable: string;
+    sandboxDegradedUnsandboxableNoLabel: string;
+    sandboxDegradedUnavailable: string;
+    sandboxDegradedDisabled: string;
+    sandboxExceptionLabels: Record<string, string>;
+  },
 ): string {
   if (sandbox.code === OS_SANDBOX_CODES.DEGRADED_UNSANDBOXABLE) {
-    return labels.sandboxDegradedUnsandboxable.replace('{exception}', sandbox.exception ?? sandbox.code);
+    // FB-746：host 的异常 id（docker_engine / macos_launch_services）是工程黑话，
+    // 卡上只给映射过的人话；id 缺失或映射不到就整体不带括号注释。
+    const label = labels.sandboxExceptionLabels[sandbox.exception ?? ''];
+    if (label) return labels.sandboxDegradedUnsandboxable.replace('{exception}', label);
+    return labels.sandboxDegradedUnsandboxableNoLabel;
   }
   if (sandbox.code === OS_SANDBOX_CODES.DEGRADED_UNAVAILABLE) return labels.sandboxDegradedUnavailable;
   if (sandbox.code === OS_SANDBOX_CODES.DEGRADED_DISABLED) return labels.sandboxDegradedDisabled;

@@ -242,6 +242,40 @@ export function readCuaWindowSecureField(
   return seen ? { secure: false } : null;
 }
 
+/** 可被点击的角色（索引行 = 带 AX action；这里再剔除输入框/静态文本等不会被「点下去就办事」的角色）。 */
+const CLICKABLE_ROLE = /^ax(button|link|menuitem|menubutton|popupbutton|checkbox|radiobutton|cell|row|toolbarbutton)$/i;
+
+/**
+ * 点击类敏感判定的只读查找（ADR-088 二期）：目标元素的 role/label（需 element_index），
+ * 以及目标窗口最新快照里带 label 的可点击行（像素点击的窗口级兜底用）。
+ * pid+window_id 都在时只看该窗口；只带 pid 时并集该 pid 的所有缓存窗口。
+ * 返回 null = 没有任何缓存快照（无信号，调用方留痕后放行）。
+ */
+export function readCuaClickTargets(
+  args: { pid?: unknown; window_id?: unknown; element_index?: unknown },
+): { target?: { role: string; label?: string }; clickables: Array<{ role: string; label: string }> } | null {
+  if (typeof args.pid !== 'number') return null;
+  const windows: Array<Map<number, AxElement>> = [];
+  if (typeof args.window_id === 'number') {
+    const hit = windowElements.get(`${args.pid}:${args.window_id}`);
+    if (hit) windows.push(hit);
+  } else {
+    for (const [key, value] of windowElements) {
+      if (key.startsWith(`${args.pid}:`)) windows.push(value);
+    }
+  }
+  if (windows.length === 0) return null;
+  const idx = args.element_index;
+  const target = typeof idx === 'number' && windows.length === 1 ? windows[0].get(idx) : undefined;
+  const clickables: Array<{ role: string; label: string }> = [];
+  for (const elements of windows) {
+    for (const el of elements.values()) {
+      if (el.label && CLICKABLE_ROLE.test(el.role)) clickables.push({ role: el.role, label: el.label });
+    }
+  }
+  return { ...(target ? { target } : {}), clickables };
+}
+
 function lookupElement(args: Record<string, unknown>): AxElement | undefined {
   const idx = args.element_index;
   if (typeof idx !== 'number') return undefined;

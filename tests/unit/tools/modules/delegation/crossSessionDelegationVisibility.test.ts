@@ -13,12 +13,35 @@ import {
 import { CORE_TOOLS, DEFERRED_TOOLS_META } from '../../../../../src/host/services/toolSearch/deferredTools';
 import { isCrossSessionDelegationEnabled } from '../../../../../src/host/services/delegation/crossSessionDelegationFlag';
 import { applySchema } from '../../../../../src/host/services/core/database/schema';
+import { filterToolsByRunPolicy } from '../../../../../src/host/agent/runtime/toolRunPolicy';
+import { getTextForegroundToolNamesForPrompt } from '../../../../../src/host/app/sessionCommandCenterBrain';
 
 vi.mock('../../../../../src/host/mcp', () => ({
   getMCPClient: () => ({ getToolDefinitions: () => [] }),
 }));
 
 const DELEGATION_TOOL_NAMES = ['delegate_session', 'list_session_candidates'] as const;
+
+// 本单之前（origin/main e6067f5f9）的文字前台 12 工具：flag 关时前台面必须原样，
+// 模型可见字节零变化。
+const PRE_CHANGE_TEXT_FOREGROUND_TOOL_NAMES = [
+  'spawn_agent',
+  'ListDirectory',
+  'delegate_task',
+  'steer_task',
+  'cancel_task',
+  'task_status',
+  'Write',
+  'Glob',
+  'Read',
+  'Edit',
+  'Grep',
+  'AskUserQuestion',
+] as const;
+
+// 不命中任何连接器意图的英文委派 prompt（getNativeConnectorToolNamesForIntent 零副作用，
+// 不触 configService/connector registry）。
+const FOREGROUND_ALLOWLIST_PROMPT = 'please delegate this to another session';
 
 function openDb(): Database.Database {
   const db = new Database(':memory:');
@@ -73,6 +96,37 @@ describe('crossSessionDelegation visibility', () => {
     expect(injected.map((tool) => tool.name)).toEqual([...DELEGATION_TOOL_NAMES]);
     // 非重入：已注入的表再过一遍不重复（与画布注入同一去重规矩）
     expect(withDesignCanvasTools(injected, undefined, true)).toHaveLength(DELEGATION_TOOL_NAMES.length);
+  });
+
+  it('flag on: both delegation names enter the text-foreground allowlist and survive the inference.ts assembly + run policy', () => {
+    process.env.CODE_AGENT_CROSS_SESSION_DELEGATION = '1';
+    resetProtocolRegistry();
+
+    // ① 前台 allowlist（web routes/agent.ts 与桌面 withSessionCommandCenterBrain 同源）
+    const allowlist = getTextForegroundToolNamesForPrompt(FOREGROUND_ALLOWLIST_PROMPT);
+    expect(allowlist).toEqual(expect.arrayContaining([...DELEGATION_TOOL_NAMES]));
+
+    // ② 复刻 inference.ts 的组装次序：基础表（core + loaded deferred）→
+    //    withDesignCanvasTools(…, isCrossSessionDelegationEnabled()) → run policy 收窄。
+    //    toolScope / skillToolBoundary 未设时 workbench-scope 与 strict-skill 两个过滤器
+    //    恒等（workbenchToolScope.ts / skillBoundaryScope.ts 的无 scope 早退），略去不改变判定。
+    const injected = withDesignCanvasTools(getAllToolDefinitions(), undefined, true);
+    const ctx = {
+      messages: [{ role: 'user', content: FOREGROUND_ALLOWLIST_PROMPT }],
+      allowedToolNames: allowlist,
+    } as never;
+    const kept = filterToolsByRunPolicy(injected, ctx).map((tool) => tool.name);
+    expect(kept).toContain('delegate_session');
+    expect(kept).toContain('list_session_candidates');
+  });
+
+  it('flag off: foreground allowlist unchanged — neither delegation name present and the list equals the pre-change 12', () => {
+    expect(isCrossSessionDelegationEnabled()).toBe(false);
+    resetProtocolRegistry();
+    const names = getTextForegroundToolNamesForPrompt(FOREGROUND_ALLOWLIST_PROMPT);
+    expect(names).not.toContain('delegate_session');
+    expect(names).not.toContain('list_session_candidates');
+    expect([...names].sort()).toEqual([...PRE_CHANGE_TEXT_FOREGROUND_TOOL_NAMES].sort());
   });
 
   it('force-registered while off: both handlers reject FEATURE_DISABLED and write zero rows', async () => {

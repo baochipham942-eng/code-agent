@@ -9,7 +9,7 @@ import { getApplicationRunRegistry } from '../../app/applicationRunRegistry';
 import { getSessionManager } from '../infra/sessionManager';
 import { getProjectService } from '../project/projectService';
 import { getPermissionModeManager } from '../../permissions/modes';
-import { evaluateFolderTrust } from '../../security/folderTrustService';
+import { evaluateFolderTrustForDelegation } from './delegationFolderTrust';
 import type { WorkspaceScope } from '../../../shared/contract/project';
 import { notifyDelegationEnqueued } from './delegationEnqueueSignal';
 
@@ -117,10 +117,7 @@ export function getDelegationToolRuntime(context?: unknown): DelegationToolRunti
         return 'unresolved';
       }
     },
-    evaluateFolderTrust: async (workingDirectory) => {
-      const result = await evaluateFolderTrust(workingDirectory);
-      return { state: result.state, blockedItems: result.blockedItems.length };
-    },
+    evaluateFolderTrust: (workingDirectory) => evaluateFolderTrustForDelegation(workingDirectory),
     getWorkspaceRoots: workspaceRoots,
     getSessionManager: () => getSessionManager(),
     notifyEnqueued: notifyDelegationEnqueued,

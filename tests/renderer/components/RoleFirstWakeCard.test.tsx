@@ -13,6 +13,7 @@ const goToExpertThread = vi.fn<(roleId: string, options?: { seed?: string }) => 
 // 提议卡与首次醒来卡同位渲染：mock 需覆盖其 rolesClient 面（空 pending → 不渲染）
 const listWakeProposals = vi.fn<(roleId: string) => Promise<unknown[]>>(() => Promise.resolve([]));
 const invokeDomain = vi.fn();
+const startEditRoleChat = vi.fn<(roleId: string) => Promise<void>>();
 const listeners = new Map<string, (event: unknown) => void>();
 
 vi.mock('../../../src/renderer/services/rolesClient', () => ({
@@ -37,11 +38,16 @@ vi.mock('../../../src/renderer/services/ipcService', () => ({
   },
 }));
 
+vi.mock('../../../src/renderer/utils/startEditRoleChat', () => ({
+  startEditRoleChat: (roleId: string) => startEditRoleChat(roleId),
+}));
+
 import { RoleFirstWakeCard, RoleFirstWakeThreadBanner } from '../../../src/renderer/components/features/chat/RoleFirstWakeCard';
 import { RoleWakeProposalsCard } from '../../../src/renderer/components/features/chat/RoleWakeProposalsCard';
 import { RoleDraftNotifications } from '../../../src/renderer/components/features/chat/ChatInput/RoleDraftCard';
 import { useAppStore } from '../../../src/renderer/stores/appStore';
 import { useSessionStore } from '../../../src/renderer/stores/sessionStore';
+import { useToastStore } from '../../../src/renderer/hooks/useToast';
 
 const ROLE: RolePanelEntry = {
   roleId: 'role-1',
@@ -71,6 +77,21 @@ function emitDraft(draft: { id: string; roleId: string; description: string; too
   });
 }
 
+function emitCreatedDirect() {
+  act(() => {
+    listeners.get('agent:event')?.({
+      type: 'role_created_direct',
+      data: {
+        sessionId: 'sess-1',
+        roleId: '日历助理AB12',
+        displayName: '日历助理AB12',
+        canDo: '每天盯日程，提醒冲突和临近的会议',
+        willNotDo: '新建、修改或删除日历事件',
+      },
+    });
+  });
+}
+
 describe('RoleFirstWakeCard', () => {
   const openCapabilityHub = vi.fn();
 
@@ -80,11 +101,18 @@ describe('RoleFirstWakeCard', () => {
     retryFirstWake.mockReset().mockResolvedValue({ retried: true });
     listRoles.mockReset().mockResolvedValue([ROLE]);
     goToExpertThread.mockReset().mockResolvedValue(undefined);
+    startEditRoleChat.mockReset().mockResolvedValue(undefined);
     invokeDomain.mockReset();
     listeners.clear();
     openCapabilityHub.mockReset();
-    useAppStore.setState({ openCapabilityHub, developerMode: false, firstWakeCardRoleId: null });
-    useSessionStore.setState({ currentSessionId: 'sess-1' });
+    useAppStore.setState({
+      openCapabilityHub,
+      developerMode: false,
+      firstWakeCardRoleId: null,
+      expertDetailRoleId: null,
+    });
+    useSessionStore.setState({ currentSessionId: 'sess-1', messages: [] });
+    useToastStore.setState({ toasts: [] });
     sessionStorage.clear();
   });
 
@@ -231,6 +259,87 @@ describe('RoleFirstWakeCard', () => {
     await waitFor(() => expect(invokeDomain).toHaveBeenCalled());
     expect(screen.queryByTestId('role-first-wake-card')).toBeNull();
     expect(getFirstWake).not.toHaveBeenCalled();
+  });
+
+  it('直接创建卡按 v2 展示一次名字、编辑/删除和两行说明；删除确认前零 IPC，Undo 后恢复编辑', async () => {
+    getFirstWake.mockResolvedValue({ state: 'pending', sourcesMode: 'none', suggestions: [] });
+    invokeDomain.mockImplementation(async (_domain: unknown, action: unknown) => {
+      if (action === 'deleteRole') return { trashId: 'trash-direct' };
+      if (action === 'restoreDeletedRole') return { success: true };
+      return {};
+    });
+    render(<RoleDraftNotifications />);
+    emitCreatedDirect();
+
+    const card = await screen.findByTestId('role-created-direct-card');
+    expect(card.textContent?.match(/日历助理AB12/g)).toHaveLength(1);
+    expect(screen.getByText('已创建')).toBeTruthy();
+    expect(screen.getByRole('button', { name: '改一改' })).toBeTruthy();
+    expect(screen.getByRole('button', { name: '删除' })).toBeTruthy();
+    expect(screen.getByText('能做')).toBeTruthy();
+    expect(screen.getByText('每天盯日程，提醒冲突和临近的会议')).toBeTruthy();
+    expect(screen.getByText('不会')).toBeTruthy();
+    expect(screen.getByText('新建、修改或删除日历事件')).toBeTruthy();
+
+    fireEvent.click(screen.getByRole('button', { name: '改一改' }));
+    expect(startEditRoleChat).toHaveBeenCalledWith('日历助理AB12');
+
+    invokeDomain.mockClear();
+    fireEvent.click(screen.getByRole('button', { name: '删除' }));
+    expect(screen.getByText('删除这位专家？')).toBeTruthy();
+    expect(invokeDomain).not.toHaveBeenCalled();
+
+    fireEvent.click(screen.getByRole('button', { name: '确认删除' }));
+    await waitFor(() => expect(invokeDomain).toHaveBeenCalledWith(
+      'domain:roles',
+      'deleteRole',
+      { roleId: '日历助理AB12' },
+    ));
+    await waitFor(() => expect(screen.queryByRole('button', { name: '改一改' })).toBeNull());
+
+    invokeDomain.mockClear();
+    await act(async () => {
+      useToastStore.getState().toasts[0].action?.onClick();
+    });
+    await waitFor(() => expect(invokeDomain).toHaveBeenCalledWith(
+      'domain:roles',
+      'restoreDeletedRole',
+      { trashId: 'trash-direct' },
+    ));
+    await waitFor(() => expect(screen.getByRole('button', { name: '改一改' })).toBeTruthy());
+    expect(useAppStore.getState().expertDetailRoleId).toBeNull();
+  });
+
+  it('重载会话后从已落库的工具结果恢复直接创建卡', async () => {
+    getFirstWake.mockResolvedValue(COMPLETED);
+    useSessionStore.setState({
+      currentSessionId: 'sess-1',
+      messages: [{
+        id: 'assistant-1',
+        role: 'assistant',
+        content: '',
+        timestamp: 1,
+        toolResults: [{
+          toolCallId: 'tool-1',
+          success: true,
+          output: 'installed',
+          metadata: {
+            directCreated: true,
+            sessionId: 'sess-1',
+            roleId: '日历助理AB12',
+            displayName: '日历助理AB12',
+            canDo: '每天盯日程，提醒冲突和临近的会议',
+            willNotDo: '新建、修改或删除日历事件',
+          },
+        }],
+      }],
+    });
+
+    render(<RoleDraftNotifications />);
+
+    expect(await screen.findByTestId('role-created-direct-card')).toBeTruthy();
+    expect(screen.getByText('日历助理AB12')).toBeTruthy();
+    expect(await screen.findByTestId('role-first-wake-card')).toBeTruthy();
   });
 
   it('专家主会话顶部按 expertThread 挂上同一张卡', async () => {

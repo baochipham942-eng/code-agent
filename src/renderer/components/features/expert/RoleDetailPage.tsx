@@ -38,7 +38,7 @@ import { RoleWakeLedger } from "./RoleWakeLedger";
 import { RoleBindingsSection } from "../settings/tabs/RoleBindingsSection";
 import { RoleMemoryActions } from "./RoleMemoryActions";
 import { useAppStore } from "../../../stores/appStore";
-import { Button } from "../../primitives/Button";
+import { Button, TimeInput24 } from "../../primitives";
 import { FullScreenPage, FullScreenPageHeader } from "../shared/FullScreenPage";
 import { RoleBasicTab } from './RoleBasicTab';
 import { RoleEquipmentTab } from './RoleEquipmentTab';
@@ -287,8 +287,6 @@ const VisualEditor: React.FC<{
 
   return (
     <SettingsSection title={text.title} description={text.description}>
-      {/* E6-3 接入 locallyModified 前，内置角色统一提示：这里拿不到角色包的本地修改状态。 */}
-      {detail.isBuiltin ? <p className="mb-3 rounded-md bg-amber-500/10 px-3 py-2 text-xs text-badge-warning">{text.builtinNotice}</p> : null}
       <div className="grid gap-3 md:grid-cols-2">
         <label className="space-y-1 text-xs text-zinc-400">
           <span>{text.displayName}</span>
@@ -597,22 +595,26 @@ const QuietHoursEditor: React.FC<{
       <div className="mt-3 flex flex-wrap items-end gap-3">
         <label className="space-y-1 text-xs text-zinc-500">
           <span className="block">{text.quietHoursStart}</span>
-          <input
-            data-testid="role-quiet-hours-start"
-            type="time"
+          <TimeInput24
+            testId="role-quiet-hours-start"
             value={start}
-            onChange={(event) => setStart(event.target.value)}
-            className="rounded-md border border-zinc-700 bg-zinc-950 px-2.5 py-1.5 text-sm text-zinc-200 outline-none focus:border-badge-success"
+            onChange={setStart}
+            hourLabel={t.expert.roleDetail.timeHourLabel}
+            minuteLabel={t.expert.roleDetail.timeMinuteLabel}
+            disabled={busy}
+            size="sm"
           />
         </label>
         <label className="space-y-1 text-xs text-zinc-500">
           <span className="block">{text.quietHoursEnd}</span>
-          <input
-            data-testid="role-quiet-hours-end"
-            type="time"
+          <TimeInput24
+            testId="role-quiet-hours-end"
             value={end}
-            onChange={(event) => setEnd(event.target.value)}
-            className="rounded-md border border-zinc-700 bg-zinc-950 px-2.5 py-1.5 text-sm text-zinc-200 outline-none focus:border-badge-success"
+            onChange={setEnd}
+            hourLabel={t.expert.roleDetail.timeHourLabel}
+            minuteLabel={t.expert.roleDetail.timeMinuteLabel}
+            disabled={busy}
+            size="sm"
           />
         </label>
         <button /* ds-allow:button: 免打扰时段使用紧凑行内保存动作 */

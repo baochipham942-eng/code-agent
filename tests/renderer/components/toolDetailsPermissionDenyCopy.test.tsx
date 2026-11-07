@@ -62,7 +62,7 @@ import {
   humanizeToolFailureReason,
 } from '../../../src/renderer/utils/toolExecutionPresentation';
 import { getPolicyEngine, resetPolicyEngine } from '../../../src/host/permissions/policyEngine';
-import { getPermissionModeManager, resetPermissionModeManager } from '../../../src/host/permissions/modes';
+import { resetPermissionModeManager } from '../../../src/host/permissions/modes';
 
 /**
  * 真实 executor 硬拒结果：工作区临时目录 + 审批回调一叫就炸（硬拒必须发生在审批之前）。

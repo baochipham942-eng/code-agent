@@ -2,7 +2,7 @@
 // N-FIX-FG-BASH-NARROWED-BY-RUN-POLICY：真实模型回放点名命令工具的前台分诊。
 // 用法：set -a; source ~/.code-agent/.env; set +a
 //       npx tsx scripts/acceptance/fg-bash-named-real.ts
-//       npx tsx scripts/acceptance/fg-bash-named-real.ts --provider stepfun
+//       npx tsx scripts/acceptance/fg-bash-named-real.ts --provider xiaomi
 //       npx tsx scripts/acceptance/fg-bash-named-real.ts --expect-after
 import process from 'node:process';
 import { pathToFileURL } from 'node:url';
@@ -31,7 +31,12 @@ const PROMPTS = [
 ] as const;
 
 type PromptId = typeof PROMPTS[number]['id'];
-type Provider = 'zhipu' | 'stepfun';
+type Provider = 'xiaomi' | 'zhipu' | 'stepfun';
+
+interface ReplayTier {
+  model: string;
+  baseUrl: string;
+}
 
 interface ToolCall {
   id?: string;
@@ -148,7 +153,7 @@ function score(message: AssistantMessage): RoundResult {
 
 async function chatCall(
   apiKey: string,
-  tier: typeof ZHIPU_CODING_TIER | typeof STEPFUN_TIER,
+  tier: ReplayTier,
   prompt: string,
 ): Promise<AssistantMessage> {
   const response = await fetch(`${tier.baseUrl}/chat/completions`, {
@@ -180,7 +185,7 @@ async function chatCall(
 async function runPrompt(
   apiKey: string,
   provider: Provider,
-  tier: typeof ZHIPU_CODING_TIER | typeof STEPFUN_TIER,
+  tier: ReplayTier,
   prompt: typeof PROMPTS[number],
 ): Promise<PromptTotals> {
   const totals: PromptTotals = {
@@ -216,11 +221,11 @@ async function runPrompt(
 
 function parseArgs(argv: string[]): { provider: Provider; expectAfter: boolean } {
   const providerIndex = argv.indexOf('--provider');
-  const provider = providerIndex === -1 ? 'zhipu' : argv[providerIndex + 1];
-  if (provider !== 'zhipu' && provider !== 'stepfun') {
-    throw new Error('--provider must be zhipu or stepfun');
+  const provider = providerIndex === -1 ? 'xiaomi' : argv[providerIndex + 1];
+  if (provider !== 'xiaomi' && provider !== 'zhipu' && provider !== 'stepfun') {
+    throw new Error('--provider must be xiaomi, zhipu, or stepfun');
   }
-  const known = new Set(['--provider', 'zhipu', 'stepfun', '--expect-after']);
+  const known = new Set(['--provider', 'xiaomi', 'zhipu', 'stepfun', '--expect-after']);
   const unknown = argv.filter((arg) => !known.has(arg));
   if (unknown.length > 0) throw new Error(`unknown arguments: ${unknown.join(', ')}`);
   return { provider, expectAfter: argv.includes('--expect-after') };
@@ -239,8 +244,14 @@ function afterFailures(results: Record<PromptId, PromptTotals>): string[] {
 
 async function main(): Promise<void> {
   const { provider, expectAfter } = parseArgs(process.argv.slice(2));
-  const tier = provider === 'zhipu' ? ZHIPU_CODING_TIER : STEPFUN_TIER;
-  const keyEnv = provider === 'zhipu' ? 'ZHIPU_CODING_API_KEY' : 'STEPFUN_API_KEY';
+  const xiaomiBaseUrl = (process.env.XIAOMI_API_URL ?? '').trim().replace(/\/+$/, '');
+  const tier: ReplayTier = provider === 'xiaomi'
+    ? { model: 'mimo-v2.6-flash', baseUrl: xiaomiBaseUrl }
+    : provider === 'zhipu' ? ZHIPU_CODING_TIER : STEPFUN_TIER;
+  const keyEnv = provider === 'xiaomi'
+    ? 'XIAOMI_API_KEY'
+    : provider === 'zhipu' ? 'ZHIPU_CODING_API_KEY' : 'STEPFUN_API_KEY';
+  if (!tier.baseUrl) throw new Error('XIAOMI_API_URL is required for the xiaomi replay');
   const apiKey = (process.env[keyEnv] ?? '').trim();
   if (!apiKey) throw new Error(`${keyEnv} is required; refusing to skip the real-model replay`);
   await loadProductModules();

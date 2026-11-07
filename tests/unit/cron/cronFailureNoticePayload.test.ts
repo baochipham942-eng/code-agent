@@ -13,7 +13,11 @@ import {
 import { CronCloudRuntime } from '../../../src/host/cron/cronCloudRuntime';
 import { buildCronAgentActionResult } from '../../../src/host/cron/cronNormalizers';
 import { buildCronLoginWallStopCode } from '../../../src/shared/utils/browserLoginWall';
-import { CRON_CLOUD_UNAVAILABLE_MESSAGE_ZH } from '../../../src/shared/utils/cronCloudUnavailable';
+import { cronFailureSourceText } from '../../../src/shared/utils/cronFailureClassification';
+import {
+  CRON_CLOUD_UNAVAILABLE_MESSAGE_EN,
+  CRON_CLOUD_UNAVAILABLE_MESSAGE_ZH,
+} from '../../../src/shared/utils/cronCloudUnavailable';
 
 const notify = notificationService.notifyTaskComplete as ReturnType<typeof vi.fn>;
 
@@ -121,6 +125,50 @@ describe('notifyCronAgentExecution 无会话云端失败', () => {
       code: 'CRON_FAILURE',
       failureKind: 'cloud_unavailable',
     }), { force: true, urgent: false });
+  });
+});
+
+// N-CRON-CLOUD-DOWN-NOTICE-MIXED-LANG（FB-547）：runJob 抛 Error(固定句, { cause: 英文原始报文 })，
+// 经 cronService 的收链口径（cronFailureSourceText）落库再进通知——中文界面的失败通知
+// 正文只能有中文固定句，不再追加 'Cloud cron API is not configured.' 之类的英文原文。
+describe('cloud_unavailable 通知正文单语', () => {
+  async function runJobError(language: 'zh' | 'en'): Promise<unknown> {
+    const runtime = new CronCloudRuntime(
+      () => undefined,
+      {
+        getJobs: () => [],
+        persistJob: async () => {},
+        persistExecution: async () => {},
+        loadExecutionStatus: () => undefined,
+        onCompleted: async () => {},
+        unavailableMessage: () => (language === 'en'
+          ? CRON_CLOUD_UNAVAILABLE_MESSAGE_EN
+          : CRON_CLOUD_UNAVAILABLE_MESSAGE_ZH),
+      },
+    );
+    return runtime.runJob(definition()).then(
+      () => { throw new Error('runJob should have rejected'); },
+      (error: unknown) => error,
+    );
+  }
+
+  it('zh 运行：execution.error 与通知摘要都只有中文固定句，无 Cloud cron API 字样', async () => {
+    const executionError = cronFailureSourceText(await runJobError('zh'));
+    expect(executionError).toBe(CRON_CLOUD_UNAVAILABLE_MESSAGE_ZH);
+    expect(executionError).not.toContain('Cloud cron API');
+
+    notifyCronAgentExecution(definition(), execution(executionError), new CronFailureNoticeGate());
+    expect(notify).toHaveBeenCalledTimes(1);
+    const payload = notify.mock.calls[0]?.[0] as { summary?: string; failureKind?: string };
+    expect(payload.summary).toBe(`定时任务失败：${CRON_CLOUD_UNAVAILABLE_MESSAGE_ZH}`);
+    expect(payload.summary).not.toContain('Cloud cron API');
+    expect(payload.failureKind).toBe('cloud_unavailable');
+  });
+
+  it('en 运行：落库报文只有英文固定句', async () => {
+    const executionError = cronFailureSourceText(await runJobError('en'));
+    expect(executionError).toBe(CRON_CLOUD_UNAVAILABLE_MESSAGE_EN);
+    expect(executionError).not.toContain('not configured');
   });
 });
 

@@ -20,7 +20,7 @@ const logger = createLogger('AgentsDiscovery');
 /**
  * An AGENTS.md file with its content and metadata
  */
-export interface AgentInstructions {
+interface AgentInstructions {
   /** Relative path from working directory */
   relativePath: string;
   /** Absolute path to the file */
@@ -38,7 +38,7 @@ export interface AgentInstructions {
 /**
  * A section within an AGENTS.md file
  */
-export interface AgentSection {
+interface AgentSection {
   title: string;
   content: string;
   level: number; // Header level (1-6)
@@ -303,28 +303,6 @@ export async function discoverAgentFiles(
 }
 
 /**
- * Get agent instructions relevant to a specific file path
- *
- * @param workingDirectory - The root working directory
- * @param targetPath - The file path to get instructions for
- * @returns Combined instructions from all applicable AGENTS.md files
- */
-export async function getInstructionsForPath(
-  workingDirectory: string,
-  targetPath: string
-): Promise<string> {
-  const result = await discoverAgentFiles(workingDirectory);
-
-  // Filter to only files that apply to the target path
-  const applicableFiles = result.files.filter(file => {
-    const relative = path.relative(path.dirname(file.absolutePath), path.resolve(workingDirectory, targetPath));
-    return relative === '' || (!relative.startsWith(`..${path.sep}`) && relative !== '..' && !path.isAbsolute(relative));
-  });
-
-  return combineInstructions(applicableFiles);
-}
-
-/**
  * Parse sections from an AGENTS.md file
  */
 function parseAgentSections(content: string): AgentSection[] {
@@ -445,78 +423,4 @@ export function clearAgentsDiscoveryCache(workingDirectory?: string): void {
   } else {
     discoveryCache.clear();
   }
-}
-
-// ----------------------------------------------------------------------------
-// Singleton Service
-// ----------------------------------------------------------------------------
-
-/**
- * AgentsDiscoveryService - Manages discovery and caching of AGENTS.md files
- */
-export class AgentsDiscoveryService {
-  private workingDirectory: string;
-
-  constructor(workingDirectory: string) {
-    this.workingDirectory = workingDirectory;
-  }
-
-  /**
-   * Discover all agent instruction files
-   */
-  async discover(): Promise<AgentsDiscoveryResult> {
-    return discoverAgentFilesCached(this.workingDirectory);
-  }
-
-  /**
-   * Get instructions for a specific path
-   */
-  async getInstructionsFor(targetPath: string): Promise<string> {
-    return getInstructionsForPath(this.workingDirectory, targetPath);
-  }
-
-  /**
-   * Get combined instructions for the entire project
-   */
-  async getCombinedInstructions(): Promise<string> {
-    const result = await this.discover();
-    return result.combinedInstructions;
-  }
-
-  /**
-   * Refresh the cache
-   */
-  refresh(): void {
-    clearAgentsDiscoveryCache(this.workingDirectory);
-  }
-
-  /**
-   * Update working directory
-   */
-  setWorkingDirectory(dir: string): void {
-    this.workingDirectory = dir;
-  }
-}
-
-// Singleton instance
-let agentsDiscoveryService: AgentsDiscoveryService | null = null;
-
-/**
- * Get or create the AgentsDiscoveryService singleton
- */
-export function getAgentsDiscoveryService(workingDirectory?: string): AgentsDiscoveryService {
-  if (!agentsDiscoveryService) {
-    agentsDiscoveryService = new AgentsDiscoveryService(workingDirectory || process.cwd());
-  } else if (workingDirectory) {
-    agentsDiscoveryService.setWorkingDirectory(workingDirectory);
-  }
-  return agentsDiscoveryService;
-}
-
-/**
- * Initialize with a specific working directory
- */
-export function initAgentsDiscovery(workingDirectory: string): AgentsDiscoveryService {
-  agentsDiscoveryService = new AgentsDiscoveryService(workingDirectory);
-  return agentsDiscoveryService;
 }

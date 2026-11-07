@@ -1,6 +1,6 @@
 import type { Message } from '../../shared/contract';
 
-export interface PreCompactHookResultLike {
+interface PreCompactHookResultLike {
   preservedContext?: string;
 }
 
@@ -18,7 +18,7 @@ export interface CompactionHookManagerLike {
   ) => Promise<unknown> | unknown;
 }
 
-export interface CompactionHookLoggerLike {
+interface CompactionHookLoggerLike {
   warn: (message: string, error?: unknown) => void;
 }
 

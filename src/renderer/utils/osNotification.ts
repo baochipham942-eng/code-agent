@@ -71,26 +71,6 @@ function loadModule(): Promise<NotifModule> {
   return modulePromise;
 }
 
-async function ensureTauriPermission(mod: NotifModule): Promise<boolean> {
-  let granted = await mod.isPermissionGranted();
-  if (!granted) {
-    granted = (await mod.requestPermission()) === 'granted';
-  }
-  return granted;
-}
-
-/** 主动请求系统通知授权。用于设置页或测试通知这类明确用户动作，不在 app 启动时预先弹权限。 */
-export async function requestOsNotificationPermission(): Promise<boolean> {
-  if (!isTauriMode()) return false;
-  try {
-    const mod = await loadModule();
-    return await ensureTauriPermission(mod);
-  } catch (err) {
-    console.warn('[osNotification] 主动请求通知授权失败', err);
-    return false;
-  }
-}
-
 /**
  * 焦点门控：窗口聚焦且页面可见时，用户正盯着 app，OS 弹窗与应用内反馈（侧栏
  * 未读红点/会话内提示）重复，只打扰不传信 —— 抑制。失焦或页面不可见才放行。

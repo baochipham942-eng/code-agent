@@ -14,7 +14,7 @@ import {
   type BrowserComputerActionPreview,
 } from './browserComputerActionPreview';
 
-export type ComputerUseTargetSource = 'frontmost' | 'surface' | 'recent' | 'approved' | 'denied';
+type ComputerUseTargetSource = 'frontmost' | 'surface' | 'recent' | 'approved' | 'denied';
 
 export interface ComputerUseTarget {
   id: string;

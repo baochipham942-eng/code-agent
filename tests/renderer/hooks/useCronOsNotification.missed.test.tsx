@@ -18,9 +18,11 @@ vi.mock('../../../src/renderer/services/ipcService', () => ({
 vi.mock('../../../src/renderer/utils/osNotification', () => ({
   postOsNotification: vi.fn(),
   registerNotificationClick: vi.fn(async () => undefined),
+  reportNotificationHandled: vi.fn(),
 }));
 
 import { useCronOsNotification } from '../../../src/renderer/hooks/useCronOsNotification';
+import { postOsNotification } from '../../../src/renderer/utils/osNotification';
 
 afterEach(() => {
   cleanup();
@@ -31,6 +33,10 @@ afterEach(() => {
 const copy = cronCenterZh.cronCenter;
 const fail = (id: string, sessionId: string) =>
   ({ id, title: '任务失败 - X', body: 'b', sessionId, urgent: true, failure: true });
+const needsInput = (id: string, sessionId: string, dedupeKey: string) =>
+  ({ id, title: '有操作等你确认', body: '无人值守任务请求执行 write_file', sessionId, urgent: true, dedupeKey });
+const retract = (dedupeKey: string) =>
+  ({ id: 'r1', title: '', body: '', sessionId: '', retract: true, dedupeKey });
 
 describe('useCronOsNotification 回到前台补提醒', () => {
   it('失焦到达，聚焦后恰好一条带「查看」的 toast，打开对应会话', () => {
@@ -85,5 +91,41 @@ describe('useCronOsNotification 回到前台补提醒', () => {
     focus.mockReturnValue(true);
     act(() => { window.dispatchEvent(new Event('focus')); });
     expect(useToastStore.getState().toasts).toHaveLength(0);
+  });
+
+  it('审批裁决后的 retract 到达：被撤回的 needs-input 不再补提醒，另一条失败提醒保留', () => {
+    const focus = vi.spyOn(document, 'hasFocus').mockReturnValue(false);
+    useSessionStore.setState({ currentSessionId: 'other' });
+    const open = vi.fn();
+    renderHook(() => useCronOsNotification(copy, open));
+    handlers.show!(needsInput('n1', 'sess-1', 'perm-1'));
+    handlers.show!(fail('2', 'sess-2'));
+    handlers.show!(retract('perm-1'));
+    focus.mockReturnValue(true);
+    act(() => { window.dispatchEvent(new Event('focus')); });
+    const toasts = useToastStore.getState().toasts;
+    expect(toasts).toHaveLength(1);
+    expect(toasts[0].type).toBe('error');
+    toasts[0].action!.onClick();
+    expect(open).toHaveBeenCalledWith('sess-2');
+  });
+
+  it('唯一的 needs-input 被撤回后：回来一条 toast 都不弹', () => {
+    const focus = vi.spyOn(document, 'hasFocus').mockReturnValue(false);
+    useSessionStore.setState({ currentSessionId: 'other' });
+    renderHook(() => useCronOsNotification(copy, vi.fn()));
+    handlers.show!(needsInput('n1', 'sess-1', 'perm-1'));
+    handlers.show!(retract('perm-1'));
+    focus.mockReturnValue(true);
+    act(() => { window.dispatchEvent(new Event('focus')); });
+    expect(useToastStore.getState().toasts).toHaveLength(0);
+  });
+
+  it('retract 事件本身不弹 OS 通知', () => {
+    vi.spyOn(document, 'hasFocus').mockReturnValue(true);
+    renderHook(() => useCronOsNotification(copy, vi.fn()));
+    vi.mocked(postOsNotification).mockClear();
+    handlers.show!(retract('perm-1'));
+    expect(postOsNotification).not.toHaveBeenCalled();
   });
 });

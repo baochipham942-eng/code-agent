@@ -20,6 +20,12 @@ import { getLocalBridgeClient } from '../services/localBridge';
 import { useLocalBridgeStore } from '../stores/localBridgeStore';
 import { localToolAbortRegistry } from './localToolAbortRegistry';
 import { recordTransportFailure } from './transportFailures';
+import {
+  getServerReconnectingMessage,
+  reportServerUnreachable,
+} from '../utils/serverConnectionMonitor';
+import { getServerConnectionStatus } from '../stores/serverConnectionStore';
+import { logPermissionClickExit } from '../services/permissionClickLog';
 
 type EventCallback = (...args: unknown[]) => void;
 
@@ -564,6 +570,8 @@ export function createHttpCodeAgentAPI(baseUrl: string): CommandBridgeAPI {
     };
 
     eventSource.onerror = () => {
+      // 网络层断流（服务死亡/重启）：交给连接监视器探测；短抖动不出横幅。
+      reportServerUnreachable();
       eventSource?.close();
       eventSource = null;
       // 自动重连（5s 后）
@@ -635,22 +643,33 @@ export function createHttpCodeAgentAPI(baseUrl: string): CommandBridgeAPI {
         const goal = isRecord(options) && isRecord(options.goal) ? options.goal : undefined;
         const context = typeof arg === 'object' && arg !== null ? (arg as { context?: unknown }).context : undefined;
         const clientMessageId = typeof arg === 'object' && arg !== null ? (arg as { clientMessageId?: string }).clientMessageId : undefined;
-        const response = await fetch(`${baseUrl}/api/run`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
-          body: JSON.stringify({
-            prompt,
-            ...(clientMessageId ? { clientMessageId } : {}),
-            ...(sessionId ? { sessionId } : {}),
-            ...(attachments?.length ? { attachments } : {}),
-            ...(typeof searchEnabled === 'boolean' ? { searchEnabled } : {}),
-            ...(typeof thinkingEnabled === 'boolean' ? { thinkingEnabled } : {}),
-            ...(typeof effortLevel === 'string' ? { effortLevel } : {}),
-            ...(options ? { options } : {}),
-            ...(goal ? { goal } : {}),
-            ...(context ? { context } : {}),
-          }),
-        });
+        let response: Response;
+        try {
+          response = await fetch(`${baseUrl}/api/run`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
+            body: JSON.stringify({
+              prompt,
+              ...(clientMessageId ? { clientMessageId } : {}),
+              ...(sessionId ? { sessionId } : {}),
+              ...(attachments?.length ? { attachments } : {}),
+              ...(typeof searchEnabled === 'boolean' ? { searchEnabled } : {}),
+              ...(typeof thinkingEnabled === 'boolean' ? { thinkingEnabled } : {}),
+              ...(typeof effortLevel === 'string' ? { effortLevel } : {}),
+              ...(options ? { options } : {}),
+              ...(goal ? { goal } : {}),
+              ...(context ? { context } : {}),
+            }),
+          });
+        } catch (err) {
+          // 网络层失败（无 HTTP 响应）：服务可能已死，交给连接监视器；
+          // 横幅已在（!= ok）时把 WebKit 的裸 `TypeError: Load failed` 换成人话。
+          reportServerUnreachable();
+          if (getServerConnectionStatus() !== 'ok') {
+            throw new Error(getServerReconnectingMessage(), { cause: err });
+          }
+          throw err;
+        }
 
         // 非 2xx 响应：读取错误体并抛出，避免当 SSE 流解析
         if (!response.ok) {
@@ -839,8 +858,16 @@ export function createHttpCodeAgentAPI(baseUrl: string): CommandBridgeAPI {
       }
 
       try {
-        const response = await fetch(`${baseUrl}${finalPath}`, fetchOptions);
-
+        let response: Response;
+        try {
+          response = await fetch(`${baseUrl}${finalPath}`, fetchOptions);
+        } catch (err) {
+          // 网络层失败（fetch 拒绝、无 HTTP 响应）才触发连接监视器，随后照旧落入
+          // 外层 catch 坍缩；HTTP 4xx/5xx 是服务活着时的业务错误，走 !response.ok
+          // 分支，不触发监视器。
+          reportServerUnreachable();
+          throw err;
+        }
         if (!response.ok) {
           const errorBody = await response.text();
           const errorMessage = parseHttpErrorMessage(errorBody);
@@ -857,6 +884,7 @@ export function createHttpCodeAgentAPI(baseUrl: string): CommandBridgeAPI {
           );
           recordTransportFailure(channel, response.status, errorMessage || errorBody);
           if (preservesUndeliveredPermissionEnvelope(channel)) {
+            logPermissionClickExit({ requestId: args[0] as string, stage: 'transport-send-failure', sessionId: args[2] as string, error: `审批应答发送失败 (${response.status}): ${errorMessage || errorBody}` });
             throw new PermissionSendFailure(`审批应答发送失败 (${response.status}): ${errorMessage || errorBody}`);
           }
           return normalizeIpcTransportFailure(
@@ -903,6 +931,7 @@ export function createHttpCodeAgentAPI(baseUrl: string): CommandBridgeAPI {
 
         if (preservesUndeliveredPermissionEnvelope(channel)) {
           recordTransportFailure(channel, response.status, '审批应答收到非 JSON 响应');
+          logPermissionClickExit({ requestId: args[0] as string, stage: 'transport-send-failure', sessionId: args[2] as string, error: `审批应答发送失败 (${response.status}): 非 JSON 响应` });
           throw new PermissionSendFailure(`审批应答发送失败 (${response.status}): 非 JSON 响应`);
         }
         return undefined as ReturnType<IpcInvokeHandlers[K]>;
@@ -913,6 +942,7 @@ export function createHttpCodeAgentAPI(baseUrl: string): CommandBridgeAPI {
         recordTransportFailure(channel, null, message);
         // 审批应答的其余传输异常（fetch 拒绝 / token 失效）同样上抛；其余通道照旧坍缩。
         if (preservesUndeliveredPermissionEnvelope(channel)) {
+          logPermissionClickExit({ requestId: args[0] as string, stage: 'transport-send-failure', sessionId: args[2] as string, error: err });
           throw new PermissionSendFailure(message);
         }
         return normalizeIpcTransportFailure(channel, null, message) as ReturnType<IpcInvokeHandlers[K]>;

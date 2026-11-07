@@ -70,6 +70,8 @@ export enum HostReasonCode {
   PermissionDeniedCancelled = 'PERMISSION_DENIED_CANCELLED',
   PermissionDeniedFailClosed = 'PERMISSION_DENIED_FAIL_CLOSED',
   PermissionDeniedScripted = 'PERMISSION_DENIED_SCRIPTED',
+  PermissionDeniedUserRule = 'PERMISSION_DENIED_USER_RULE',
+  PermissionDeniedSafetyRule = 'PERMISSION_DENIED_SAFETY_RULE',
   DecisionPolicy = 'DECISION_POLICY',
   DecisionGuard = 'DECISION_GUARD',
   DecisionClassifier = 'DECISION_CLASSIFIER',
@@ -122,6 +124,15 @@ export function hostReasonModelText(reason: HostReasonValue): string {
   return typeof reason === 'string' ? reason : reason.modelText;
 }
 
+/** 一次审批所属轮次的来源描述（host AgentMessageOrigin 的跨端投影，ADR-067 D3）；仅本文件投影用，不外导。 */
+interface PermissionTurnOrigin {
+  senderKind: 'user' | 'orchestrator' | 'peer-agent' | 'dependency';
+  senderAgentId?: string;
+  sessionId?: string;
+  runId?: string;
+  turnId?: string;
+}
+
 // 权限请求
 export interface PermissionRequest {
   id: string;
@@ -130,6 +141,13 @@ export interface PermissionRequest {
   agentId?: string;
   runId?: string;
   parentToolUseId?: string;
+  /**
+   * 轮次来源链（ADR-067 D3；host toolExecutor 在 ask 时透传 options.turnOrigin）。
+   * 后台代理的审批卡以 origin.runId 指回发起这次委派的运行（delegate_task 任务的
+   * id/runId 即该 runId），渲染端据此把「审批卡未决」对回具体任务
+   * （N-APPROVAL-PENDING-STATUS-COPY）。
+   */
+  turnOrigin?: PermissionTurnOrigin[];
   forceConfirm?: boolean;
   /**
    * N-RESIDENT-SCHEDULE-KEEPALIVE-DAEMON-FU1 返修 r2：forceConfirm 的成因标记。
@@ -210,6 +228,18 @@ export interface PermissionRequest {
     deniedPath?: string;
     /** 沙盒写放宽动作：sandbox_escalate_once 或 sandbox_escalate_dir_once。 */
     action?: string;
+    /**
+     * ADR-088 敏感步骤交回：这一步 Neo 永不代执行，交回用户亲手完成。有此字段 =
+     * 审批卡渲染成交回卡（reasonCode=SensitiveStepHandback），应答永不铸造任何授权。
+     * 只含展示元数据；被键入的文本绝不进任何载荷（规格 docs/architecture/sensitive-step-handback.md §3）。
+     */
+    sensitiveStep?: {
+      kind: 'password' | 'verification_code' | 'payment';
+      /** 目标元素 label（公开界面元数据，非秘密本体） */
+      elementLabel?: string;
+      /** 展示用应用名（交回卡 {app} 变量）；不是 targetApp，不参与任何授权铸造 */
+      appName?: string;
+    };
   };
   /** 人类可读原因文案（向后兼容，旧路径仍只读此字段） */
   reason?: string;
@@ -376,6 +406,8 @@ export enum PermissionRequestReason {
   NetworkEgress = 'network_egress',
   /** 调用 MCP 服务器工具 */
   McpTool = 'mcp_tool',
+  /** 敏感步骤交回用户（ADR-088：密码/验证码/支付 Neo 永不代做，交回用户亲手完成） */
+  SensitiveStepHandback = 'sensitive_step_handback',
   /** 未归类的原因（兜底；default 工具分支统一落此值，避免空白原因） */
   Unknown = 'unknown',
 }
@@ -398,6 +430,8 @@ export function permissionReasonText(code: PermissionRequestReason): string {
       return '访问外部网络资源';
     case PermissionRequestReason.McpTool:
       return '调用 MCP 服务器工具';
+    case PermissionRequestReason.SensitiveStepHandback:
+      return '敏感步骤交回用户';
     case PermissionRequestReason.Unknown:
       return '此操作需要你的确认';
     default: {

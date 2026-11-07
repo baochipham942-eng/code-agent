@@ -75,7 +75,9 @@ describe('DecisionTrace host reason rendering', () => {
         },
       },
     }} />);
-    expect(screen.getByTestId('permission-sandbox-status').textContent).toMatch(/docker_engine/);
+    // FB-746：异常 id 不再上卡，docker_engine 显示映射后的「容器引擎」。
+    expect(screen.getByTestId('permission-sandbox-status').textContent).toMatch(/容器引擎/);
+    expect(screen.getByTestId('permission-sandbox-status').textContent).not.toMatch(/docker_engine/);
     expect(screen.getByTestId('permission-sandbox-status').textContent).toMatch(/无隔离/);
   });
 });

@@ -17,6 +17,7 @@ import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { Clock3, WalletCards } from 'lucide-react';
 import { IPC_DOMAINS } from '@shared/ipc';
 import { useCronStore } from '../../../stores/cronStore';
+import { useAppStore } from '../../../stores/appStore';
 import { useI18n } from '../../../hooks/useI18n';
 import ipcService from '../../../services/ipcService';
 import { sessionAutomationClient } from '../../../services/sessionAutomationClient';
@@ -103,24 +104,30 @@ export const CronCenterPanel: React.FC<CronCenterPanelProps> = ({ onClose }) => 
   const [activeTab, setActiveTab] = useState<CronCenterTab>(
     () => (readCronSearchParam('cronTab') === 'runs' ? 'runs' : 'jobs'),
   );
+  const runsRequested = useAppStore((s) => s.cronCenterRunsRequested);
+  useEffect(() => {
+    if (!runsRequested) return;
+    setActiveTab('runs');
+    useAppStore.getState().clearCronCenterRunsRequest();
+  }, [runsRequested]);
   const [selectedExecutionId, setSelectedExecutionId] = useState<string | null>(
     () => readCronSearchParam('execution'),
   );
   // 待过目数以 IPC countPendingReview（服务侧按**任务**折算）为真源：收件箱的回传只当
   // 「列表变了，该重取了」的触发信号（回传值是按记录数，同一任务跑 3 轮会虚报 3）。
-  // IPC 失败时回落回传值并 warn 留痕，不静默吞。回调必须稳定（收件箱 effect 依赖它）。
-  const [pendingReviewCount, setPendingReviewCount] = useState(0);
-  const refreshPendingReviewCount = useCallback((inboxRecordCount: number) => {
+  // IPC 失败时保留上次值并 warn 留痕（从未成功过为 null，tile 显示破折号），不回落成假 0。
+  // 回调必须稳定（收件箱 effect 依赖它）。
+  const [pendingReviewCount, setPendingReviewCount] = useState<number | null>(null);
+  const refreshPendingReviewCount = useCallback(() => {
     void sessionAutomationClient
       .countPendingReview()
       .then((count) => {
         if (typeof count === 'number') setPendingReviewCount(count);
       })
       .catch((error) => {
-        logger.warn('Failed to load per-task pending review count, falling back to inbox record count', {
+        logger.warn('Failed to load per-task pending review count, keeping last known value', {
           errorMessage: error instanceof Error ? error.message : String(error),
         });
-        setPendingReviewCount(inboxRecordCount);
       });
   }, []);
   const [unattendedBudgetStatus, setUnattendedBudgetStatus] = useState<UnattendedBudgetStatus | null>(null);
@@ -270,7 +277,7 @@ export const CronCenterPanel: React.FC<CronCenterPanelProps> = ({ onClose }) => 
                 }`}
               >
                 {label}
-                {key === 'runs' && pendingReviewCount > 0 && (
+                {key === 'runs' && (pendingReviewCount ?? 0) > 0 && (
                   <span
                     data-testid="cron-center-runs-badge"
                     className="absolute -right-1 -top-1 rounded-full border border-badge-warning/40 bg-amber-500/20 px-1 text-[9px] leading-3 text-badge-warning"
@@ -293,8 +300,8 @@ export const CronCenterPanel: React.FC<CronCenterPanelProps> = ({ onClose }) => 
           />
           <StatusTile
             label={cc.statPendingReview}
-            value={String(pendingReviewCount)}
-            attention={pendingReviewCount > 0}
+            value={pendingReviewCount === null ? '—' : String(pendingReviewCount)}
+            attention={(pendingReviewCount ?? 0) > 0}
             testId="cron-status-pending"
           />
           <StatusTile

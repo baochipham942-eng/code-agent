@@ -28,11 +28,28 @@ import {
   buildSimpleDraft,
   compileSimpleSchedule,
 } from '../../../src/renderer/components/features/cron/CronSimpleCreate';
-import { buildCronJobInput } from '../../../src/renderer/components/features/cron/types';
+import { buildCronJobInput, buildDraftFromJob } from '../../../src/renderer/components/features/cron/types';
+import { useAppStore } from '../../../src/renderer/stores/appStore';
+
+// 与 timeInput24.test.tsx 同款：把区域钉成 en-US 十二小时制，验证 24 小时下拉不出现 AM/PM。
+function stubTwelveHourLocale(): void {
+  vi.stubGlobal('navigator', { language: 'en-US' });
+  vi.spyOn(Intl.DateTimeFormat.prototype, 'resolvedOptions').mockReturnValue({
+    locale: 'en-US',
+    calendar: 'gregory',
+    numberingSystem: 'latn',
+    timeZone: 'America/Los_Angeles',
+    hourCycle: 'h12',
+    hour12: true,
+  });
+}
 
 afterEach(() => {
   cleanup();
   vi.clearAllMocks();
+  vi.restoreAllMocks();
+  vi.unstubAllGlobals();
+  useAppStore.setState({ language: 'zh' });
 });
 
 describe('compileSimpleSchedule', () => {
@@ -190,8 +207,106 @@ describe('CronSimpleCreate', () => {
     expect(suggested).toBeGreaterThanOrEqual(1);
     expect(suggested).toBeLessThanOrEqual(59);
 
-    // 时间改成 09:17：不再撞整点，建议消失
-    fireEvent.change(screen.getByDisplayValue('09:00'), { target: { value: '09:17' } });
+    // 分钟下拉改成 17 → 09:17：不再撞整点，建议消失
+    fireEvent.change(screen.getByTestId('cron-simple-time-minute'), { target: { value: '17' } });
     expect(screen.queryByTestId('cron-stagger-hint')).toBeNull();
+  });
+
+  it('选 08:30 保存 → cron 表达式 30 8 * * *（小时/分钟下拉驱动）', async () => {
+    createJob.mockImplementation(async (input) => ({
+      ...(input as object),
+      id: 'new-job-830',
+      createdAt: 1,
+      updatedAt: 1,
+    } as CronJobDefinition));
+    const onDone = vi.fn();
+    render(<CronSimpleCreate onDone={onDone} />);
+    fireEvent.change(screen.getByPlaceholderText(/竞品动态/), {
+      target: { value: '每天八点半盯竞品' },
+    });
+    fireEvent.change(screen.getByTestId('cron-simple-time-hour'), { target: { value: '08' } });
+    fireEvent.change(screen.getByTestId('cron-simple-time-minute'), { target: { value: '30' } });
+    fireEvent.click(screen.getByText('创建自动化'));
+    await waitFor(() => {
+      expect(onDone).toHaveBeenCalled();
+    });
+    const submitted = createJob.mock.calls[0][0] as CronJobDefinition;
+    expect(submitted.schedule).toEqual({ type: 'cron', expression: '30 8 * * *', timezone: undefined });
+  });
+
+  it('en-US h12 区域下时间选择器仍是 24 小时双下拉，无 AM/PM、无原生 time 输入', () => {
+    stubTwelveHourLocale();
+    const { container } = render(<CronSimpleCreate onDone={() => undefined} />);
+
+    expect(container.querySelector('input[type="time"]')).toBeNull();
+    const picker = screen.getByTestId('cron-simple-time');
+    const selects = picker.querySelectorAll('select');
+    expect(selects.length).toBe(2);
+    const hour = screen.getByTestId('cron-simple-time-hour') as HTMLSelectElement;
+    const minute = screen.getByTestId('cron-simple-time-minute') as HTMLSelectElement;
+    expect(hour.value).toBe('09');
+    expect(minute.value).toBe('00');
+    expect(document.body.textContent).not.toMatch(/AM|PM/);
+  });
+
+  it.each([
+    ['zh', '紧急判据（可选）', /老板发来的邮件/, '设置后，非今日必办'],
+    ['en', 'Urgency rule (optional)', /only mail from my boss/, 'With a rule set, non-urgent runs'],
+  ] as const)('本地模式显示紧急判据字段（%s）', (language, label, placeholder, hint) => {
+    useAppStore.setState({ language });
+    render(<CronSimpleCreate onDone={() => undefined} />);
+    const input = screen.getByTestId('cron-simple-urgency-criteria') as HTMLInputElement;
+    expect(screen.getByText(label)).toBeTruthy();
+    expect(input.placeholder).toMatch(placeholder);
+    expect(document.body.textContent).toContain(hint);
+  });
+
+  async function submitWith(goalText: string, urgency?: string, cloudFirst = false) {
+    createJob.mockImplementation(async (input) => ({
+      ...(input as object), id: 'j', createdAt: 1, updatedAt: 1,
+    } as CronJobDefinition));
+    const onDone = vi.fn();
+    render(<CronSimpleCreate onDone={onDone} />);
+    fireEvent.change(screen.getByPlaceholderText(/竞品动态/), { target: { value: goalText } });
+    if (urgency !== undefined) {
+      fireEvent.change(screen.getByTestId('cron-simple-urgency-criteria'), { target: { value: urgency } });
+    }
+    if (cloudFirst) fireEvent.click(screen.getByTestId('cron-runs-on-cloud'));
+    fireEvent.click(screen.getByText('创建自动化'));
+    await waitFor(() => expect(onDone).toHaveBeenCalled());
+    return createJob.mock.calls[0][0] as CronJobDefinition;
+  }
+
+  it('填写判据 → createJob action 带 trim 后的 urgencyCriteria，且能回读到编辑器 draft', async () => {
+    const submitted = await submitWith('盯邮件', '  只有老板发来的邮件算今天必须处理  ');
+    expect(submitted.action).toMatchObject({ type: 'agent', urgencyCriteria: '只有老板发来的邮件算今天必须处理' });
+    const loaded = buildDraftFromJob({ ...submitted, id: 'j', createdAt: 1, updatedAt: 1 });
+    expect(loaded.agentUrgencyCriteria).toBe('只有老板发来的邮件算今天必须处理');
+  });
+
+  it('留空 → action 没有 urgencyCriteria 键', async () => {
+    const submitted = await submitWith('盯邮件');
+    expect(submitted.action).toHaveProperty('urgencyCriteria', undefined);
+    // 线上序列化后键不存在
+    expect(Object.keys(JSON.parse(JSON.stringify(submitted.action)))).not.toContain('urgencyCriteria');
+  });
+
+  it('选云端 → 字段隐藏，且先前输入的判据不进 payload', async () => {
+    createJob.mockImplementation(async (input) => ({
+      ...(input as object), id: 'j', createdAt: 1, updatedAt: 1,
+    } as CronJobDefinition));
+    const onDone = vi.fn();
+    render(<CronSimpleCreate onDone={onDone} />);
+    fireEvent.change(screen.getByPlaceholderText(/竞品动态/), { target: { value: '云端简报' } });
+    fireEvent.change(screen.getByTestId('cron-simple-urgency-criteria'), { target: { value: '只看老板' } });
+    fireEvent.click(screen.getByTestId('cron-runs-on-cloud'));
+    expect(screen.queryByTestId('cron-simple-urgency-criteria')).toBeNull();
+    fireEvent.click(screen.getByText('创建自动化'));
+    await waitFor(() => expect(onDone).toHaveBeenCalled());
+    const submitted = createJob.mock.calls[0][0] as CronJobDefinition;
+    expect(submitted.runsOn).toBe('cloud');
+    expect(submitted.action).toHaveProperty('urgencyCriteria', undefined);
+    // 线上序列化后键不存在
+    expect(Object.keys(JSON.parse(JSON.stringify(submitted.action)))).not.toContain('urgencyCriteria');
   });
 });

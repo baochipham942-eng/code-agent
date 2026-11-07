@@ -14,6 +14,21 @@ function filesystemCode(error: unknown): string | undefined {
     : undefined;
 }
 
+/** Single path-component limit (bytes) on macOS/Linux; a longer name cannot exist on disk. */
+const NAME_MAX_BYTES = 255;
+
+/**
+ * ENAMETOOLONG proves "does not exist" only when the failing component itself
+ * exceeds NAME_MAX. A whole path over PATH_MAX says nothing about deeper
+ * entries (a real tree plus symlinks can live there), so that stays fail-closed.
+ */
+export function isNonexistentPathCode(code: string | undefined, component?: string): boolean {
+  if (code === 'ENOENT' || code === 'ENOTDIR') return true;
+  return code === 'ENAMETOOLONG'
+    && component !== undefined
+    && Buffer.byteLength(component) > NAME_MAX_BYTES;
+}
+
 /** Canonicalize existing ancestors while preserving a not-yet-created suffix. */
 export function canonicalizeWorkspacePath(input: string, depth = 0): string {
   const resolved = path.resolve(input);
@@ -33,12 +48,12 @@ export function canonicalizeWorkspacePath(input: string, depth = 0): string {
       cursor = next;
     } catch (error) {
       const code = filesystemCode(error);
-      if (code !== 'ENOENT' && code !== 'ENOTDIR') throw error;
+      if (!isNonexistentPathCode(code, parts[index])) throw error;
       try {
         return path.resolve(realpathSync.native(cursor), ...parts.slice(index));
       } catch (realpathError) {
         const realpathCode = filesystemCode(realpathError);
-        if (realpathCode !== 'ENOENT' && realpathCode !== 'ENOTDIR') throw realpathError;
+        if (!isNonexistentPathCode(realpathCode)) throw realpathError;
         return path.resolve(cursor, ...parts.slice(index));
       }
     }

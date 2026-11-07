@@ -35,6 +35,7 @@ const GOLDEN_PROVIDERS = [
   "xiaomi",
   "xiaomi",
   "xiaomi",
+  "xiaomi",
   "longcat",
   "custom"
 ] as const;
@@ -280,6 +281,14 @@ const GOLDEN_EXPECTED_COST_USD = [
     "allFour": 0.099,
     "zero": 0,
     "large": 1.335
+  },
+  {
+    "inputOutput": 0,
+    "cacheRead": 0,
+    "cacheCreation": 0,
+    "allFour": 0,
+    "zero": 0,
+    "large": 0
   },
   {
     "inputOutput": 0,

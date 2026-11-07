@@ -29,7 +29,7 @@ function decisionRowClass(decision: CronEventDecision['decision']): string {
 }
 
 export const CronEventDecisionsPanel: React.FC<{ job: CronJobDefinition }> = ({ job }) => {
-  const { t } = useI18n();
+  const { t, language } = useI18n();
   const copy = t.cronCenter.eventActionMode;
   const setEventActionMode = useCronStore((state) => state.setEventActionMode);
   const mode = resolveCronEventActionMode(job) ?? 'observe';
@@ -87,7 +87,7 @@ export const CronEventDecisionsPanel: React.FC<{ job: CronJobDefinition }> = ({ 
             : copy.eventLabel.replace('{id}', row.eventId ?? '')}
         </span>
         {row.target && <span className="text-zinc-500">{copy.targetLabel.replace('{target}', row.target)}</span>}
-        <span className="ml-auto text-zinc-600">{formatDateTime(row.createdAt)}</span>
+        <span className="ml-auto text-zinc-600">{formatDateTime(row.createdAt, language)}</span>
       </div>
       <div className="mt-1 text-zinc-400">{row.reason}</div>
       {row.matchedRule && (
@@ -128,7 +128,7 @@ export const CronEventDecisionsPanel: React.FC<{ job: CronJobDefinition }> = ({ 
       {switchError && <div className="mt-2 text-xs text-badge-danger" role="alert">{switchError}</div>}
       {modeChange && (
         <div className="mt-2 text-xs text-zinc-500" data-testid="cron-action-mode-change">
-          {copy.changeLog.replace('{time}', formatDateTime(modeChange.at))
+          {copy.changeLog.replace('{time}', formatDateTime(modeChange.at, language))
             .replace('{from}', copy[modeChange.from])
             .replace('{to}', copy[modeChange.to])}
         </div>

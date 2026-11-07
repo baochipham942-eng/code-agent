@@ -604,18 +604,12 @@ async function initializeServices(): Promise<void> {
   }
   bootMark('model-marks');
 
-  // 4.5 Loop 启动收口（N-LOOP-DURABLE 刀1 + 修复棒）：归属进程已确认消失的 loop 残留
-  // 在 session_automations 里永远停在 running，侧栏徽标继续谎报「运行中」。
-  // 在 renderer 连上来之前把残留收成终态并发一条人话通知（判据 = loopOwnership
-  // 进程归属戳，别的进程还在跑的不动）；只收口，不恢复续跑。
-  try {
-    const { markInterruptedLoops } = await import('../host/loop/loopStartupRecovery');
-    const lost = await markInterruptedLoops();
-    if (lost > 0) logger.info(`Loop startup recovery: ${lost} interrupted loop(s) marked as lost`);
-  } catch (error) {
-    logger.warn('Loop startup recovery failed (non-blocking):', (error as Error).message);
-  }
+  // 4.5 Loop 残留收口 + 孤儿任务夹清扫（实现见 startupSweeps.ts）
+  const { runStartupSweeps } = await import('./startupSweeps');
+  await runStartupSweeps(logger);
   bootMark('loop-recovery');
+  // 4.5b Swarm trace 启动收口（N-STALE-AGENT-CHIP-AFTER-QUIT A）：上一进程遗留的 running run 收 cancelled，细节见 swarmTraceStartupRecovery。
+  await import('../host/agent/swarmTraceStartupRecovery').then(({ runSwarmTraceStartupRecovery }) => runSwarmTraceStartupRecovery());
 
   // Capability migration needs initialized settings and message history. Activation still
   // finishes before IPC registration and before the agent runtime can settle a turn.
@@ -812,6 +806,7 @@ async function initializeServices(): Promise<void> {
   // 「保持聊天同步」：auth 已恢复缓存用户（owner scope 才对），不 await；E2E 不跑。
   if (process.env.CODE_AGENT_E2E !== '1') {
     void import('../host/externalImport/chatsAutoSync').then((m) => m.startChatsAutoSync(() => broadcastSSE(IPC_CHANNELS.SESSION_LIST_UPDATED, undefined)));
+    void import('../host/externalImport/skillsAutoSync').then((m) => m.startSkillsAutoSync());
   }
 
   // 8. Log Bridge + P3-A 只读任务状态 provider。

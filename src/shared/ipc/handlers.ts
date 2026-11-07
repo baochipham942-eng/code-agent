@@ -638,6 +638,10 @@ export interface NotificationShowEvent {
   urgent?: boolean;
   /** 仅任务失败：聚焦时 renderer 额外补应用内错误 toast。needs-input 虽 urgent 但不是失败，不带此标。 */
   failure?: boolean;
+  /** needs-input 通知的去重键（审批请求 id）。审批裁决后 host 按它广播 retract 撤回。 */
+  dedupeKey?: string;
+  /** 撤回事件：按 dedupeKey 撤掉 renderer 侧「离开期间的提醒」队列里那条 needs-input；不弹任何 OS 通知。 */
+  retract?: boolean;
 }
 
 export type MCPEventType = 'connection_errors' | 'server_connected' | 'server_disconnected' | 'capabilities_changed';

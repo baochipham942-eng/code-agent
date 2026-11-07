@@ -56,6 +56,14 @@ export const sessionAutomationClient = {
     );
   },
 
+  getVoidedApprovalReason(sessionId: string) {
+    return ipcService.invokeDomain<string | null>(
+      IPC_DOMAINS.SESSION_AUTOMATION,
+      'getVoidedApprovalReason',
+      { sessionId },
+    );
+  },
+
   listParkedApprovals() {
     return ipcService.invokeDomain<ParkedApprovalInboxItem[]>(
       IPC_DOMAINS.SESSION_AUTOMATION,

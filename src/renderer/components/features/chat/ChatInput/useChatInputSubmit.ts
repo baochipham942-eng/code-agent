@@ -64,6 +64,7 @@ import { openSideChat as openSideChatLayer } from '../sideChatFloaterState';
 import { parseBtwCommand } from './parseBtwCommand';
 import { shouldClearComposerAfterSend } from './utils';
 import type { ComposerDraftSendOutcome } from './composerDraftStore';
+import { useComposerRejectedUploadsStore } from '../../../../stores/composerRejectedUploadsStore';
 
 type VoiceInputContextValue = {
   anchor: string;
@@ -104,6 +105,12 @@ export interface UseChatInputSubmitParams {
   artifactReferences?: ConversationArtifactReference[];
   currentSessionId: string | null;
   isProcessing?: boolean;
+  /**
+   * 定时任务运行记录会话（readOnly + origin cron/heartbeat）：发送永远走 onSend
+   * （fork 出新对话投递），绝不排进本会话的 queued_inputs——运行记录一行不改。
+   * 运行中在记录会话里发话也一样：排队会把消息写进记录会话。
+   */
+  neverQueueToSession?: boolean;
   disabled?: boolean;
   isUploading: boolean;
   onSend: (envelope: ConversationEnvelope) => boolean | Promise<boolean>;
@@ -112,6 +119,8 @@ export interface UseChatInputSubmitParams {
   onComposerDraftOptimisticClear?: () => void;
   /** Drop the stored draft only after success (onSend true or a queued row persisted). */
   onComposerDraftSendSettled?: (outcome: ComposerDraftSendOutcome) => void;
+  /** 草稿被提交清空的瞬间回调（FB-586：@ 面板借它随手关闭，别盖住后面的确认卡）。 */
+  onDraftCleared?: () => void;
   onQueuedInputChanged?: () => void;
   agentEntries: Parameters<typeof parseAgentSlashCommand>[1];
   buildEnvelope: BuildEnvelope;
@@ -193,12 +202,14 @@ export function useChatInputSubmit(params: UseChatInputSubmitParams) {
     artifactReferences = [],
     currentSessionId,
     isProcessing,
+    neverQueueToSession,
     disabled,
     isUploading,
     onSend,
     onSteer,
     onComposerDraftOptimisticClear,
     onComposerDraftSendSettled,
+    onDraftCleared,
     onQueuedInputChanged,
     agentEntries,
     buildEnvelope,
@@ -227,6 +238,13 @@ export function useChatInputSubmit(params: UseChatInputSubmitParams) {
     discardPendingScheduleDraft = () => undefined,
     setCreatingSchedule = () => undefined,
   } = scheduleDraft ?? {};
+
+  // 提交链路统一从这里清草稿：程序化 setValue('') 不经 handleValueChange，@ 面板
+  // 收不到任何信号会留在原地（FB-586），所以清空的同时把 onDraftCleared 叫上。
+  const clearDraft = useCallback(() => {
+    setValue('');
+    onDraftCleared?.();
+  }, [onDraftCleared, setValue]);
 
   // 版本同时绑定能力选择和会话；handoff 保留同一轮版本，切槽或再选择都会失效。
   const captureSuccessfulSendReset = useCallback(() => {
@@ -383,7 +401,7 @@ export function useChatInputSubmit(params: UseChatInputSubmitParams) {
     useSessionStore.getState().addMessage(buildGoalNoticeMessage({ kind: 'start', goal: parsed.goal }));
     addToInputHistory(historyEntry);
     onComposerDraftOptimisticClear?.();
-    setValue('');
+    clearDraft();
     discardPendingResendClientMessageId(pendingResendClientMessageIdRef);
     setAttachments([]);
     closeGoalConfirm();
@@ -403,7 +421,7 @@ export function useChatInputSubmit(params: UseChatInputSubmitParams) {
       if (currentSessionId) useAppStore.getState().clearGoalRun(currentSessionId);
       return false;
     }
-  }, [addToInputHistory, attachments, buildEnvelope, captureSuccessfulSendReset, closeGoalConfirm, currentSessionId, onComposerDraftOptimisticClear, onComposerDraftSendSettled, onSend, pendingResendClientMessageIdRef, setAttachments, setValue]);
+  }, [addToInputHistory, attachments, buildEnvelope, captureSuccessfulSendReset, clearDraft, closeGoalConfirm, currentSessionId, onComposerDraftOptimisticClear, onComposerDraftSendSettled, onSend, pendingResendClientMessageIdRef, setAttachments]);
 
   // 处理提交
   // 运行中允许提交，把新输入排到当前回复结束后发送。
@@ -433,7 +451,7 @@ export function useChatInputSubmit(params: UseChatInputSubmitParams) {
         // 成员条上 × 掉的待命成员随启动传给 host，显示口径 = 实际起团口径
         const excludeMemberKeys = useComposerStore.getState().standbyExcludedMemberKeys;
         addToInputHistory(trimmedValue);
-        setValue('');
+        clearDraft();
         discardPendingResend();
         useComposerStore.getState().setSelectedTeamRecipeId(null);
         const result = currentSessionId
@@ -462,7 +480,7 @@ export function useChatInputSubmit(params: UseChatInputSubmitParams) {
       }
       if (!currentSessionId) return;
       addToInputHistory(commandValue);
-      setValue('');
+      clearDraft();
       discardPendingResend();
       clearPendingCommand();
       setVoiceInputContext(null);
@@ -482,7 +500,7 @@ export function useChatInputSubmit(params: UseChatInputSubmitParams) {
     const compactCommand = parseCompactCommand(commandValue);
     if (compactCommand) {
       addToInputHistory(commandValue);
-      setValue('');
+      clearDraft();
       discardPendingResend();
       clearPendingCommand();
       setVoiceInputContext(null);
@@ -504,7 +522,7 @@ export function useChatInputSubmit(params: UseChatInputSubmitParams) {
       const parsed = parseScheduleCommand(commandValue);
       if (!parsed?.description) {
         // 不带描述 → 打开对话式创建卡片（解释怎么运作 + 模板/自定义），而非直接报错
-        setValue('');
+        clearDraft();
         discardPendingResend();
         clearPendingCommand();
         closeGoalConfirm();
@@ -512,7 +530,7 @@ export function useChatInputSubmit(params: UseChatInputSubmitParams) {
         return;
       }
       addToInputHistory(commandValue);
-      setValue('');
+      clearDraft();
       discardPendingResend();
       clearPendingCommand();
       setVoiceInputContext(null);
@@ -534,7 +552,7 @@ export function useChatInputSubmit(params: UseChatInputSubmitParams) {
         return;
       }
       addToInputHistory(commandValue);
-      setValue('');
+      clearDraft();
       discardPendingResend();
       clearPendingCommand();
       setVoiceInputContext(null);
@@ -574,7 +592,7 @@ export function useChatInputSubmit(params: UseChatInputSubmitParams) {
     if (isGoalCommand(commandValue)) {
       const rawParsed = parseGoalCommand(commandValue);
       if (!rawParsed || shouldOpenGoalConfirm(rawParsed)) {
-        setValue('');
+        clearDraft();
         discardPendingResend();
         clearPendingCommand();
         setScheduleComposerOpen(false);
@@ -589,7 +607,7 @@ export function useChatInputSubmit(params: UseChatInputSubmitParams) {
 
     const seedComposerKind = getBareSeedComposerKind(commandValue);
     if (seedComposerKind) {
-      setValue('');
+      clearDraft();
       discardPendingResend();
       clearPendingCommand();
       setScheduleComposerOpen(false);
@@ -615,7 +633,7 @@ export function useChatInputSubmit(params: UseChatInputSubmitParams) {
       selectedAgentOverride = { id: null, name: 'Default', token: 'default', via: 'agent_command' };
       contentToSend = agentCommand.content;
       if (!contentToSend && attachments.length === 0) {
-        setValue('');
+        clearDraft();
         discardPendingResend();
         setVoiceInputContext(null);
         toast.info(t.agentCommand.restoredAuto);
@@ -640,7 +658,7 @@ export function useChatInputSubmit(params: UseChatInputSubmitParams) {
       };
       contentToSend = agentCommand.content;
       if (!contentToSend && attachments.length === 0) {
-        setValue('');
+        clearDraft();
         discardPendingResend();
         setVoiceInputContext(null);
         toast.info(`${t.agentCommand.switchedToPrefix}${agentCommand.agent.name || agentCommand.agent.id}`);
@@ -706,9 +724,10 @@ export function useChatInputSubmit(params: UseChatInputSubmitParams) {
       }
       // Hold the stored draft across this clear. Only a success outcome deletes it.
       onComposerDraftOptimisticClear?.();
-      setValue('');
+      clearDraft();
       setVoiceInputContext(null);
       setAttachments([]);
+      useComposerRejectedUploadsStore.getState().clear();
       setPendingPromptCommand(null);
       setPendingAgentSelection(null);
       if (typeof setSessionReferences === 'function') setSessionReferences([]);
@@ -732,7 +751,7 @@ export function useChatInputSubmit(params: UseChatInputSubmitParams) {
           generateMessageId,
         );
         const stamped: ConversationEnvelope = { ...envelope, clientMessageId };
-        if (isProcessing && !opts?.steer && !opts?.toBackground) {
+        if (isProcessing && !neverQueueToSession && !opts?.steer && !opts?.toBackground) {
           if (!currentSessionId) return false;
           const queuedEnvelope: ConversationEnvelope = {
             ...stamped,

@@ -2,6 +2,7 @@
 
 import { outcomeWordsEn, outcomeWordsZh } from './outcomeWords';
 import type { EventScheduleValidationReason } from '@shared/cronEventValidation';
+import { cronPermissionDeniedReasonText } from '@shared/cronPermissionDenied';
 // 自动化面板词条（features/cron 全家桶）—— zh/en 同文件相邻维护。
 // 独立文件避免 zh.ts/en.ts 撞 max-lines 棘轮（同 sidebar.ts / chatInput.ts 先例）。
 // 注：types.ts 里的 formatActionSummary/formatDateTime 等格式化函数文案暂未迁移
@@ -53,6 +54,7 @@ export const cronCenterZh = {
     awaitingApprovalBadge: '等你批准',
     awaitingApprovalHint: '有一个运行中的任务正等你批准操作，处理前它会一直停在这里。',
     awaitingApprovalAction: '去处理',
+    awaitingApprovalWithPreview: '等你批准：{preview}',
     nextRun: '下次 {time}',
     locationFilterAll: '全部',
     locationLocal: '本地',
@@ -87,6 +89,8 @@ export const cronCenterZh = {
     cloudExecutionNotWired: '云端执行尚未接线（N-L3-MINLOOP-SRV）',
     unsupportedAction: '该类任务暂不支持',
     runBudgetExceeded: '本次执行超过了任务的 {amount} 美元预算上限',
+    runTimeExceeded: '本次执行超过了任务的 {seconds} 秒时限',
+    runBudgetStopped: '超预算停车 · 花费 ${spent} / 上限 ${cap}',
     loginWallWarning: '这个任务会访问可能需要登录的网站 {site}。请在 Neo 浏览器中登录，定时运行才能继续。',
     loginWallNotificationTitle: '需要重新登录',
     loginWallNotificationBody: '请在 Neo 浏览器中登录 {site}，然后下一次定时运行才能继续。',
@@ -110,6 +114,16 @@ export const cronCenterZh = {
     failureActionRunAgain: '立即重跑',
     failureActionCheckAccount: '检查账号设置',
     failureTechnical: '查看技术详情',
+    // 需处理（N-CRON-RUN-COMPLETED-BUT-DENIED）：被拒且无产出的运行不算「成功」。
+    permissionDeniedBadge: '需处理',
+    permissionDeniedTitle: '有命令没获批准',
+    permissionDeniedSentence: '「{summary}」没有获批准（{reason}），这次运行没有产出。',
+    // 四条原因措辞与 host 完成通知同源（shared/cronPermissionDenied，Rework r2）
+    permissionDeniedReasonUser: cronPermissionDeniedReasonText('user', 'zh'),
+    permissionDeniedReasonTimeout: cronPermissionDeniedReasonText('timeout', 'zh'),
+    permissionDeniedReasonCancelled: cronPermissionDeniedReasonText('cancelled', 'zh'),
+    permissionDeniedReasonOther: cronPermissionDeniedReasonText('other', 'zh'),
+    permissionDeniedRerunNote: '重新运行会再次请求批准',
     // 触发源 chip（键 = utils/cronHumanize 的 CronTriggerKind，语义对齐 SessionAutomationType）
     triggerKind: {
       cron: '定时',
@@ -184,6 +198,7 @@ export const cronCenterZh = {
     roleWakeNoModel: '无模型调用',
     execError: '错误',
     execResult: '结果',
+    execStopReason: '为什么停了',
     // 简单创建流（A3）
     simpleTitle: '添加自动化',
     simpleGoalLabel: '想让 Neo 定期做什么',
@@ -313,6 +328,8 @@ export const cronCenterZh = {
     freqHourly: '每隔几小时',
     freqOnce: '只跑一次',
     simpleTimeLabel: '时间',
+    simpleHourLabel: '小时',
+    simpleMinuteLabel: '分钟',
     simpleIntervalLabel: '间隔（小时）',
     simpleOnceAtLabel: '执行时间',
     simpleWeekdayLabel: '星期几',
@@ -356,6 +373,7 @@ export const cronCenterZh = {
     parkedReject: '拒绝',
     parkedExternalBadge: '对外操作',
     parkedOrphaned: '已过期（应用重启）',
+    parkedVoidedLabel: '已作废',
     parkedResolveStale: '该审批已失效（发起它的运行已结束），已标记过期',
     parkedResolveFailed: '操作没有生效，请重试',
     parkedWaiting: '等待 {duration}',
@@ -428,6 +446,15 @@ export const cronCenterZh = {
         unavailable: '未判定',
       },
     },
+    // 任务详情 · 文件写入授权（N-RESIDENT-SCHEDULE-KEEPALIVE-DAEMON-FU1）
+    writeScope: {
+      label: '文件写入',
+      granted: '已允许在 {folder} 里保存文件',
+      notAllowed: '不允许。需要保存文件时会停下来等你确认。',
+      allow: '允许在 {folder} 里保存文件',
+      revoke: '撤销',
+      noFolderHint: '先在对话里给这个任务选一个工作文件夹，才能授权它保存文件。',
+    },
     // 执行状态（键 = CronJobStatus + none）
     status: {
       pending: '待执行',
@@ -484,6 +511,7 @@ export const cronCenterEn: typeof cronCenterZh = {
     awaitingApprovalBadge: 'Needs your approval',
     awaitingApprovalHint: 'A running task is waiting for your approval; it stays parked until you review it.',
     awaitingApprovalAction: 'Review',
+    awaitingApprovalWithPreview: 'Needs your approval: {preview}',
     nextRun: 'Next {time}',
     locationFilterAll: 'All',
     locationLocal: 'Local',
@@ -518,6 +546,8 @@ export const cronCenterEn: typeof cronCenterZh = {
     cloudExecutionNotWired: 'Cloud execution is not wired yet (N-L3-MINLOOP-SRV)',
     unsupportedAction: 'This task type is not supported yet.',
     runBudgetExceeded: 'This run exceeded the task budget limit of ${amount}',
+    runTimeExceeded: 'This run exceeded the task time limit of {seconds}s',
+    runBudgetStopped: 'Stopped over budget · spent ${spent} / cap ${cap}',
     loginWallWarning: 'This task visits a site that may require login: {site}. Log in using the Neo browser before the scheduled run.',
     loginWallNotificationTitle: 'Login needed',
     loginWallNotificationBody: 'Log in to {site} in the Neo browser before the next scheduled run can continue.',
@@ -540,6 +570,14 @@ export const cronCenterEn: typeof cronCenterZh = {
     failureActionRunAgain: 'Run again now',
     failureActionCheckAccount: 'Check account settings',
     failureTechnical: 'Technical details',
+    permissionDeniedBadge: 'Needs attention',
+    permissionDeniedTitle: 'A command was not approved',
+    permissionDeniedSentence: '“{summary}” was not approved ({reason}); this run produced nothing.',
+    permissionDeniedReasonUser: cronPermissionDeniedReasonText('user', 'en'),
+    permissionDeniedReasonTimeout: cronPermissionDeniedReasonText('timeout', 'en'),
+    permissionDeniedReasonCancelled: cronPermissionDeniedReasonText('cancelled', 'en'),
+    permissionDeniedReasonOther: cronPermissionDeniedReasonText('other', 'en'),
+    permissionDeniedRerunNote: 'Running it again will ask for approval again',
     triggerKind: {
       cron: 'Scheduled',
       at: 'One-time',
@@ -610,6 +648,7 @@ export const cronCenterEn: typeof cronCenterZh = {
     roleWakeNoModel: 'No model call',
     execError: 'Error',
     execResult: 'Result',
+    execStopReason: 'Why it stopped',
     simpleTitle: 'New automation',
     simpleGoalLabel: 'What should Neo do on schedule',
     simpleGoalPlaceholder: 'e.g. Read competitor updates I follow and write a brief',
@@ -736,6 +775,8 @@ export const cronCenterEn: typeof cronCenterZh = {
     freqHourly: 'Every N hours',
     freqOnce: 'Just once',
     simpleTimeLabel: 'Time',
+    simpleHourLabel: 'Hour',
+    simpleMinuteLabel: 'Minute',
     simpleIntervalLabel: 'Interval (hours)',
     simpleOnceAtLabel: 'Run at',
     simpleWeekdayLabel: 'Day of week',
@@ -775,6 +816,7 @@ export const cronCenterEn: typeof cronCenterZh = {
     parkedReject: 'Reject',
     parkedExternalBadge: 'External',
     parkedOrphaned: 'Expired (app restarted)',
+    parkedVoidedLabel: 'Voided',
     parkedResolveStale: 'This approval is stale (its run has ended) and was marked expired',
     parkedResolveFailed: 'That did not go through — please retry',
     parkedWaiting: 'Waiting {duration}',
@@ -840,6 +882,14 @@ export const cronCenterEn: typeof cronCenterZh = {
         dropped: 'Dropped',
         unavailable: 'Unavailable',
       },
+    },
+    writeScope: {
+      label: 'File writing',
+      granted: 'Allowed to save files in {folder}',
+      notAllowed: 'Not allowed. It will stop and wait for you when it needs to save a file.',
+      allow: 'Allow saving files in {folder}',
+      revoke: 'Revoke',
+      noFolderHint: 'Pick a working folder for this task in chat first.',
     },
     status: {
       pending: 'Pending',

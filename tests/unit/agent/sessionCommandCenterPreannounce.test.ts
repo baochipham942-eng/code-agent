@@ -134,6 +134,81 @@ describe('delegate_task preannounce 端到端管线（真实候选能力块 + �
     });
     expect(preview).toContain('研究 React 的最新版本');
   });
+
+  // 台账②三种形状（rework r2）：extractUserRequest 取不出可靠原话时，preannounce
+  // 只能说固定句，不得拿脚手架片段凑数。三个形状都走真实 notice + 真实包装管线。
+  const FIXED_SENTENCE = '我先把这项任务交给后台执行，完成后回到这里交付结果。';
+
+  function expectNoScaffoldFragment(preview: string): void {
+    expect(preview).not.toContain('统计内容');
+    expect(preview).not.toContain('里的用户原话');
+    expect(preview).not.toContain('background_capability_stats');
+  }
+
+  it('形状a：</user_request> 结束标签后还带内容 → 固定句，不引用脚手架', () => {
+    seedAboveFoldCandidate();
+    const notice = buildCapabilityCandidateNotice('s-shape-trailing');
+    expect(notice).not.toBeNull();
+    const wrapped = wrapWithTurnSystemContext([notice as string], '帮我研究 React 的最新版本');
+    // 生产面不会产出这种形状（所有生产者都把包装体放在最末），这是防御形状：
+    // 结束标签之后又被拼了一段脚手架内容。
+    const withTrailing = `${wrapped}\n\n<turn_workbench_context>工作台偏好原文</turn_workbench_context>`;
+
+    const preview = emitCommandCenterToolStart({
+      toolName: 'delegate_task',
+      commandCenterEnabled: true,
+      streamedContent: '',
+      existingPreannounce: '',
+      userMessage: withTrailing,
+      emitPreview: () => {},
+      emitToolStart: () => {},
+    });
+    console.log('[preannounce-shape-a-trailing]', preview);
+    expect(preview).toBe(FIXED_SENTENCE);
+    expectNoScaffoldFragment(preview);
+  });
+
+  it('形状b：嵌套包装（已包装消息再被整条包一层）→ 固定句', () => {
+    seedAboveFoldCandidate();
+    const notice = buildCapabilityCandidateNotice('s-shape-nested');
+    expect(notice).not.toBeNull();
+    const once = wrapWithTurnSystemContext([notice as string], '帮我研究 React 的最新版本');
+    const twice = wrapWithTurnSystemContext(['<turn_workbench_context>工作台偏好原文</turn_workbench_context>'], once);
+
+    const preview = emitCommandCenterToolStart({
+      toolName: 'delegate_task',
+      commandCenterEnabled: true,
+      streamedContent: '',
+      existingPreannounce: '',
+      userMessage: twice,
+      emitPreview: () => {},
+      emitToolStart: () => {},
+    });
+    console.log('[preannounce-shape-b-nested]', preview);
+    expect(preview).toBe(FIXED_SENTENCE);
+    expectNoScaffoldFragment(preview);
+  });
+
+  it('形状c：没有包装但脚手架块在 → 固定句', () => {
+    seedAboveFoldCandidate();
+    const notice = buildCapabilityCandidateNotice('s-shape-unwrapped');
+    expect(notice).not.toBeNull();
+    // 块直接拼在原话前、没有 <user_request> 包装（未走 wrap 的防御形状）
+    const bare = `${notice}\n\n帮我研究 React 的最新版本`;
+
+    const preview = emitCommandCenterToolStart({
+      toolName: 'delegate_task',
+      commandCenterEnabled: true,
+      streamedContent: '',
+      existingPreannounce: '',
+      userMessage: bare,
+      emitPreview: () => {},
+      emitToolStart: () => {},
+    });
+    console.log('[preannounce-shape-c-unwrapped]', preview);
+    expect(preview).toBe(FIXED_SENTENCE);
+    expectNoScaffoldFragment(preview);
+  });
 });
 
 describe('session command center renderer-visible preannounce', () => {

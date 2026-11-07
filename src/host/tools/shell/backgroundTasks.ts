@@ -43,6 +43,7 @@ export interface TaskState {
   cwd: string;
   sessionId?: string;
   toolCallId?: string;
+  ownerAgentId?: string;
   sandboxed?: boolean;
   onExit?: () => void;
 }
@@ -54,6 +55,7 @@ export interface TaskInfo {
   cwd: string;
   sessionId?: string;
   toolCallId?: string;
+  ownerAgentId?: string;
   startTime: number;
   endTime?: number;
   duration: number;
@@ -72,6 +74,8 @@ export interface TaskOutput {
 export interface StartBackgroundTaskOptions {
   sessionId?: string;
   toolCallId?: string;
+  ownerAgentId?: string;
+  displayCommand?: string;
   env?: NodeJS.ProcessEnv;
   sandboxed?: boolean;
   onExit?: () => void;
@@ -117,6 +121,11 @@ function isTaskStatus(value: unknown): value is TaskState['status'] {
   return value === 'running' || value === 'completed' || value === 'failed';
 }
 
+function normalizeOwnerAgentId(value: string | undefined): string | undefined {
+  const ownerAgentId = value?.trim();
+  return ownerAgentId && ownerAgentId !== 'primary' ? ownerAgentId : undefined;
+}
+
 function parsePersistedTask(value: unknown): PersistedTask | null {
   if (!isRecord(value)) return null;
   const taskId = readString(value, 'taskId');
@@ -128,7 +137,11 @@ function parsePersistedTask(value: unknown): PersistedTask | null {
   if (!taskId || !command || !cwd || startTime === null || !outputFile || !isTaskStatus(status)) {
     return null;
   }
-  return { taskId, command, cwd, startTime, outputFile, status };
+  const ownerAgentId = normalizeOwnerAgentId(readString(value, 'ownerAgentId') ?? undefined);
+  return {
+    taskId, command, cwd, startTime, outputFile, status,
+    ...(ownerAgentId ? { ownerAgentId } : {}),
+  };
 }
 
 function parsePersistedTasks(value: unknown): PersistedTask[] {
@@ -163,6 +176,7 @@ function toTaskInfo(task: TaskState): TaskInfo {
     cwd: task.cwd,
     sessionId: task.sessionId,
     toolCallId: task.toolCallId,
+    ...(task.ownerAgentId ? { ownerAgentId: task.ownerAgentId } : {}),
     startTime: task.startTime,
     endTime: task.endTime,
     duration: (task.endTime || Date.now()) - task.startTime,
@@ -225,6 +239,7 @@ function registerBackgroundTaskProcess(
   const taskId = uuidv4();
   const outputFile = getTaskOutputPath(taskId);
   const outputStream = fs.createWriteStream(outputFile, { flags: 'w' });
+  const ownerAgentId = normalizeOwnerAgentId(options.ownerAgentId);
   const taskState: TaskState = {
     taskId,
     process: proc,
@@ -235,11 +250,12 @@ function registerBackgroundTaskProcess(
     startTime: options.startedAt ?? Date.now(),
     maxRuntime: Math.min(maxRuntime, BACKGROUND_TASK_MAX_RUNTIME),
     outputSize: 0,
-    command,
+    command: options.displayCommand ?? command,
     lastReadPosition: 0,
     cwd,
     sessionId: options.sessionId,
     toolCallId: options.toolCallId,
+    ...(ownerAgentId ? { ownerAgentId } : {}),
     sandboxed: options.sandboxed,
     onExit: options.onExit,
   };
@@ -516,6 +532,7 @@ interface PersistedTask {
   startTime: number;
   outputFile: string;
   status: 'running' | 'completed' | 'failed';
+  ownerAgentId?: string;
 }
 
 function getPersistenceFile(): string {
@@ -538,6 +555,7 @@ export function persistRunningTasks(): void {
         startTime: task.startTime,
         outputFile: task.outputFile,
         status: task.status,
+        ...(task.ownerAgentId ? { ownerAgentId: task.ownerAgentId } : {}),
       });
     }
   }

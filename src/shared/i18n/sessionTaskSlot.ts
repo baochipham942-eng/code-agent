@@ -63,8 +63,12 @@ const systemPromptHint = {
   en: 'A system permission prompt may still be on screen; dismiss it or choose Don\'t Allow.',
 } as const;
 
+export function getSystemPromptHint(locale: SessionTaskSlotLocale): string {
+  return systemPromptHint[locale];
+}
+
 function withSystemPromptHint(text: string, locale: SessionTaskSlotLocale, flag?: boolean): string {
-  return flag ? `${text}${locale === 'zh' ? '。' : '. '}${systemPromptHint[locale]}` : text;
+  return flag ? `${text}${locale === 'zh' ? '。' : '. '}${getSystemPromptHint(locale)}` : text;
 }
 
 export function formatSessionCommandTaskIdleFailure(input: {

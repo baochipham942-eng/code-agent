@@ -43,6 +43,7 @@ export function reportSubagentLeftoverShells(
   );
   if (tasks.length === 0) return '';
   const items: SubagentLeftoverShellReportItem[] = tasks.map((task) => {
+    const reportCommand = task.displayCommand ?? task.command;
     logger.warn('Subagent ended with a background shell still running', {
       agentId: executionAgentId,
       taskId: task.taskId,
@@ -50,10 +51,10 @@ export function reportSubagentLeftoverShells(
       reason,
     });
     return {
-      commandSummary: commandSummary(task.command),
+      commandSummary: commandSummary(reportCommand),
       taskId: task.taskId,
       elapsedMs: task.duration,
-      mayAwaitSystemPrompt: mayCommandAwaitSystemPrompt(task.command),
+      mayAwaitSystemPrompt: mayCommandAwaitSystemPrompt(reportCommand),
     };
   });
   return formatSubagentLeftoverShellReport(items, resolveLocale(executionAgentId));

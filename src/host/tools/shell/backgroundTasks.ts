@@ -35,6 +35,7 @@ export interface TaskState {
   maxRuntime: number;
   outputSize: number;
   command: string;
+  displayCommand?: string;
   exitCode?: number;
   lastReadPosition: number;
   /** 主超时定时器 */
@@ -52,6 +53,7 @@ export interface TaskInfo {
   taskId: string;
   status: 'running' | 'completed' | 'failed';
   command: string;
+  displayCommand?: string;
   cwd: string;
   sessionId?: string;
   toolCallId?: string;
@@ -173,6 +175,7 @@ function toTaskInfo(task: TaskState): TaskInfo {
     taskId: task.taskId,
     status: task.status,
     command: task.command,
+    displayCommand: task.displayCommand,
     cwd: task.cwd,
     sessionId: task.sessionId,
     toolCallId: task.toolCallId,
@@ -250,7 +253,8 @@ function registerBackgroundTaskProcess(
     startTime: options.startedAt ?? Date.now(),
     maxRuntime: Math.min(maxRuntime, BACKGROUND_TASK_MAX_RUNTIME),
     outputSize: 0,
-    command: options.displayCommand ?? command,
+    command,
+    displayCommand: options.displayCommand,
     lastReadPosition: 0,
     cwd,
     sessionId: options.sessionId,

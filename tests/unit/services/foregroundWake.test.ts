@@ -22,6 +22,8 @@ const manager = {
   getOrCreateCurrentOrchestrator: vi.fn(() => orchestrator),
   setSessionContext: vi.fn(),
   setWorkingDirectory: vi.fn(),
+  on: vi.fn(),
+  onRunIdle: vi.fn(),
 };
 const wakeLogger = {
   info: vi.fn(),
@@ -64,6 +66,7 @@ function dependencies(overrides: Partial<ForegroundWakeDependencies> = {}): Fore
     loadSession: vi.fn(async () => session),
     hasQueuedUserInput: vi.fn(() => false),
     isVoiceSession: vi.fn(() => false),
+    recordWakeFailureNote: vi.fn(async () => undefined),
     logger: wakeLogger,
     ...overrides,
   };
@@ -116,7 +119,7 @@ describe('foreground task-result wake', () => {
     await wake(task(), 'completed');
     expect(sendMessage).not.toHaveBeenCalled();
     expect(wakeLogger.info).toHaveBeenCalledWith(
-      'Foreground wake skipped: session busy',
+      'Foreground wake deferred: session busy',
       expect.objectContaining({ sessionId: 'session-a' }),
     );
   });
@@ -150,10 +153,29 @@ describe('foreground task-result wake', () => {
     );
   });
 
-  it('propagates orchestrator failure for the settle hook to log without blocking settlement', async () => {
+  it('swallows a failed wake turn, logs the cause and records a plain-language note', async () => {
     sendMessage.mockRejectedValueOnce(new Error('model unavailable'));
-    const wake = createForegroundWake(dependencies());
-    await expect(wake(task(), 'completed')).rejects.toThrow('model unavailable');
+    const recordWakeFailureNote = vi.fn(async () => undefined);
+    const noted = createForegroundWake(dependencies({ recordWakeFailureNote }));
+    await expect(noted(task(), 'completed')).resolves.toBeUndefined();
+    expect(wakeLogger.warn).toHaveBeenCalledWith(
+      'Foreground wake failed: wake turn failed',
+      expect.objectContaining({ message: 'model unavailable' }),
+    );
+    expect(recordWakeFailureNote).toHaveBeenCalledWith(
+      'session-a',
+      expect.stringContaining('任务结果'),
+      { taskId: 'task-1', reason: 'wake_failed' },
+    );
+  });
+
+  it('logs owner-missing wake failures under a distinct reason', async () => {
+    sendMessage.mockRejectedValueOnce(new Error('Durable Run run-1 has no live owner lease'));
+    await createForegroundWake(dependencies())(task(), 'completed');
+    expect(wakeLogger.warn).toHaveBeenCalledWith(
+      'Foreground wake failed: owner missing',
+      expect.objectContaining({ taskId: 'task-1' }),
+    );
   });
 
   // N-SUBAGENT-INPUT：用户绕过团长直接给任务补过话，收工摘要要带一句让团长汇总时不漏

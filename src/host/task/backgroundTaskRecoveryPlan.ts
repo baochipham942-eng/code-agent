@@ -1,4 +1,8 @@
 import type { TaskStatus } from '../../shared/contract/backgroundTask';
+import {
+  type SessionTaskSlotLocale,
+  withAutomationPromptTimeoutHint,
+} from '../../shared/i18n/sessionTaskSlot';
 
 export interface BackgroundTaskRecoveryPlan {
   status:
@@ -22,6 +26,8 @@ export function buildBackgroundTaskRecoveryPlan(args: {
   recoveryStatus: string;
   outputFile?: string;
   exitCode?: number;
+  automationPromptLikely?: boolean;
+  locale?: SessionTaskSlotLocale;
 }): BackgroundTaskRecoveryPlan {
   const hasLog = Boolean(args.outputFile);
   const logActions = hasLog ? ['open_log' as const] : [];
@@ -78,12 +84,17 @@ export function buildBackgroundTaskRecoveryPlan(args: {
 
   if (args.status === 'failed') {
     const exitCode = args.exitCode != null ? `退出码 ${args.exitCode}，` : '';
+    const summary = hasLog
+      ? `任务失败，${exitCode}可打开日志后重跑。`
+      : `任务失败，${exitCode}可按原命令重跑。`;
     return {
       status: 'failed',
       recoverable: false,
-      summary: hasLog
-        ? `任务失败，${exitCode}可打开日志后重跑。`
-        : `任务失败，${exitCode}可按原命令重跑。`,
+      summary: withAutomationPromptTimeoutHint(
+        summary,
+        args.locale ?? 'zh',
+        args.automationPromptLikely,
+      ),
       recommendedActions: hasLog ? ['open_log', 'retry'] : ['retry'],
       controlActions: [...logActions, 'retry'],
       ...(args.outputFile ? { logPath: args.outputFile } : {}),

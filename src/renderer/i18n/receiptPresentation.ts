@@ -21,6 +21,17 @@ export const receiptPresentationZh = {
       },
       unknownTool: '工具',
     },
+    roleCapabilityLabels: {
+      readAndFindFiles: '读取和查找文件',
+      writeAndEditFiles: '写入和编辑文件',
+      runCommands: '运行命令',
+      searchTheWeb: '联网搜索',
+      openWebPages: '打开网页',
+      rememberAndRecall: '记住和回想',
+      otherAbility: '其他 {count} 项能力',
+      otherAbilities: '其他 {count} 项能力',
+      separator: '、',
+    },
   },
 };
 
@@ -46,6 +57,17 @@ export const receiptPresentationEn: typeof receiptPresentationZh = {
         memorySearch: 'Memory search',
       },
       unknownTool: 'Tool',
+    },
+    roleCapabilityLabels: {
+      readAndFindFiles: 'Read and find files',
+      writeAndEditFiles: 'Write and edit files',
+      runCommands: 'Run commands',
+      searchTheWeb: 'Search the web',
+      openWebPages: 'Open web pages',
+      rememberAndRecall: 'Remember and recall',
+      otherAbility: '{count} other ability',
+      otherAbilities: '{count} other abilities',
+      separator: ', ',
     },
   },
 };

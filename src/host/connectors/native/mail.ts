@@ -5,7 +5,9 @@
 import fs from 'fs';
 import type { Connector, ConnectorExecutionResult, ConnectorStatus } from '../base';
 import {
+  describeAppleScriptFailure,
   escapeAppleScriptString,
+  isAppleScriptFailure,
   parseAppleScriptDate,
   runAppleScript,
   sharedAppleScriptHandlers,
@@ -74,7 +76,9 @@ function parseLine(line: string): string[] {
 }
 
 function errorMessage(error: unknown): string {
-  return error instanceof Error ? error.message : String(error);
+  return isAppleScriptFailure(error)
+    ? describeAppleScriptFailure('Mail', error).message
+    : error instanceof Error ? error.message : String(error);
 }
 
 function buildMailStatus(capabilities: string[]): ConnectorStatus {

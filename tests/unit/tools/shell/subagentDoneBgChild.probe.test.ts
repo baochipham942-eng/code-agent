@@ -19,8 +19,12 @@ posixOnly('subagent-done background child probe', () => {
     for (const id of taskIds.splice(0)) await killBackgroundTask(id);
   });
 
-  it('keeps the child alive and the ledger running, with parent session id and no owner-agent field', async () => {
-    const started = startBackgroundTask('sleep 7313', tmpdir(), 60_000, { sessionId: 'parent-session', toolCallId: 'call_1' });
+  it('keeps the child alive and records the owning sub-agent without assigning primary', async () => {
+    const started = startBackgroundTask('sleep 7313', tmpdir(), 60_000, {
+      sessionId: 'parent-session',
+      toolCallId: 'call_1',
+      ownerAgentId: 'probe-agent',
+    });
     expect(started.success).toBe(true);
     taskIds.push(started.taskId!);
     // The "agent completion" step has no reaping hook; simply let time pass as the probe does.
@@ -29,7 +33,16 @@ posixOnly('subagent-done background child probe', () => {
     expect(row.status).toBe('running');
     expect(row.sessionId).toBe('parent-session');
     expect(row.toolCallId).toBe('call_1');
-    expect(Object.keys(row).filter((key) => /agent|owner/i.test(key))).toEqual([]);
+    expect(row.ownerAgentId).toBe('probe-agent');
+
+    const primary = startBackgroundTask('sleep 7314', tmpdir(), 60_000, {
+      sessionId: 'parent-session',
+      ownerAgentId: 'primary',
+    });
+    expect(primary.success).toBe(true);
+    taskIds.push(primary.taskId!);
+    expect(getAllBackgroundTasks().find((task) => task.taskId === primary.taskId))
+      .not.toHaveProperty('ownerAgentId');
   });
 
   it('probe script asserts the premise and exits non-zero when it does not hold', () => {

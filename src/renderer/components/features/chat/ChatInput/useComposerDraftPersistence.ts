@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import {
+  COMPOSER_DRAFT_ADOPTED_EVENT,
   COMPOSER_DRAFT_DEBOUNCE_MS,
   COMPOSER_DRAFT_SEND_TIMEOUT_MS,
   composerDraftPreview,
@@ -74,6 +75,12 @@ export function useComposerDraftPersistence(args: {
       writer.dispose();
       if (writerRef.current === writer) writerRef.current = null;
     };
+  }, []);
+
+  useEffect(() => {
+    const onAdopted = () => setStored(readComposerDraft(keyRef.current));
+    window.addEventListener(COMPOSER_DRAFT_ADOPTED_EVENT, onAdopted);
+    return () => window.removeEventListener(COMPOSER_DRAFT_ADOPTED_EVENT, onAdopted);
   }, []);
 
   useEffect(() => {

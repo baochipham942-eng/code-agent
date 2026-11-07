@@ -62,7 +62,11 @@ function runStatusClass(status: RunUiStatus): string {
 /** run.status（RunUiStatus）不是 TaskRecord['status']，两套枚举不共用同一份
  * 翻译表——running/completed/blocked/cancelled 复用既有 rw.status* 键，
  * planning/waiting_approval/using_tools/verifying 是 RunUiStatus 独有值。 */
-export function getRunUiStatusLabel(status: RunUiStatus, t: Translations): string {
+export function getRunUiStatusLabel(
+  status: RunUiStatus,
+  t: Translations,
+  terminalReason?: RunUiState['terminalReason'],
+): string {
   const rw = t.taskStatusPanels.runWorkbench;
   switch (status) {
     case 'completed':
@@ -70,7 +74,9 @@ export function getRunUiStatusLabel(status: RunUiStatus, t: Translations): strin
     case 'blocked':
       return rw.statusBlocked;
     case 'cancelled':
-      return t.outcomeWords['cancelled-by-user'].badge.label;
+      return terminalReason === 'idle_reaped'
+        ? t.outcomeWords['failed-idle-reaped'].badge.label
+        : t.outcomeWords['cancelled-by-user'].badge.label;
     case 'waiting_approval':
       return rw.statusWaitingApproval;
     case 'using_tools':
@@ -117,7 +123,9 @@ export const RunOverview = ({ model, onOpenMemory }: RunOverviewProps) => {
   const runBlockedHint = run.blockedReason
     || (run.blockedReasonCategory ? t.taskPanel.taskBlockedReason[run.blockedReasonCategory] : null);
   const terminalReason = run.status === 'cancelled'
-    ? t.outcomeWords['cancelled-by-user'].badge.reason
+    ? (run.terminalReason === 'idle_reaped'
+      ? t.outcomeWords['failed-idle-reaped'].badge.reason
+      : t.outcomeWords['cancelled-by-user'].badge.reason)
     : null;
 
   return (
@@ -134,7 +142,7 @@ export const RunOverview = ({ model, onOpenMemory }: RunOverviewProps) => {
               <span className="truncate text-xs text-zinc-300">{run.phase}</span>
             ) : (
               <span className={`rounded-md border px-1.5 py-0.5 text-[10px] font-medium ${runStatusClass(run.status)}`}>
-                {getRunUiStatusLabel(run.status, t)}
+                {getRunUiStatusLabel(run.status, t, run.terminalReason)}
               </span>
             )}
             {run.activeToolName && (
@@ -188,8 +196,9 @@ function getTaskStatusClass(status: TaskRecord['status']): string {
   }
 }
 
-function getTaskStatusLabel(status: TaskRecord['status'], t: Translations): string {
+function getTaskStatusLabel(status: TaskRecord['status'], t: Translations, failed?: boolean): string {
   const rw = t.taskStatusPanels.runWorkbench;
+  if (failed && status === 'blocked') return t.outcomeWords['failed-unknown'].badge.label;
   switch (status) {
     case 'in_progress':
       return rw.statusRunning;
@@ -269,7 +278,7 @@ export const TaskDashboardSummary = ({
         >
           <Loader2 className="h-3.5 w-3.5 flex-shrink-0 animate-spin text-badge-info" />
           <span className={`rounded-md border px-1.5 py-0.5 text-[10px] font-medium ${runStatusClass(run.status)}`}>
-            {getRunUiStatusLabel(run.status, t)}
+            {getRunUiStatusLabel(run.status, t, run.terminalReason)}
           </span>
           <span className="min-w-0 flex-1 truncate text-xs text-zinc-200">{run.phase}</span>
           {run.activeToolName && (
@@ -419,7 +428,7 @@ const TaskRecordRow = ({
             data-testid="task-record-status"
             data-task-status={rail.status}
           >
-            {getTaskStatusLabel(rail.status, t)}
+            {getTaskStatusLabel(rail.status, t, rail.failed)}
           </span>
           <span className="min-w-0 flex-1 truncate text-xs text-zinc-200">{rail.title}</span>
         </div>
@@ -468,7 +477,7 @@ const TaskChecklistHeader = ({ rail }: { rail: ReturnType<typeof deriveTaskRailV
         data-testid="task-record-status"
         data-task-status={rail.status}
       >
-        {getTaskStatusLabel(rail.status, t)}
+        {getTaskStatusLabel(rail.status, t, rail.failed)}
       </span>
       {waitingOnUser ? (
         <span className="min-w-0 flex-1 truncate text-xs text-zinc-200">{rail.title}</span>

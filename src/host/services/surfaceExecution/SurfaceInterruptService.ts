@@ -1,6 +1,7 @@
 import type { SurfaceGrantSubjectV1 } from './SurfaceAccessGrantService';
 import { SurfaceExecutionRuntimeError } from './SurfaceExecutionRuntimeError';
 import { SurfaceSessionManager } from './SurfaceSessionManager';
+import { forgetBrowserTakeoverCapExpired, WAITING_HUMAN_MODEL_GUIDANCE } from './browserHumanTakeoverWait';
 
 interface ActiveOperation {
   subject: SurfaceGrantSubjectV1;
@@ -37,7 +38,7 @@ export class SurfaceInterruptService {
     if (session.state !== 'running') {
       throw new SurfaceExecutionRuntimeError({
         code: session.state === 'stopping' ? 'SURFACE_USER_ABORTED' : 'SURFACE_SESSION_BUSY',
-        message: `Surface session cannot start an operation while ${session.state}.`,
+        message: `Surface session cannot start an operation while ${session.state}.` + (session.state === 'waiting_human' ? ` ${WAITING_HUMAN_MODEL_GUIDANCE}` : ''),
         phase: 'prepare',
         retryable: session.state === 'paused' || session.state === 'waiting_human',
         userActionRequired: session.state === 'waiting_human',
@@ -118,6 +119,8 @@ export class SurfaceInterruptService {
       throw this.controlError(subject, 'resume', session.provider, session.surface, session.state);
     }
     this.sessions.transition(subject.sessionId, subject, 'running');
+    // 用户按继续回到 running：清掉 cap-expired 记忆，新一轮 takeover 重新完整等待。
+    forgetBrowserTakeoverCapExpired(subject.sessionId);
   }
 
   async takeover(subject: SurfaceGrantSubjectV1): Promise<void> {

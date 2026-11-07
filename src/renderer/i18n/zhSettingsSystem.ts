@@ -73,6 +73,13 @@ export const zhSettingsSystem = {
         cacheClearedPrefix: '已清理 ',
         cacheClearedSuffix: ' 条本地缓存记录',
       },
+      cacheRetention: {
+        failedPermission: '有 {count} 项应用缓存删不掉：没有删除权限。可在访达里检查数据文件夹权限后重试',
+        failedOther: '有 {count} 项应用缓存删不掉，这次清理没有完成。可稍后重试',
+        openFolder: '打开数据文件夹',
+        retry: '重试',
+        details: '详细信息',
+      },
       persistence: {
         title: '历史持久化不可用',
         degradedTitle: '存储已降级',
@@ -285,6 +292,7 @@ export const zhSettingsSystem = {
     webModeBanner: {
       desktopOnlyFeature: '部分功能仅在桌面版可用',
       desktopOnlyLabel: '(桌面版)',
+      channelsManageDesktopOnly: 'Web 版只能查看通道账号和状态；添加、连接/断开、编辑、删除请在桌面版 Agent Neo 里操作。',
     },
     nativeDesktop: {
       meetingAppNames: [

@@ -688,6 +688,31 @@ export const zhSettingsWork = {
         delete: '删除',
         evidence: '证据',
         noEvidence: '无证据记录',
+        sourceSession: {
+          open: '打开来源会话',
+          missing: '来源会话已不存在，无法跳转',
+          probeFailed: '无法确认来源会话是否还在',
+          opening: '正在打开来源会话…',
+        },
+        history: {
+          title: '变更历史',
+          empty: '暂无变更记录',
+          failed: '变更历史读取失败',
+          operationLabels: { create: '创建', update: '更新', delete: '删除', evict: '清退' },
+          actorLabels: {
+            user_manual: '手动', auto_review: '自动审阅', role_wake: '角色唤醒',
+            dream: '后台整理', eviction: '自动清理', import: '导入', unknown: '未知来源',
+          },
+          undo: {
+            button: '撤回', confirmTitle: '撤回这次改写？',
+            confirmBody: '将把这条记忆恢复为改写前的内容，其后的新改动会被覆盖；历史记录仍完整保留。',
+            previewLabel: '恢复内容预览：',
+            truncatedReason: '改写前快照被截断，无法完整恢复', noSnapshotReason: '没有改写前快照，无法恢复',
+            unresolvableReason: '恢复失败：该条目当前无法定位',
+            success: '已撤回这次改写，恢复为改写前的内容', failed: '撤回失败',
+          },
+        },
+        backgroundWriteBadge: '后台写入',
         selectToEdit: '选择一条记忆后编辑。',
         batchReview: {
           selection: '选择',
@@ -882,6 +907,12 @@ export const zhSettingsWork = {
           on: '开',
           off: '关',
         },
+      },
+      outboundMask: {
+        title: '出云密钥掩码',
+        description: '默认关闭。开启后，发给模型厂商的请求里密钥、登录令牌（Bearer）、银行卡号和邮箱地址会换成占位符，回复里再换回真实值；聊天界面始终显示真实值。',
+        label: '发往模型厂商前掩码密钥',
+        body: '往对话里粘贴 .env、密钥、登录令牌、银行卡号或邮箱地址时，厂商请求体里只会出现占位符，本机收到回复后自动还原。掩码失败时该次请求不会发出。',
       },
       evaluation: {
         title: '评测反馈池钩子',

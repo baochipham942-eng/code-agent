@@ -36,6 +36,8 @@ import { BackgroundSessionPanel } from './features/background';
 import { SessionRecapBanner } from './features/chat/SessionRecapBanner';
 import { RoleFirstWakeThreadBanner } from './features/chat/RoleFirstWakeCard';
 import { ForkSourceHint } from './features/chat/ForkSourceHint';
+import { CronRunSessionIntro } from './features/chat/CronRunSessionIntro';
+import { CronRunSessionStatusBar } from './features/chat/CronRunSessionStatusBar';
 import { ChatTraceFallback } from './features/chat/ChatTraceFallback';
 import { ErrorBoundary } from './ErrorBoundary';
 import { ActiveConversationRewindBanner } from './features/chat/ActiveConversationRewindBanner';
@@ -72,7 +74,6 @@ import { SemanticResearchIndicator } from './features/chat/SemanticResearchIndic
 import { RewindPanel } from './RewindPanel';
 // Pending PermissionCard lives in the fixed DecisionSlot above ChatInput.
 import type {
-  AgentEventEnvelope,
   AppSettings,
   Message,
   MessageAttachment,
@@ -80,7 +81,6 @@ import type {
   TaskPlan,
   UserQuestionRequest,
 } from '../../shared/contract';
-import type { QueuedInputActivatedEvent } from '@shared/contract/queuedInput';
 import { generateMessageId } from '@shared/utils/id';
 import type { RewindConversationResult } from '@shared/contract/sessionRewind';
 import type { TurnCheckoutResult } from '@shared/contract/turnCheckout';
@@ -109,6 +109,9 @@ import {
   type AssistantFeedbackState,
 } from '../utils/sendWithImmediateAssistantFeedback';
 import { isChatSendAccepted } from '../utils/chatSendState';
+import { useImportedSessionResumeSend } from '../hooks/useImportedSessionResume';
+import { useCronRunFollowUpSend } from '../hooks/useCronRunFollowUpSend';
+import { useAssistantFeedbackEvents } from './features/chat/useAssistantFeedbackEvents';
 import { DurableResumeNotice, suppressLegacyInterruptionDecision, useDurableContinueVisible, useDurableResumeContinuation, useGuardedDurableContinue } from './features/chat/durableResume';
 import { QuotaWaitNotice } from './features/chat/quotaWaitNotice';
 import { ConnectorRequiredCards } from './features/chat/connectorRequiredCard';
@@ -124,6 +127,8 @@ export const ChatView: React.FC = () => {
   const effortLevelExplicit = useModeStore((state) => state.effortLevelExplicit);
   const appWorkingDirectory = useAppStore((state) => state.workingDirectory);
   const setAppWorkingDirectory = useAppStore((state) => state.setWorkingDirectory);
+  // 首次醒来卡可见时，空会话的欢迎空态让位（RoleFirstWakeCard 挂载时写入）
+  const firstWakeCardRoleId = useAppStore((state) => state.firstWakeCardRoleId);
   const setComposerWorkingDirectory = useComposerStore((state) => state.setWorkingDirectory);
   const viewingMemberId = useMemberViewStore((state) => state.viewingMemberId);
   const setTaskPlan = useAppStore((state) => state.setTaskPlan);
@@ -223,6 +228,8 @@ export const ChatView: React.FC = () => {
   const messageActionUnregister = useMessageActionStore((s) => s.unregister);
   const messagesRef = useRef(messages);
   messagesRef.current = messages;
+  // 稳定访问器：导入会话的发送包装按需现读消息（引用恒定，避免下游 effect 重订阅）。
+  const getVisibleMessagesForSend = useCallback(() => messagesRef.current, []);
   const chatInputRef = useRef<ChatInputHandle>(null);
   useEffect(() => {
     messageActionRegister(
@@ -461,9 +468,28 @@ export const ChatView: React.FC = () => {
   // virtuoso 每渲染在 layout effect 里全量发布 props，发布即通知订阅者
   // （useSyncExternalStore → forceStoreRerender），于是"ChatView 渲染"被放大成
   // 同步嵌套更新；只要上游有一条高频重渲染源，就会打满 React 的 50 层嵌套上限。
+  // 定时任务运行记录的首气泡上方另挂一行「定时任务自动运行」小标
+  // （N-UI-CRON-RUN-RECORD-CLEAR），与分叉提示共用同一 memo 槽位。
   const forkSourceHint = React.useMemo(
-    () => <ForkSourceHint sessionId={currentSessionId} />,
+    () => (
+      <>
+        <CronRunSessionIntro sessionId={currentSessionId} />
+        <ForkSourceHint sessionId={currentSessionId} />
+      </>
+    ),
     [currentSessionId],
+  );
+  const isCronRunSession = useSessionStore((state) => {
+    if (!currentSessionId) return false;
+    const kind = state.sessions?.find((session) => session.id === currentSessionId)?.origin?.kind;
+    return kind === 'cron' || kind === 'heartbeat';
+  });
+  // 同一 memo 纪律：状态行也是 itemContent 依赖（首条用户消息下方），
+  // 数据轮询/计时都收在组件内部，这里的引用只随会话切换变化。非定时运行会话传 undefined，
+  // 让 TurnCard 知道只有定时运行首轮才由外部状态行接管过程与用时。
+  const cronRunStatusBar = React.useMemo(
+    () => (currentSessionId && isCronRunSession) ? <CronRunSessionStatusBar sessionId={currentSessionId} /> : undefined,
+    [currentSessionId, isCronRunSession],
   );
   const projection = React.useMemo(
     () => applyVoicePartialsToProjection(
@@ -480,6 +506,13 @@ export const ChatView: React.FC = () => {
       voiceCallPhase, voiceCallSessionId, voicePartialUser, voicePartialAssistant, voiceStartedAt,
     ],
   );
+  // EmptySessionArea 真正展示 NewSessionWelcome 的同一条件。专家空态已经把 pending
+  // wake proposals 画成起手卡，此时顶部 banner 必须让位，避免同一提议出现两次。
+  const isEmptySessionWelcomeVisible = projection.turns.length === 0
+    && !isHydratingSession
+    && Boolean(currentSessionId)
+    && !isSessionLoading
+    && !firstWakeCardRoleId;
 
   useEffect(() => {
     recordStreamingPerformanceCounter('stream.projection.base_commit');
@@ -621,56 +654,18 @@ export const ChatView: React.FC = () => {
     skippedQuestionSessionId,
   ]);
 
-  useEffect(() => {
-    const unsubscribeActivated = ipcService.on(
-      IPC_CHANNELS.QUEUED_INPUT_ACTIVATED,
-      (activation: QueuedInputActivatedEvent) => {
-        setPendingAssistantFeedback((current) => transitionAssistantFeedback(current, {
-          type: 'durable_activated',
-          clientMessageId: activation.id,
-          sessionId: activation.sessionId,
-        }));
-      },
-    );
-    const unsubscribeAgentEvent = ipcService.on('agent:event', (event: AgentEventEnvelope) => {
-      const eventType: string = event.type;
-      const eventSessionId = event.sessionId
-        ?? (event.data && typeof event.data === 'object' && 'sessionId' in event.data
-          ? String(event.data.sessionId)
-          : undefined);
-      if (!eventSessionId) return;
-      if (eventType === 'task_start') {
-        const clientMessageId = event.data && typeof event.data === 'object'
-          && 'clientMessageId' in event.data && typeof event.data.clientMessageId === 'string'
-          ? event.data.clientMessageId
-          : undefined;
-        if (!clientMessageId) return;
-        setPendingAssistantFeedback((current) => transitionAssistantFeedback(current, {
-          type: 'durable_activated',
-          clientMessageId,
-          sessionId: eventSessionId,
-        }));
-        return;
-      }
-      if (eventType === 'message_delta') {
-        setPendingAssistantFeedback((current) => transitionAssistantFeedback(current, {
-          type: 'model_delta',
-          sessionId: eventSessionId,
-        }));
-        return;
-      }
-      if (eventType === 'error' || eventType === 'agent_cancelled' || eventType === 'stream_end' || eventType === 'agent_complete') {
-        setPendingAssistantFeedback((current) => transitionAssistantFeedback(current, {
-          type: eventType === 'agent_complete' ? 'run_finished' : 'send_failed',
-          sessionId: eventSessionId,
-        }));
-      }
-    });
-    return () => {
-      unsubscribeActivated?.();
-      unsubscribeAgentEvent?.();
-    };
-  }, []);
+  // 导入的外部历史会话：发送即 fork 出 Neo 原生子会话再投递（原记录只读）。
+  const handleSendEnvelopeWithImportResume = useImportedSessionResumeSend(
+    handleSendEnvelope,
+    getVisibleMessagesForSend,
+  );
+  // 定时任务运行记录会话：发送同样 fork 出子会话带走任务+结果再投递（原记录只读）。
+  const handleSendEnvelopeWithCronFollowUp = useCronRunFollowUpSend(
+    handleSendEnvelopeWithImportResume,
+    getVisibleMessagesForSend,
+  );
+
+  useAssistantFeedbackEvents(setPendingAssistantFeedback);
 
   useEffect(() => {
     setPendingAssistantFeedback(null);
@@ -686,8 +681,8 @@ export const ChatView: React.FC = () => {
   }, [currentSessionId, streamSnapshot?.turnId]);
 
   const handleSendMessage = useCallback(async (content: string, attachments?: MessageAttachment[]) => {
-    return handleSendEnvelope(buildEnvelope(content, attachments));
-  }, [buildEnvelope, handleSendEnvelope]);
+    return handleSendEnvelopeWithCronFollowUp(buildEnvelope(content, attachments));
+  }, [buildEnvelope, handleSendEnvelopeWithCronFollowUp]);
 
   const durableContinue = useGuardedDurableContinue(durableResume?.interruptCause, useDurableResumeContinuation(currentSessionId));
   const showDurableContinue = useDurableContinueVisible(durableResume, effectiveIsProcessing);
@@ -736,20 +731,20 @@ export const ChatView: React.FC = () => {
       kind: 'start',
       goal: start.goalText,
     }));
-    void handleSendEnvelope(start.envelope).then((sent) => {
+    void handleSendEnvelopeWithCronFollowUp(start.envelope).then((sent) => {
       if (!sent) {
         useAppStore.getState().clearGoalRun(currentSessionId);
       }
     }).catch(() => {
       useAppStore.getState().clearGoalRun(currentSessionId);
     });
-  }, [pendingProjectGoalChatSeed, currentSessionId, effectiveIsProcessing, buildEnvelope, handleSendEnvelope]);
+  }, [pendingProjectGoalChatSeed, currentSessionId, effectiveIsProcessing, buildEnvelope, handleSendEnvelopeWithCronFollowUp]);
 
   // 项目协作空间底部输入框：composer 已建好新会话、乐观上屏首条用户消息（落地即在
   // 时间线上）并落 seed（完整 envelope，clientMessageId 与乐观消息同 id）。
   // 消费端抽到 useProjectChatSeed（可单测）：目标会话就绪后把 envelope 真正发给 agent
   // （sendMessage 按 id 去重不双份）；发送失败回滚乐观消息。
-  useProjectChatSeedConsumption({ currentSessionId, effectiveIsProcessing, handleSendEnvelope });
+  useProjectChatSeedConsumption({ currentSessionId, effectiveIsProcessing, handleSendEnvelope: handleSendEnvelopeWithCronFollowUp });
 
   const handleRequestPromptRewind = useCallback((messageId: string, content: string) => {
     if (!currentSessionId) return;
@@ -896,7 +891,7 @@ export const ChatView: React.FC = () => {
 
         <SurfaceExecutionChatPanel conversationId={currentSessionId} />
 
-        <RoleFirstWakeThreadBanner />
+        <RoleFirstWakeThreadBanner suppressWakeProposals={isEmptySessionWelcomeVisible} />
 
         {/* Messages - Turn-based trace view（查看某位成员时整块换成他的对话）
             负 margin 把主栏让出的滚动条窄带要回：Virtuoso 滚动条摆进窄带，
@@ -910,17 +905,23 @@ export const ChatView: React.FC = () => {
             // 三态分明（工单 2026-08-01）：加载中（hydration 未完）→ 骨架屏；
             // 真空会话（hydration 完成且零消息）→ #874 的「继续上次的会话」空态；
             // 冷启动未定会话 → 空白占位。加载中绝不能误渲染成空态/欢迎页。
+            // 首次醒来卡在场时空态让位（2026-11-05 owner 返修）：不要再叠
+            // 「继续上次的会话」标题和四张起手卡，卡消失后恢复原空态。
             <EmptySessionArea
               isHydratingSession={isHydratingSession}
               settled={!!currentSessionId && !isSessionLoading}
-              welcome={
+              welcome={isEmptySessionWelcomeVisible ? (
                 <NewSessionWelcome
                   onSend={handleSendMessage}
+                  // FB-580：composer 有字/附件/chip 时点示例卡改为填充草稿（不发送、
+                  // 不丢已有内容，模板空行接在现有文本后）；空 composer 保持一键直发。
+                  isComposerOccupied={() => Boolean(chatInputRef.current?.hasDraftOccupancy())}
+                  onFillDraft={(prompt) => chatInputRef.current?.appendDraftPrompt(prompt)}
                   workingDirectory={currentSessionWorkingDirectory}
                   workbenchSnapshot={currentSession?.workbenchSnapshot}
                   session={currentSession}
                 />
-              }
+              ) : null}
             />
           ) : (
             // 会话级错误边界：消息区一旦渲染失败（如虚拟列表反馈环打满 React 嵌套
@@ -939,6 +940,7 @@ export const ChatView: React.FC = () => {
                 activeMatchIndex={activeMatchIndex}
                 onRewindUserPrompt={handleRequestPromptRewind}
                 beforeFirstUserMessage={forkSourceHint}
+                afterFirstUserMessage={cronRunStatusBar}
                 onInterruptionPointVisibilityChange={setInterruptionPointInViewport}
                 suppressActiveBusySignal={pendingAssistantFeedback !== null}
               />
@@ -1046,7 +1048,7 @@ export const ChatView: React.FC = () => {
               迁入聊天列后参与布局，几何上不可能再压 composer。 */}
           <BackgroundSessionPanel />
 
-          <ChatInput ref={chatInputRef} onSend={handleSendEnvelope} onSteer={handleSteerEnvelope}
+          <ChatInput ref={chatInputRef} onSend={handleSendEnvelopeWithCronFollowUp} onSteer={handleSteerEnvelope}
             disabled={effectiveIsProcessing || isCreatingSession} isProcessing={effectiveIsProcessing}
             hasStoppableBackgroundWork={hasStoppableSwarmWork} isInterrupting={isInterrupting} onStop={cancel} hasContinuation={showDurableContinue}
             onContinue={durableContinue.onContinue} hasPlan={false} placeholder={currentSessionId === skippedQuestionSessionId ? t.userQuestion.skippedPlaceholder : undefined} />

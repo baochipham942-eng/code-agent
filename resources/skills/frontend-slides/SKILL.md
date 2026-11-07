@@ -42,7 +42,7 @@ user-invocable: true
    - `NN-slide-*.png`（纯视觉背景，不含文字；背景被跳过时不生成）
    - `<topic-slug>.pptx`
    - `<topic-slug>.pdf`（仅在有背景图时）
-4. 素材不足时，最多只做 **1 轮澄清**；如果用户目标已经足够明确，就直接继续，不要反复确认。
+4. 素材不足时，最多只做 **1 轮澄清**（第 3.5 步的风格选择是独立的一问，不计入）；如果用户目标已经足够明确，就直接继续，不要反复确认。
 5. **图片 prompt 绝对不要包含任何文字内容**。AI 生成的图片只作为视觉背景/装饰。所有标题、要点等文字由 pptxgenjs 在合成阶段叠加。
 6. **`image_generate` 不可用或失败时禁止重试。** 立刻用 `--text-only` 出纯文字 deck，最终回复必须包含 `backgrounds were skipped`。不要换提示词、不要对同一页或后续页再调图片。
 
@@ -114,6 +114,29 @@ user-invocable: true
 ]
 ```
 
+### 3.5 风格样张（选风格，可跳过）
+
+**跳过条件**（任一成立就不出样张，直接用「推荐风格映射」选出的风格进入第 4 步）：
+- 用户说了「直接做」「just do it」「you decide」「你定」之类把决定权交给你的话
+- 用户已经点名了风格（`corporate` / `minimal` / `bold-editorial` / `blueprint` 等）
+
+否则，在 `slides.json` 写完、合成之前，用**同一页内容**渲染 3 种风格样张让用户挑：
+
+```bash
+node "$SKILL_DIR/scripts/theme-samples.mjs" <slide-deck-dir>
+```
+
+脚本取第一张内容页（只有封面时取封面），用 `corporate`、`minimal`、`bold-editorial` 各渲染一张 PNG，stdout 打印一行 JSON：`{"available":true,"samples":[{"theme":"corporate","png":"/abs/path.png"},...]}`。
+
+- `available:true`：在回复里用 markdown 图片展示 3 张（`![corporate](<png绝对路径>)`，每张标注风格名），然后调用一次 `ask_user_question`：选项为 `corporate` / `minimal` / `bold-editorial` / `直接做（用推荐风格）`。样张只体现配色与底色差异，**不要声称字体在图里不同**（本机渲染会回落到同一字体）。
+- `available:false`（没有 LibreOffice，没法出图）：明确告诉用户「这台机器没有预览」，改为文字版 `ask_user_question`，选项描述写清每种风格的配色和字体：
+  - `corporate`：浅色底 `F8FAFC`，蓝色强调 `1D4ED8`，深色文字，字体 Microsoft YaHei
+  - `minimal`：纯白底 `FFFFFF`，黑色强调 `111827`，字体 PingFang SC
+  - `bold-editorial`：近黑底 `111111`，琥珀强调 `F59E0B`，白色标题，字体 Songti SC
+  - `直接做（用推荐风格）`
+- 用户选了某个风格后，整套 deck 都用它：第 5 步的 `--theme` 就传这个值。选「直接做」则按「推荐风格映射」决定。
+- 风格选择只问这一次，不追加别的问题，也不算进硬规则里的「1 轮澄清」；之后换风格不在本流程内。
+
 ### 4. 背景图（可跳过）
 
 先判断 `image_generate` 是否可用。下面任一情况都算不可用，**不要发起调用，也不要重试**：
@@ -136,13 +159,14 @@ user-invocable: true
 ### 5. 合成 PPTX / PDF
 
 脚本与本 SKILL.md 同目录。下面命令里的路径就是该目录，直接运行：
+合成时必须传递已选风格（来自第 3.5 步用户的选择；跳过样张时取推荐风格）：`<theme>` 取已选的 `corporate`、`minimal` 或 `bold-editorial`，选择这三种风格后不得省略 `--theme`；其他风格省略该参数，沿用 `default`。
 
 ```bash
 # 有背景图：背景图 + slides.json 文字叠加
-node "$SKILL_DIR/scripts/merge-to-pptx-hybrid.mjs" <slide-deck-dir>
+node "$SKILL_DIR/scripts/merge-to-pptx-hybrid.mjs" <slide-deck-dir> --theme <theme>
 
 # 没有背景图，或图片失败：纯文字 + 纯色主题背景。只跑这一次。
-node "$SKILL_DIR/scripts/merge-to-pptx-hybrid.mjs" <slide-deck-dir> --text-only
+node "$SKILL_DIR/scripts/merge-to-pptx-hybrid.mjs" <slide-deck-dir> --text-only --theme <theme>
 
 # 仅当背景图真实存在时才导出 PDF
 node "$SKILL_DIR/scripts/merge-to-pdf.mjs" <slide-deck-dir>

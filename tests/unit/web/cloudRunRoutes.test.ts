@@ -1,4 +1,5 @@
 import express from 'express';
+import type { Response as ExpressResponse } from 'express';
 import http from 'node:http';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -65,6 +66,7 @@ describe('cloud run HTTP contract', () => {
   let started: string[];
   let gates: Map<string, Deferred>;
   let executions: Map<string, ReturnType<RunRegistry['start']>>;
+  let channelStarted: string[];
 
   beforeEach(async () => {
     db = new Database(':memory:');
@@ -75,6 +77,7 @@ describe('cloud run HTTP contract', () => {
     started = [];
     gates = new Map();
     executions = new Map();
+    channelStarted = [];
 
     const execute = async (body: AgentRunBody, cloudRunId: string): Promise<void> => {
       const handle = runRegistry.start({
@@ -95,6 +98,11 @@ describe('cloud run HTTP contract', () => {
       getLedger: () => ledger,
       runRegistry,
       execute,
+      // ADR-087 S4B：channel 提升执行体——记录调用并正常结算（不落 failed）。
+      executeChannelRun: async (record) => {
+        channelStarted.push(record.runId);
+        runtime.settle(record.runId, 'succeeded');
+      },
       // S4B：与生产同构的 mark 实现——直接读写 harness 的 :memory: db
       //（SessionRepository 是 db 直读路径，无 sessionCache）。
       markSessionExecutionEnvironment: createMarkSessionExecutionEnvironment({
@@ -293,6 +301,82 @@ describe('cloud run HTTP contract', () => {
     expect(ledger.countInFlight('acct_a')).toBe(1);
   });
 
+  it('③ 2 in-flight → 3rd channel admit queued; promoted once through executeChannelRun without failing; repeat admit returns the same row', async () => {
+    await postRun('session_1', 'message_1');
+    await postRun('session_2', 'message_2');
+    const queued = runtime.ledger().admit({
+      sessionId: 'session_channel',
+      trigger: 'channel',
+      requestJson: JSON.stringify({ payload: 'ingress-envelope', sessionId: 'session_channel' }),
+      channelDeliveryId: 'cd-1',
+    });
+    expect(queued.record.state).toBe('queued');
+    expect(queued.position).toEqual({ queuePosition: 1, ahead: 0 });
+
+    const repeat = runtime.ledger().admit({
+      sessionId: 'session_channel',
+      trigger: 'channel',
+      requestJson: JSON.stringify({ payload: 'ingress-envelope', sessionId: 'session_channel' }),
+      channelDeliveryId: 'cd-1',
+    });
+    expect(repeat.duplicate).toBe(true);
+    expect(repeat.record.runId).toBe(queued.record.runId);
+    expect(repeat.record.state).toBe('queued');
+
+    gates.get('message_1')!.resolve();
+    await vi.waitFor(() => expect(channelStarted).toEqual([queued.record.runId]));
+    await vi.waitFor(() => expect(ledger.getRun(queued.record.runId)?.state).toBe('succeeded'));
+    expect(ledger.getRun(queued.record.runId)?.state).not.toBe('failed');
+  });
+
+  it('④ executeChannelRun absent → promotion settles failed with a logged reason; manual rows still parse as AgentRunBody', async () => {
+    const db2 = new Database(':memory:');
+    applySchema(db2, logger);
+    const ledger2 = createCloudRunLedger({ db: db2, accountResolver: () => accountId });
+    const runtime2 = new CloudRunRouteRuntime({
+      getLedger: () => ledger2,
+      runRegistry,
+      execute: async () => {},
+      logger,
+    });
+    try {
+      // 用两条 manual 行占满 in-flight（running 行不走 startPromoted）。
+      const manual = (sessionId: string) => ({
+        sessionId,
+        trigger: 'manual' as const,
+        requestJson: JSON.stringify({ prompt: `work ${sessionId}`, sessionId, protocolVersion: 'environment-selection/1' }),
+      });
+      ledger2.admit(manual('session_m1'));
+      ledger2.admit(manual('session_m2'));
+      const channel = ledger2.admit({
+        sessionId: 'session_c',
+        trigger: 'channel',
+        requestJson: JSON.stringify({ payload: 'ingress-envelope', sessionId: 'session_c' }),
+        channelDeliveryId: 'cd-fail-closed',
+      });
+      expect(channel.record.state).toBe('queued');
+
+      runtime2.ledger(); // 挂 transition listener（与生产 promoteAccount 同链）
+      const firstRun = ledger2.listInFlightRuns()[0];
+      ledger2.transition(firstRun.runId, 'succeeded');
+      await vi.waitFor(() => expect(ledger2.getRun(channel.record.runId)?.state).toBe('failed'));
+      expect(logger.error).toHaveBeenCalledWith(
+        expect.stringContaining('channel run has no executor configured'),
+        expect.objectContaining({ runId: channel.record.runId }),
+      );
+
+      // manual 路径不受 channel 分支影响：manual 行 promote 后仍走 AgentRunBody 解析并执行
+      const manualThird = ledger2.admit(manual('session_m3'));
+      await vi.waitFor(() => {
+        const state = ledger2.getRun(manualThird.record.runId)?.state;
+        return state === 'running' || state === 'succeeded' || state === 'failed';
+      });
+      expect(ledger2.getRun(manualThird.record.runId)?.state).not.toBe('failed');
+    } finally {
+      db2.close();
+    }
+  });
+
   it('cancels queued work immediately', async () => {
     await postRun('session_1', 'message_1');
     await postRun('session_2', 'message_2');
@@ -404,6 +488,28 @@ describe('cloud run HTTP contract', () => {
     expect(logger.warn).toHaveBeenCalledWith(
       expect.stringContaining('dep rejected'),
       expect.objectContaining({ sessionId: 'session_env', error: 'marker boom' }),
+    );
+  });
+
+  // rework r1：admitDelegatedTurn 的同型兜底——manual 路径 runInline（真实装配
+  // 是 runAgentTurn）preflight 抛错时账本行已置 running，无人收线会占死
+  // CLOUD_RUN_MAX_IN_FLIGHT 之一直到进程重启。
+  it('r1: manual inline run throwing settles the ledger row failed and rethrows', async () => {
+    await expect(handleCloudRunAdmission({
+      body: cloudBody('session_throw', 'message_throw'),
+      res: {} as ExpressResponse,
+      runtime,
+      logger,
+      runInline: async () => { throw new Error('workspace materialization failed'); },
+    })).rejects.toThrow('workspace materialization failed');
+    const row = db.prepare(
+      "SELECT run_id FROM cloud_runs WHERE client_message_id = 'message_throw'",
+    ).get() as { run_id: string };
+    expect(row).toBeTruthy();
+    expect(ledger.getRun(row.run_id)?.state).toBe('failed');
+    expect(logger.error).toHaveBeenCalledWith(
+      expect.stringContaining('Manual inline run threw'),
+      expect.objectContaining({ runId: row.run_id, error: 'workspace materialization failed' }),
     );
   });
 });

@@ -10,6 +10,9 @@ import type { TraceProjection, TraceTurn } from '@shared/contract/trace';
 import type { SearchMatch } from './ChatSearchBar';
 import { TurnCard } from './TurnCard';
 import { TurnRail } from './TurnRail';
+import { startSearchMatchSettlement } from './searchMatchSettlement';
+import { isScrollerNearBottom, scheduleAfterLayout, startBottomSettlement, useSessionEntryScroll } from './useSessionEntryScroll';
+export { isScrollerNearBottom } from './useSessionEntryScroll';
 import { useAppStore } from '../../../stores/appStore';
 import { useSessionStore } from '../../../stores/sessionStore';
 import { useTaskStore } from '../../../stores/taskStore';
@@ -36,6 +39,8 @@ interface TurnBasedTraceViewProps {
   onRewindUserPrompt?: (messageId: string, content: string) => void;
   /** 注入到第一条 turn 用户消息上方（分叉子会话的来源提示） */
   beforeFirstUserMessage?: React.ReactNode;
+  /** 注入到第一条 turn 用户消息下方（定时任务运行记录的状态行） */
+  afterFirstUserMessage?: React.ReactNode;
   /** Virtuoso 可见范围是否覆盖流式中断所在 turn，供追赶条做视口双门。 */
   onInterruptionPointVisibilityChange?: (visible: boolean) => void;
   /** ChatView 的发送阶段占位可见时，活动 turn 不再另画一条忙信号。 */
@@ -103,13 +108,6 @@ export function shouldFollowTurnOutput(
   return isAtBottom ? 'auto' : false;
 }
 
-export function isScrollerNearBottom(
-  scroller: Pick<HTMLElement, 'scrollHeight' | 'scrollTop' | 'clientHeight'>,
-  threshold = 96,
-): boolean {
-  return scroller.scrollHeight - scroller.scrollTop - scroller.clientHeight <= threshold;
-}
-
 export function getOutputFollowTurnIndex(
   projection: TraceProjection,
   followedTurnId: string | null,
@@ -160,23 +158,6 @@ export function getTurnOutputRevision(
     ].join(':'));
 
   return `${turn.turnId}:${turn.status}:${outputNodes.join('|')}`;
-}
-
-function scheduleAfterLayout(callback: () => void): () => void {
-  if (typeof requestAnimationFrame !== 'function') {
-    const timer = setTimeout(callback, 0);
-    return () => clearTimeout(timer);
-  }
-
-  let timer: ReturnType<typeof setTimeout> | null = null;
-  const frame = requestAnimationFrame(() => {
-    timer = setTimeout(callback, 0);
-  });
-
-  return () => {
-    cancelAnimationFrame(frame);
-    if (timer !== null) clearTimeout(timer);
-  };
 }
 
 function scheduleAfterDelayAndLayout(callback: () => void, delayMs: number): () => void {
@@ -297,6 +278,7 @@ export const TurnBasedTraceView: React.FC<TurnBasedTraceViewProps> = ({
   activeMatchIndex = 0,
   onRewindUserPrompt,
   beforeFirstUserMessage,
+  afterFirstUserMessage,
   onInterruptionPointVisibilityChange,
   suppressActiveBusySignal,
 }) => {
@@ -308,9 +290,9 @@ export const TurnBasedTraceView: React.FC<TurnBasedTraceViewProps> = ({
   const prevActiveMatchRef = useRef(-1);
   const prevFocusedTurnRef = useRef<string | null>(null);
   const prevAssistantAnchorRef = useRef<string | null>(null);
-  // 进入/切换会话检测：进入落点由 Virtuoso（key=sessionId 重挂载 +
-  // initialTopMostItemIndex 底部对齐）负责，focus/anchor 两个 effect 在
-  // 进入瞬间不得再把 focused turn 钉到视口顶部（末轮长于一屏时会落在中段）。
+  // 进入落点由 Virtuoso 初始定位与 useSessionEntryScroll 测量结算共同负责；
+  // focus/anchor 两个 effect 在进入瞬间不得再把 focused turn 钉到视口顶部
+  // （末轮长于一屏时会落在中段）。
   const prevFocusSessionRef = useRef<string | null>(null);
   const prevAnchorSessionRef = useRef<string | null>(null);
   const historyListRef = useRef<{ sessionId: string; firstTurnId: string | null; firstItemIndex: number }>({
@@ -335,6 +317,7 @@ export const TurnBasedTraceView: React.FC<TurnBasedTraceViewProps> = ({
   const [followedOutputTurnId, setFollowedOutputTurnId] = useState<string | null>(null);
   // 用户上滚离开底部时浮出「回到底部」按钮（贴底时隐藏）
   const [isAtBottom, setIsAtBottom] = useState(true);
+  const sessionEntrySettlingRef = useRef(false);
   // 轮次导航（N-TURNRAIL）：当前轮 = 视口顶部那一轮，由 Virtuoso 的可见范围回报驱动；
   // 宽/窄两态由容器查询（外层 @container）切换。历史整段加载，跳转直接 scrollToIndex。
   const railItems = useMemo(() => buildTurnRailItems(projection.turns), [projection.turns]);
@@ -377,6 +360,19 @@ export const TurnBasedTraceView: React.FC<TurnBasedTraceViewProps> = ({
   // 两路 scrollToIndex 在该窗口内禁用，避免多驱动交替抢滚动造成上移-回弹抖动。
   const outputFollowStreamingRef = useRef(false);
   outputFollowStreamingRef.current = outputFollowTurn?.status === 'streaming';
+  const noteSessionEntryRange = useSessionEntryScroll({
+    sessionId: projection.sessionId,
+    turns: projection.turns,
+    projectionTurnsRef,
+    virtuosoRef,
+    scrollerElementRef,
+    outputFollowStreamingRef,
+    keepActiveOutputVisibleRef,
+    activeDisplayScrollCancelRef,
+    sessionEntrySettlingRef,
+    userScrollLastInteractionAtRef,
+    setIsAtBottom,
+  });
   const outputFollowRevision = useMemo(
     () => getTurnOutputRevision(outputFollowTurn, {
       includeAssistantContentLength: outputFollowTurn?.status !== 'streaming',
@@ -414,13 +410,14 @@ export const TurnBasedTraceView: React.FC<TurnBasedTraceViewProps> = ({
   const reportVisibleRange = useCallback((range: ListRange) => {
     visibleRangeRef.current = range;
     const topTurnId = projectionTurnsRef.current[range.startIndex - firstItemIndex]?.turnId ?? null;
-    if (topTurnId && !railActiveFromDomRef.current) {
+    if (topTurnId && !railActiveFromDomRef.current && !sessionEntrySettlingRef.current) {
       setRailActiveTurnId((current) => (current === topTurnId ? current : topTurnId));
     }
+    noteSessionEntryRange();
     onInterruptionPointVisibilityChange?.(
       isTurnVisibleInRange(range, interruptionTurnIndex, firstItemIndex),
     );
-  }, [firstItemIndex, interruptionTurnIndex, onInterruptionPointVisibilityChange]);
+  }, [firstItemIndex, interruptionTurnIndex, noteSessionEntryRange, onInterruptionPointVisibilityChange]);
 
   useEffect(() => {
     if (!onInterruptionPointVisibilityChange) return;
@@ -691,12 +688,18 @@ export const TurnBasedTraceView: React.FC<TurnBasedTraceViewProps> = ({
     activeDisplayScrollCancelRef.current?.();
     activeDisplayScrollCancelRef.current = null;
 
-    virtuosoRef.current?.scrollToIndex({
-      index: activeMatch.turnIndex,
-      align: 'center',
-      // Search is exact navigation. Long virtualized jumps can be dropped or
-      // left unfinished when animated across hundreds of unmounted items.
-      behavior: 'auto',
+    // N-MEM-JOURNAL-SOURCEJUMP r3：落点滚动用 settlement（跨帧重发，见
+    // searchMatchSettlement 的头注释与真跑证据），不再是一次性 scrollToIndex。
+    return startSearchMatchSettlement({
+      activeMatch,
+      turns: projectionTurnsRef.current,
+      readTurns: () => projectionTurnsRef.current,
+      virtuosoRef,
+      scrollerElementRef,
+      followFlagRef: keepActiveOutputVisibleRef,
+      cancelSlotRef: activeDisplayScrollCancelRef,
+      findTurnElement: (scroller, turnId) =>
+        scroller.querySelector<HTMLElement>(getTraceTurnSelector(turnId)),
     });
   }, [activeMatchIndex, searchMatches]);
 
@@ -968,43 +971,13 @@ export const TurnBasedTraceView: React.FC<TurnBasedTraceViewProps> = ({
     virtuosoRef.current?.scrollToIndex({ index: lastIndex, align: 'end', behavior: 'auto' });
     virtuosoRef.current?.autoscrollToBottom();
     activeDisplayScrollCancelRef.current?.();
-    const turnsAtJump = projection.turns;
-    let remainingFrames = 60;
-    let frame: number | ReturnType<typeof setTimeout> | null = null;
-    const cancelSettlement = () => {
-      if (frame !== null) {
-        if (typeof cancelAnimationFrame === 'function' && typeof frame === 'number') {
-          cancelAnimationFrame(frame);
-        } else {
-          clearTimeout(frame);
-        }
-      }
-      frame = null;
-      if (activeDisplayScrollCancelRef.current === cancelSettlement) {
-        activeDisplayScrollCancelRef.current = null;
-      }
-    };
-    const settleBottom = () => {
-      frame = null;
-      if (projectionTurnsRef.current !== turnsAtJump || !keepActiveOutputVisibleRef.current) {
-        cancelSettlement();
-        return;
-      }
-      const scroller = scrollerElementRef.current;
-      if (scroller) scroller.scrollTop = scroller.scrollHeight;
-      remainingFrames -= 1;
-      if (remainingFrames <= 0) {
-        cancelSettlement();
-        return;
-      }
-      frame = typeof requestAnimationFrame === 'function'
-        ? requestAnimationFrame(settleBottom)
-        : setTimeout(settleBottom, 16);
-    };
-    activeDisplayScrollCancelRef.current = cancelSettlement;
-    frame = typeof requestAnimationFrame === 'function'
-      ? requestAnimationFrame(settleBottom)
-      : setTimeout(settleBottom, 16);
+    startBottomSettlement({
+      turnsAtJump: projection.turns,
+      projectionTurnsRef,
+      scrollerElementRef,
+      keepActiveOutputVisibleRef,
+      activeDisplayScrollCancelRef,
+    });
   }, [projection.turns]);
 
   // 导航格点击：与搜索跳转同一套——停止跟随，按数组下标顶对齐、无动画（长距离虚拟跳转带动画会丢）
@@ -1053,6 +1026,7 @@ export const TurnBasedTraceView: React.FC<TurnBasedTraceViewProps> = ({
               }
               onRewindUserPrompt={onRewindUserPrompt}
               beforeUserMessage={index === 0 ? beforeFirstUserMessage : undefined}
+              afterUserMessage={index === 0 ? afterFirstUserMessage : undefined}
               suppressBusySignal={isStreaming && suppressActiveBusySignal}
             />
             <ConversationTurnTailSlot
@@ -1063,7 +1037,7 @@ export const TurnBasedTraceView: React.FC<TurnBasedTraceViewProps> = ({
         </div>
       );
     },
-    [activeMatchIndex, beforeFirstUserMessage, firstItemIndex, isProjectionSessionProcessing, onRewindUserPrompt, outputFollowTurnIndex, projection.activeTurnIndex, projection.sessionId, projection.turns, projectionStreamSnapshot, scheduleActiveDisplayScroll, searchMatches, sessionStatus, suppressActiveBusySignal, workDetailPolicy],
+    [activeMatchIndex, afterFirstUserMessage, beforeFirstUserMessage, firstItemIndex, isProjectionSessionProcessing, onRewindUserPrompt, outputFollowTurnIndex, projection.activeTurnIndex, projection.sessionId, projection.turns, projectionStreamSnapshot, scheduleActiveDisplayScroll, searchMatches, sessionStatus, suppressActiveBusySignal, workDetailPolicy],
   );
 
   // Header: load-older indicator
@@ -1099,11 +1073,16 @@ export const TurnBasedTraceView: React.FC<TurnBasedTraceViewProps> = ({
         itemContent={itemContent}
         followOutput={followOutput}
         atBottomStateChange={(atBottom) => {
-          setIsAtBottom(atBottom);
+          const scroller = scrollerElementRef.current;
+          const atBottomOrFits = atBottom || Boolean(
+            scroller && scroller.scrollHeight > 0
+            && (scroller.scrollHeight <= scroller.clientHeight || isScrollerNearBottom(scroller)),
+          );
+          if (!sessionEntrySettlingRef.current) setIsAtBottom(atBottomOrFits);
           if (atBottom && !historyPrependInProgressRef.current && !isUserScrollSuppressed()) {
             keepActiveOutputVisibleRef.current = true;
             const turnId = outputFollowTurn?.turnId ?? projection.turns[projection.turns.length - 1]?.turnId;
-            if (turnId) updateFollowedOutputTurnId(turnId);
+            if (turnId && !sessionEntrySettlingRef.current) updateFollowedOutputTurnId(turnId);
           }
         }}
         atBottomThreshold={96}
@@ -1115,7 +1094,7 @@ export const TurnBasedTraceView: React.FC<TurnBasedTraceViewProps> = ({
           : undefined}
         // B1-R·R4：不开 alignToBottom。它给列表容器 marginTop:auto，把不满一屏的
         // 短内容整体压到底部（紧贴 composer、上方大片空白）；去掉后短内容自然顶对齐。
-        // 长会话进入落底由 initialTopMostItemIndex（LAST/end）负责，不受影响。
+        // 长会话再由 useSessionEntryScroll 结算后续测量漂移；短内容保持顶对齐。
         startReached={handleStartReached}
         overscan={300}
         increaseViewportBy={{ top: 200, bottom: 200 }}

@@ -19,6 +19,8 @@ import type {
   SessionAutomationType,
 } from '../../shared/contract/sessionAutomation';
 import { isCronUrgency } from '../../shared/cronUrgency';
+import { readCronPermissionDenied } from './cronNormalizers';
+import { cronSourceSessionIdFromDefinition } from '../../shared/cronWriteScope';
 import { resolveCronArtifactsForReview } from '../../shared/cronArtifactPath';
 import { formatCronExpressionLabel } from '../../shared/cronHumanize';
 import { parseCronLoginWallStop } from '../../shared/utils/browserLoginWall';
@@ -86,13 +88,8 @@ export function readCronSourceSessionId(
   definition: CronJobDefinition,
   action: CronJobAction = definition.action,
 ): string | undefined {
-  const metadataSource = definition.metadata?.sourceSessionId;
-  if (typeof metadataSource === 'string' && metadataSource.trim()) return metadataSource;
-  if (action.type === 'agent') {
-    const contextSource = action.context?.sourceSessionId;
-    if (typeof contextSource === 'string' && contextSource.trim()) return contextSource;
-  }
-  return undefined;
+  // 判定唯一真源在 shared/cronWriteScope（renderer 写授权面板要按同一规则找来源会话）。
+  return cronSourceSessionIdFromDefinition(definition, action);
 }
 
 export function getCronAutomationType(
@@ -277,6 +274,9 @@ export async function recordCronAutomationExecution(
       resultRecord?.digest,
       readRunSessionWorkingDirectory(execution.sessionId),
     );
+    // 需处理标记透传（N-CRON-RUN-COMPLETED-BUT-DENIED）：agent 结果由 cronAgentAction
+    // 扫工具结果打上；收件箱据此把「成功」卡片换成琥珀色「需处理」。
+    const permissionDenied = readCronPermissionDenied(execution.result);
     const recordStatus: SessionAutomationStatus = keepActive
       ? 'active'
       : reviewable
@@ -295,6 +295,7 @@ export async function recordCronAutomationExecution(
           ...(urgency ? { urgency } : {}),
           ...(urgencyRaw ? { urgencyRaw } : {}),
           ...(digest ? { digest } : {}),
+          ...(permissionDenied ? { permissionDenied } : {}),
         } } }
         : loginWall
           ? { configPatch: { loginWall: { siteOrigin: loginWall.siteOrigin, at: execution.completedAt ?? Date.now() } } }
@@ -312,5 +313,66 @@ export async function recordCronAutomationExecution(
     });
   } catch (error) {
     console.error('[CronService] Failed to record automation execution:', error);
+  }
+}
+
+/**
+ * 执行档切换写进自动化变更历史（N-TRIGGER-OBSERVE-MODE）：event 'action_mode_changed'，
+ * configPatch 记下当前档与切换时刻。没有自动化记录时先补建（同 archived 先例）。
+ * 与其它 record* 不同：这里**不吞错**——变更记不下来，切换就不能生效（调用方先记后落库）。
+ */
+export async function recordCronAutomationActionModeChanged(
+  definition: CronJobDefinition,
+  from: 'observe' | 'auto',
+  to: 'observe' | 'auto',
+): Promise<void> {
+  const sourceSessionId = readCronSourceSessionId(definition) ?? null;
+  const service = getSessionAutomationService();
+  const existing = service.getBySourceRef(getCronAutomationType(definition), definition.id);
+  if (!existing) {
+    service.upsert({
+      id: `${getCronAutomationType(definition)}:${definition.id}`,
+      sourceSessionId,
+      type: getCronAutomationType(definition),
+      status: definition.enabled ? 'active' : 'paused',
+      title: definition.name,
+      cadenceLabel: formatCronScheduleLabel(definition.schedule),
+      sourceRefId: definition.id,
+      config: buildCronAutomationConfig(definition),
+    });
+  }
+  const recorded = await service.recordEvent({
+    type: getCronAutomationType(definition),
+    sourceRefId: definition.id,
+    event: 'action_mode_changed',
+    summary: to === 'auto'
+      ? '执行方式已切换为「自动执行」：之后的事件运行会真实发送回复与邮件。'
+      : '执行方式已切换为「仅观察」：之后的事件运行只记录本会做什么，不发送任何内容。',
+    eventId: `action_mode:${definition.id}:${definition.updatedAt}`,
+    ...(existing?.lastRunAt !== undefined ? { lastRunAt: existing.lastRunAt } : {}),
+    configPatch: { actionMode: to, actionModeChange: { from, to, at: definition.updatedAt } },
+  });
+  if (!recorded) throw new Error(`Automation record for cron job ${definition.id} is missing; action-mode change not recorded.`);
+}
+
+/**
+ * 读回最近一次执行档切换（返修⑥：让「切换已记入变更历史」在详情页可见）。
+ * 数据源就是 recordCronAutomationActionModeChange 写进自动化记录 config 的
+ * actionModeChange；读不到（记录缺失/形状不对）返回 null，静默降级。
+ */
+export function readCronAutomationActionModeChange(
+  definition: CronJobDefinition,
+): { from: 'observe' | 'auto'; to: 'observe' | 'auto'; at: number } | null {
+  try {
+    const record = getSessionAutomationService()
+      .getBySourceRef(getCronAutomationType(definition), definition.id);
+    const change = record?.config?.actionModeChange;
+    if (!change || typeof change !== 'object') return null;
+    const { from, to, at } = change as Record<string, unknown>;
+    if ((from !== 'observe' && from !== 'auto') || (to !== 'observe' && to !== 'auto')) return null;
+    if (typeof at !== 'number') return null;
+    return { from, to, at };
+  } catch {
+    return null;
   }
 }

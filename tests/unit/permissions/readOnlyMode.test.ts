@@ -172,7 +172,7 @@ describe('readOnly 只读探索档', () => {
     getPermissionModeManager().setMode('readOnly');
     mockClassification = { decision: 'deny', reason: 'dangerous', confidence: 1, cached: false };
     setMockTool({ name: 'write_file', requiresPermission: true, permissionLevel: 'write' });
-    const result = await executor.execute('write_file', { file_path: '/etc/passwd', content: 'x' }, {});
+    const result = await executor.execute('write_file', { file_path: '/tmp/readonly-classifier-probe.txt', content: 'x' }, {});
     expect(result.success).toBe(false);
     expect(result.error).toContain('Denied');
     expect(permissionCalls.length).toBe(0);
@@ -373,6 +373,10 @@ describe('acceptEdits 出站/不可逆/进程类写档工具仍需用户确认�
     'tmeetMeetingCreate',
     'mcp_add_server',
     'xlwings_execute',
+    'ExcelAutomate',
+    'sleep_until',
+    'wake_on',
+    'wake_on_event',
   ])('acceptEdits：%s 照走用户确认，不搭写档免确认便车', async (toolName) => {
     getPermissionModeManager().setMode('acceptEdits');
     setMockTool({ name: toolName, requiresPermission: true, permissionLevel: 'write' });
@@ -381,6 +385,20 @@ describe('acceptEdits 出站/不可逆/进程类写档工具仍需用户确认�
     expect(result.success).toBe(true);
     expect(permissionCalls.length).toBe(1);
     expect(permissionCalls[0].tool).toBe(toolName);
+  });
+
+  // 对照组：可逆 / 草稿 / 只读浏览类在 acceptEdits 下保持免确认（真实分类链，零请求）
+  it.each([
+    'reminders_create',
+    'reminders_update',
+    'mail_draft',
+    'browser_navigate',
+  ])('acceptEdits：%s 保持免确认（可逆/草稿/只读浏览）', async (toolName) => {
+    getPermissionModeManager().setMode('acceptEdits');
+    setMockTool({ name: toolName, requiresPermission: true, permissionLevel: 'write' });
+    const result = await executor.execute(toolName, {}, {});
+    expect(result.success).toBe(true);
+    expect(permissionCalls.length).toBe(0);
   });
 
   it('对照组：acceptEdits 下普通文件写入仍免确认', async () => {
@@ -396,6 +414,14 @@ describe('acceptEdits 出站/不可逆/进程类写档工具仍需用户确认�
     getPermissionModeManager().setMode('bypassPermissions', true);
     setMockTool({ name: 'mail_send', requiresPermission: true, permissionLevel: 'write' });
     const result = await executor.execute('mail_send', {}, {});
+    expect(result.success).toBe(true);
+    expect(permissionCalls.length).toBe(0);
+  });
+
+  it('对照组：bypassPermissions 下 wake_on_event 仍直接放行（清单只影响 acceptEdits）', async () => {
+    getPermissionModeManager().setMode('bypassPermissions', true);
+    setMockTool({ name: 'wake_on_event', requiresPermission: true, permissionLevel: 'write' });
+    const result = await executor.execute('wake_on_event', {}, {});
     expect(result.success).toBe(true);
     expect(permissionCalls.length).toBe(0);
   });

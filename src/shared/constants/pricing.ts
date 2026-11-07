@@ -140,6 +140,8 @@ export const MODEL_PRICING_PER_1M: Record<string, ModelPricingEntry> = {
   'claude-3-5-haiku-20241022': { input: 0.25, output: 1.25, cacheRead: 0.025, cacheWrite: 0.3125 },
   // Zhipu
   'glm-5': { input: 0.05, output: 0.05 },
+  // N-CRON-RUN-LEDGER-VISIBLE：coding 端点 glm-5.3 暂无官方价目，按同系 glm-5 计价（运行账本读数可记非零成本）。
+  'glm-5.3': { input: 0.05, output: 0.05 },
   'glm-4.7': { input: 0.05, output: 0.05 },
   'glm-4.6v': { input: 0.05, output: 0.05 },
   // glm-5.3-flash：0ki 年卡包月模型，不按 token 计费，额度按次扣
@@ -154,6 +156,7 @@ export const MODEL_PRICING_PER_1M: Record<string, ModelPricingEntry> = {
   'moonshot-v1-32k': { input: 0.24, output: 0.24 },
   'moonshot-v1-128k': { input: 0.6, output: 0.6 },
   // 小米 MiMo（Token Plan Max 包月，配额内不计费）
+  'mimo-v2.6-flash': { input: 0, output: 0 },
   'mimo-v2.5-pro': { input: 0, output: 0 },
   'mimo-v2.5': { input: 0, output: 0 },
   'mimo-v2-pro': { input: 0, output: 0 },

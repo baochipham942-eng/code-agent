@@ -3,7 +3,7 @@
   "messageRefs": [
     {
       "kind": "content",
-      "contentHash": "c88bb06f535303db669baf3796fdffd031beb149ee8f663df3184a93e962c6a5",
+      "contentHash": "e13aa1a9718e33af2fb3da1c21c6345925c146097905656f12f32cef816d750f",
       "reason": "system_prompt_fallback"
     },
     {
@@ -28,7 +28,7 @@
     },
     {
       "kind": "content",
-      "contentHash": "d5ce250a49a4b6388fe9094a154b5c1dd98996257980340221fac73a2e8d75f1",
+      "contentHash": "2e4d26909e78e980ef110e4a694a36c8e20259c84303204634b59c4315888978",
       "reason": "dynamic_tail",
       "blocks": [
         {
@@ -44,8 +44,8 @@
           "bytes": 4
         },
         {
-          "contentHash": "886fb73c0cac099c7e13e1afc08ca002126c780f3279f8f4d94dc267ecac030b",
-          "bytes": 180
+          "contentHash": "7e50b1ecad35c9a61af73b83bc4137ce941da69c383baa8f2676fa9d27f5cfad",
+          "bytes": 329
         },
         {
           "contentHash": "4321bbd880e301948c0b880c24a5ffdfe73f103e23585e37904da5434cfdd520",
@@ -54,7 +54,7 @@
       ]
     }
   ],
-  "toolSchemaHash": "a4b2149b89b1eae5a2547676f9207cfd81e61686a1aa521f683322f31e1f6009",
+  "toolSchemaHash": "734fd958dc8bb297b991b589fdc445cc6379fa749352c041bf9073a440319422",
   "toolNames": [
     "AskUserQuestion",
     "Bash",
@@ -68,9 +68,7 @@
     "ToolSearch",
     "WebSearch",
     "Write",
-    "delegate_task",
-    "recommend_capability",
-    "task_status"
+    "recommend_capability"
   ],
   "requested": {
     "provider": "openai",

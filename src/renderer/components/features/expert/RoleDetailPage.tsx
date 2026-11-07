@@ -34,6 +34,7 @@ import { resolveSessionConnectorIds } from "@shared/contract/expertConnectors";
 import { RoleIcon } from "../shared/RoleIcon";
 import { getRoleAvatarAsset } from "./roleAvatarAssets";
 import { SettingsSection } from "../settings/SettingsLayout";
+import { RoleWakeLedger } from "./RoleWakeLedger";
 import { RoleBindingsSection } from "../settings/tabs/RoleBindingsSection";
 import { RoleMemoryActions } from "./RoleMemoryActions";
 import { useAppStore } from "../../../stores/appStore";
@@ -46,6 +47,7 @@ import { RoleSecurityTab } from './RoleSecurityTab';
 import { RolePersonalizationTab } from './RolePersonalizationTab';
 import { RoleRecordsTab } from './RoleRecordsTab';
 import { RoleRoutinesSection } from './RoleRoutinesSection';
+import { RoleDeleteControl, shouldMountRoleDeleteControl } from './RoleDeleteControl';
 
 const logger = createLogger("RoleDetailPage");
 
@@ -807,16 +809,28 @@ export interface RoleDetailPageProps {
 type RoleDetailTab = 'basic' | 'personalization' | 'skills' | 'model' | 'security' | 'records';
 const ROLE_DETAIL_TABS: readonly RoleDetailTab[] = ['basic', 'personalization', 'skills', 'model', 'security', 'records'];
 
+function initialRoleDetailTab(): RoleDetailTab {
+  if (typeof window === 'undefined') return 'basic';
+  const requested = new URLSearchParams(window.location.search).get('roleTab');
+  return ROLE_DETAIL_TABS.includes(requested as RoleDetailTab) ? requested as RoleDetailTab : 'basic';
+}
+
 export const RoleDetailPage: React.FC<RoleDetailPageProps> = ({ roleId }) => {
   const { t } = useI18n();
   const roleText = t.settings.roles;
   const expertText = t.expert;
-  const [tab, setTab] = useState<RoleDetailTab>('basic');
+  const [tab, setTab] = useState<RoleDetailTab>(initialRoleDetailTab);
   // selector 必须返回稳定引用：返回新建的闭包会让 zustand 每次 getSnapshot 都不同 → 无限重渲染
   const setShowCapabilityHub = useAppStore((state) => state.setShowCapabilityHub);
   const closeDetail = useCallback(() => setShowCapabilityHub(true), [setShowCapabilityHub]);
   const [detail, setDetail] = useState<RolePanelDetail | null>(null);
   const [boundCronJobs, setBoundCronJobs] = useState<RoleBoundCronJob[]>([]);
+  // 行内动作（「现在运行」等）完成后 bump，驱动下方唤醒账本重拉（ai-review Important：曾只在进页时拉一次）
+  const [wakeLedgerToken, setWakeLedgerToken] = useState(0);
+  const handleBoundCronJobsChange = useCallback((jobs: RoleBoundCronJob[]) => {
+    setBoundCronJobs(jobs);
+    setWakeLedgerToken((token) => token + 1);
+  }, []);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const loadDetail = useCallback(async () => {
@@ -853,6 +867,7 @@ export const RoleDetailPage: React.FC<RoleDetailPageProps> = ({ roleId }) => {
               = 切到本页「技能」tab，详情页本身就是配置处) + 原有 tab 分段控件 */}
           <Button variant="primary" size="sm" data-testid="role-detail-go-thread" onClick={() => void goToExpertThread(roleId, { title: detail?.visual.displayName || roleId })}>{expertText.invite}</Button>
           <Button variant="secondary" size="sm" data-testid="role-detail-configure" onClick={() => setTab('skills')}>{expertText.configure}</Button>
+          {detail && shouldMountRoleDeleteControl(detail) ? <RoleDeleteControl roleId={roleId} displayName={detail.visual.displayName || roleId} onDeleted={closeDetail} onRestored={loadDetail} /> : null}
           <div className="flex rounded-md border border-zinc-700 p-0.5" role="tablist">{ROLE_DETAIL_TABS.map((key) => <button /* ds-allow:button: 详情页内部 tab 使用语义分段控件 */ key={key} type="button" role="tab" aria-selected={tab === key} data-testid={`role-detail-tab-${key}`} onClick={() => setTab(key)} className={`rounded px-2.5 py-1 text-xs transition-colors ${tab === key ? 'bg-zinc-700 text-zinc-100' : 'text-zinc-400 hover:text-zinc-200'}`}>{expertText.detailTabs[key]}</button>)}</div>
         </div>}
       />
@@ -895,7 +910,8 @@ export const RoleDetailPage: React.FC<RoleDetailPageProps> = ({ roleId }) => {
               </div>
             </div>
           </SettingsSection>
-          <RoleRoutinesSection roleId={roleId} jobs={boundCronJobs} onJobsChange={setBoundCronJobs} />
+          <RoleRoutinesSection roleId={roleId} jobs={boundCronJobs} onJobsChange={handleBoundCronJobsChange} />
+          <RoleWakeLedger roleId={roleId} refreshToken={wakeLedgerToken} />
           <RoleBindingsSection roleId={roleId} />
           <SettingsSection
             title={`${roleText.detail.memoriesTitlePrefix}${detail.memories.length}${roleText.detail.memoriesTitleSuffix}`}

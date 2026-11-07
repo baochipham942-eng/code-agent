@@ -8,6 +8,7 @@ import type { PermissionAskResult, PermissionDeliveryOutcome, PermissionDenialSo
 import type { ToolApprovalPayload, PendingApprovalKind } from '../../shared/contract/pendingApproval';
 import { INTERACTION_TIMEOUTS } from '../../shared/constants/timeouts';
 import { PARKED_APPROVAL_PREVIEW_MAX_CHARS } from '../../shared/constants/pendingApproval';
+import { PARKED_APPROVAL_CLOSURE_SENTENCES } from '../../shared/parkedApprovalClosure';
 import { redactCommandSecrets } from '../security/secretRedaction';
 import { generatePermissionRequestId } from '../../shared/utils/id';
 import type { ExecutionTopology } from '../permissions';
@@ -683,7 +684,11 @@ export class OrchestratorPermissionIsland {
         const resolved = this.resolveParkedApproval(
           fullRequest.id,
           'deny',
-          unattendedDeadline ? UNATTENDED_APPROVAL_TIMEOUT : 'parked approval expired',
+          // 24h 兜底写中文闭场句（与重启收口 describeParkedApprovalClosure 同源同句），
+          // renderer 精确匹配后按「未执行」呈现，不再给用户看英文的 parked-expired 文案。
+          unattendedDeadline
+            ? UNATTENDED_APPROVAL_TIMEOUT
+            : PARKED_APPROVAL_CLOSURE_SENTENCES.expiredAfterRestart24h,
           'timeout',
         );
         if (resolved && unattendedDeadline && fullRequest.sessionId) {

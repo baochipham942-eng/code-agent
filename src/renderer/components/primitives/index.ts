@@ -30,6 +30,9 @@ export {
   type SelectOptionGroup,
 } from './Select';
 
+// TimeInput24
+export { TimeInput24 } from './TimeInput24';
+
 // Modal
 export { Modal, ModalHeader, ModalFooter } from './Modal';
 export type { ModalProps, ModalSize, ModalHeaderProps, ModalFooterProps } from './Modal';

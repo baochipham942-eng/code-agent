@@ -284,13 +284,17 @@ export function useAtMentionPanel(params: UseAtMentionPanelParams) {
   const handleKeyDown = useCallback((e: React.KeyboardEvent<HTMLElement>): boolean => {
     if (!isOpen) return false;
 
-    if (e.key === 'ArrowDown' && flatRows.length > 0) {
+    // FB-586：工作区列表拉取失败时面板可能开着但 0 行。方向键在这里吞掉，
+    // 不让光标跳出输入框。
+    if (e.key === 'ArrowDown') {
       e.preventDefault();
+      if (flatRows.length === 0) return true;
       setSelectedIndex((prev) => wrapIndex(prev, 1, flatRows.length));
       return true;
     }
-    if (e.key === 'ArrowUp' && flatRows.length > 0) {
+    if (e.key === 'ArrowUp') {
       e.preventDefault();
+      if (flatRows.length === 0) return true;
       setSelectedIndex((prev) => wrapIndex(prev, -1, flatRows.length));
       return true;
     }
@@ -307,7 +311,11 @@ export function useAtMentionPanel(params: UseAtMentionPanelParams) {
         selectRow(selected);
         return true;
       }
-      return false;
+      // FB-586：0 行面板把裸 Enter 漏给提交链路会发出一条只有 "@" 的消息。
+      // 吞掉 Enter 并关面板（文本原样保留，再按一次 Enter 正常发送，用户不会被卡住）。
+      e.preventDefault();
+      dismiss(true);
+      return true;
     }
     if (e.key === 'Escape') {
       e.preventDefault();

@@ -161,14 +161,20 @@ export class AgentRunController {
    * permission_request 此前没有通知出口——用户切到别的会话或收起聊天列（专注模式）时，
    * 审批卡就挂在屏幕外无人知晓。文案与 dedupeKey（请求 id）和落库口保持一致：
    * 同一条请求从停车口/落库口/这里多路到达时，notificationService 同键只投一条。
-   * resolved:true（超时/被取代/companion 收口）不是待办，绝不通知。
+   * resolved:true（超时/被取代/companion 收口）不是待办，绝不通知；且这些收口事件
+   * 只经此出口（落库口看不见），必须像落库口一样按 id 撤回已投递的横幅——否则用户
+   * 回到前台还会被一条指向已失效审批的「需要授权」补提醒误导。没投递过则
+   * retractNeedsInput 自身是 no-op。
    */
   private maybeNotifyNeedsInput(event: AgentEvent): void {
     if (event.type !== 'permission_request' || !event.data) return;
     const data = event.data as { id?: unknown; tool?: unknown; command?: unknown; resolved?: unknown };
-    if (data.resolved) return;
     if (typeof data.id !== 'string' || data.id.length === 0) return;
     try {
+      if (data.resolved) {
+        notificationService.retractNeedsInput(data.id);
+        return;
+      }
       notificationService.notifyNeedsInput({
         sessionId: this.deps.sessionId,
         title: '需要授权',
@@ -176,7 +182,7 @@ export class AgentRunController {
         dedupeKey: data.id,
       });
     } catch (error) {
-      this.deps.logger.warn(`[AgentRouter] Failed to notify needs-input for ${this.deps.sessionId}:`, error);
+      this.deps.logger.warn(`[AgentRouter] Failed to sync needs-input notification for ${this.deps.sessionId}:`, error);
     }
   }
 

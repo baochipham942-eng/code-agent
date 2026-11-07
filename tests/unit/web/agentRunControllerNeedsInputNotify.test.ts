@@ -7,6 +7,9 @@
 // 只覆盖后台任务）。emitAgentEvent 现在给未决 permission_request 发
 // notificationService.notifyNeedsInput，dedupeKey = 请求 id——同一条请求从停车口/
 // 落库口/这里多路到达时，真服务的同键去重只投一条横幅。
+// resolved:true 收口事件（超时/被顶替/companion 应答）只经此出口，落库口看不见：
+// 这里必须像落库口（taskManagerEventPersistence）一样按 id 撤回已投递的横幅，
+// 否则用户回来还会被一条指向已失效审批的「需要授权」补提醒误导。
 // ============================================================================
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { Response } from 'express';
@@ -134,6 +137,45 @@ describe('AgentRunController 前台 needs-input 横幅', () => {
     createController().emitAgentEvent(permissionRequest({ resolved: true, decision: 'timeout' }));
 
     expect(notify).not.toHaveBeenCalled();
+    expect(platformMocks.broadcast).not.toHaveBeenCalled();
+  });
+
+  it('已投递的请求收口（resolved:true）→ 按原 id 撤回已投递横幅（retract 广播恰一次）', () => {
+    const retract = vi.spyOn(notificationService, 'retractNeedsInput');
+    const controller = createController('session-fg-retract');
+    // 先按未决事件投递（走真服务，deliveredNeedsInputKeys 记账）。
+    controller.emitAgentEvent(permissionRequest({ id: 'perm-req-resolve' }));
+    expect(platformMocks.broadcast).toHaveBeenCalledTimes(1);
+    platformMocks.broadcast.mockClear();
+
+    // 同 id 收口：撤回——错过横幅的用户回来不再收到指向已失效审批的补提醒。
+    controller.emitAgentEvent(permissionRequest({ id: 'perm-req-resolve', resolved: true, decision: 'timeout' }));
+
+    expect(retract).toHaveBeenCalledTimes(1);
+    expect(retract).toHaveBeenCalledWith('perm-req-resolve');
+    expect(platformMocks.broadcast).toHaveBeenCalledTimes(1);
+    expect(platformMocks.broadcast).toHaveBeenCalledWith(
+      IPC_CHANNELS.NOTIFICATION_SHOW,
+      expect.objectContaining({ retract: true, dedupeKey: 'perm-req-resolve' }),
+    );
+  });
+
+  it('收口的 id 从未投递过 → 撤回是 no-op，不广播', () => {
+    const retract = vi.spyOn(notificationService, 'retractNeedsInput');
+    createController().emitAgentEvent(permissionRequest({ resolved: true, decision: 'superseded' }));
+
+    expect(retract).toHaveBeenCalledTimes(1);
+    expect(platformMocks.broadcast).not.toHaveBeenCalled();
+  });
+
+  it('撤回口抛错也不许打断事件主链路（emitAgentEvent 照常返回 true 并写 SSE）', () => {
+    vi.spyOn(notificationService, 'retractNeedsInput').mockImplementation(() => {
+      throw new Error('retract exploded');
+    });
+    const controller = createController();
+    const emitted = controller.emitAgentEvent(permissionRequest({ resolved: true, decision: 'timeout' }));
+
+    expect(emitted).toBe(true);
     expect(platformMocks.broadcast).not.toHaveBeenCalled();
   });
 

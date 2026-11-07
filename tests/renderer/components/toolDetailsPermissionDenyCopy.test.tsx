@@ -1,22 +1,28 @@
 // ============================================================================
 // 用户 deny 规则 / 内置安全规则硬拒的人话卡片（N-FIX-PERM-DENY-ENGLISH-COPY）
 // ----------------------------------------------------------------------------
-// 夹具 = 真实 executor 结果形状：guardFabricGate 两条硬拒的 error 原文（规则名取自
-// policyEngine 真源：User deny: Write / Block SSH key access）+ toolExecutor 硬拒出口
-// 透传的 metadata.hostReason。zh/en 各渲染一遍，钉死：登记表文案出卡片、英文原句不漏、
-// 结构化 hostReason 路径不出「查看原始报错」开关。
+// hermetic-protocol：renderer 测试里起**真实 ToolExecutor**（用户 deny 规则 / 内置
+// block-ssh-keys 两条硬拒路径，规则名取自 policyEngine 真源），拿真实执行结果
+// （error + metadata.hostReason）喂 humanizeToolError / humanizeToolFailureReason，
+// 并 zh/en 各渲染一遍 ToolDetails。钉死：登记表文案上卡、英文原句不漏、结构化
+// hostReason 路径不出「查看原始报错」开关；executor 不透传 hostReason 时整链变红。
 // ============================================================================
 
+import * as fs from 'node:fs/promises';
+import * as os from 'node:os';
+import * as path from 'node:path';
 import React from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
-import { describe, expect, it, vi } from 'vitest';
-import { HostReasonCode, type ToolCall } from '../../../src/shared/contract';
-import { en } from '../../../src/renderer/i18n/en';
-import { zh } from '../../../src/renderer/i18n/zh';
-import {
-  humanizeToolError,
-  humanizeToolFailureReason,
-} from '../../../src/renderer/utils/toolExecutionPresentation';
+import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
+
+vi.mock('../../../src/host/services/infra/logger', () => {
+  const fake = { info: vi.fn(), debug: vi.fn(), warn: vi.fn(), error: vi.fn() };
+  return { createLogger: vi.fn(() => fake), logger: fake, default: fake };
+});
+
+vi.mock('../../../src/host/tools/shell/dynamicDescription', () => ({
+  generateBashDescription: async () => null,
+}));
 
 // ToolDetails 依赖 appStore 的两个 selector，mock 掉即可（同 toolDetailsHighlight.test.tsx）。
 vi.mock('../../../src/renderer/stores/appStore', () => ({
@@ -39,65 +45,106 @@ vi.mock('../../../src/renderer/hooks/useI18n', async () => {
   };
 });
 
+import { getToolCache } from '../../../src/host/services/infra/toolCache';
+import { getProtocolRegistry } from '../../../src/host/tools/protocolRegistry';
+import { ToolExecutor } from '../../../src/host/tools/toolExecutor';
+import { HostReasonCode } from '../../../src/shared/contract/permission';
+import type { ToolCall, ToolExecutionResult } from '../../../src/shared/contract/tool';
+import { en } from '../../../src/renderer/i18n/en';
+import { zh } from '../../../src/renderer/i18n/zh';
 import { ToolDetails } from '../../../src/renderer/components/features/chat/MessageBubble/ToolCallDisplay/ToolDetails';
+import {
+  humanizeToolError,
+  humanizeToolFailureReason,
+} from '../../../src/renderer/utils/toolExecutionPresentation';
+import { getPolicyEngine, resetPolicyEngine } from '../../../src/host/permissions/policyEngine';
+import { getPermissionModeManager, resetPermissionModeManager } from '../../../src/host/permissions/modes';
 
-// guardFabricGate 硬拒 error 原文（policyEngine 真源规则名，字节照抄）。
-const USER_DENY_ERROR = "Blocked by your permission deny rule (User deny: Write). This tool call is denied by the user's settings; do not retry it or try to achieve the same effect another way.";
-const BUILTIN_SAFETY_ERROR = 'Blocked by built-in safety rule (Block SSH key access): SSH private key access is not allowed. Do not retry. Write inside the workspace/project directory instead, or ask the user to make this change themselves.';
-
-/** 与 toolExecutor 硬拒出口回传形状一致的失败结果（metadata 只带 hostReason）。 */
-function executorLikeResult(error: string, code: HostReasonCode, toolName: string) {
-  return {
-    success: false,
-    error,
-    metadata: {
-      hostReason: { code, metadata: { toolName }, modelText: error },
-    },
-  };
+/**
+ * 真实 executor 硬拒结果：工作区临时目录 + 审批回调一叫就炸（硬拒必须发生在审批之前）。
+ * 返回的 { error, metadata } 与 toolExecutor 硬拒出口逐字段一致。
+ */
+async function executeRealDeny(
+  tool: string,
+  params: Record<string, unknown>,
+): Promise<ToolExecutionResult> {
+  const workspace = await fs.mkdtemp(path.join(os.tmpdir(), 'perm-deny-copy-'));
+  try {
+    const executor = new ToolExecutor({
+      workingDirectory: workspace,
+      requestPermission: async () => {
+        throw new Error('硬拒发生在审批之前，审批回调不该被叫起');
+      },
+    });
+    executor.setAuditEnabled(false);
+    return await executor.execute(tool, params, { sessionId: 'perm-deny-copy' });
+  } finally {
+    await fs.rm(workspace, { recursive: true, force: true });
+  }
 }
 
-const USER_DENY_CALL: ToolCall = {
-  id: 'perm-deny-user-rule',
-  name: 'Write',
-  arguments: { file_path: '/etc/hosts', content: 'x' },
-  result: executorLikeResult(USER_DENY_ERROR, HostReasonCode.PermissionDeniedUserRule, 'Write'),
-} as unknown as ToolCall;
+/** 真实执行结果包成 ToolCall（ToolDetails / humanizeToolFailureReason 的入参形状）。 */
+function asToolCall(id: string, name: string, args: Record<string, unknown>, result: ToolExecutionResult): ToolCall {
+  return { id, name, arguments: args, result } as unknown as ToolCall;
+}
 
-const SAFETY_RULE_CALL: ToolCall = {
-  id: 'perm-deny-safety-rule',
-  name: 'Read',
-  arguments: { file_path: '~/.ssh/id_rsa' },
-  result: executorLikeResult(BUILTIN_SAFETY_ERROR, HostReasonCode.PermissionDeniedSafetyRule, 'Read'),
-} as unknown as ToolCall;
+describe('用户 deny 规则硬拒的人话卡片（真实 executor 结果）', () => {
+  let userDenyResult: ToolExecutionResult;
 
-describe('用户 deny 规则硬拒的人话卡片', () => {
-  it('zh：header 与展开卡说清是谁拦的、没执行、去哪改规则，英文原句不出现', () => {
-    const humanized = humanizeToolError(USER_DENY_ERROR, 'Write', zh, USER_DENY_CALL.result!.metadata);
+  beforeAll(() => {
+    getProtocolRegistry();
+  });
+  beforeEach(() => {
+    resetPolicyEngine();
+    resetPermissionModeManager();
+    getToolCache().clear();
+    getPolicyEngine().loadUserRules({ deny: ['Write'] }, 'user-ui');
+  });
+  afterEach(() => {
+    resetPolicyEngine();
+    resetPermissionModeManager();
+  });
+
+  const runOnce = async () => {
+    userDenyResult = await executeRealDeny('Write', { file_path: '/usr/bin/neo-probe', content: 'x' });
+    expect(userDenyResult.success).toBe(false);
+    // 夹具就是真实串：规则名 User deny: Write 来自 policyEngine（loadUserRules 的命名）。
+    expect(userDenyResult.error).toContain('Blocked by your permission deny rule (User deny: Write)');
+    expect(userDenyResult.metadata?.hostReason).toMatchObject({ code: HostReasonCode.PermissionDeniedUserRule });
+  };
+
+  it('zh：header 与展开卡说清是谁拦的、没执行、去哪改规则，英文原句不出现', async () => {
+    await runOnce();
+    const humanized = humanizeToolError(userDenyResult.error, 'Write', zh, userDenyResult.metadata);
     expect(humanized?.summary).toContain('被你设置的权限规则拦下了，没有执行');
     expect(humanized?.detail).toContain('用户级权限规则');
     expect(humanized?.detail).toContain('重新发起');
     expect(`${humanized?.summary ?? ''}${humanized?.detail ?? ''}`)
       .not.toMatch(/Blocked by|denied by the user|do not retry/i);
 
-    const reason = humanizeToolFailureReason(USER_DENY_CALL, zh);
+    const reason = humanizeToolFailureReason(asToolCall('t', 'Write', {}, userDenyResult), zh);
     expect(reason).toContain('用户级权限规则');
     expect(reason).not.toMatch(/Blocked by|denied by/i);
   });
 
-  it('en：same wording contract, no CJK leaks into the English card', () => {
-    const humanized = humanizeToolError(USER_DENY_ERROR, 'Write', en, USER_DENY_CALL.result!.metadata);
+  it('en：same wording contract, no CJK leaks into the English card', async () => {
+    await runOnce();
+    const humanized = humanizeToolError(userDenyResult.error, 'Write', en, userDenyResult.metadata);
     expect(humanized?.summary).toContain('was blocked by one of your permission rules and was not run');
     expect(humanized?.detail).toContain('User-level permission rules');
     expect(`${humanized?.summary ?? ''}${humanized?.detail ?? ''}`).not.toMatch(/[\u4e00-\u9fff]/);
 
-    const reason = humanizeToolFailureReason(USER_DENY_CALL, en);
+    const reason = humanizeToolFailureReason(asToolCall('t', 'Write', {}, userDenyResult), en);
     expect(reason).toContain('User-level permission rules');
     expect(reason).not.toMatch(/[\u4e00-\u9fff]/);
   });
 
-  it('zh ToolDetails：登记表文案上卡，无英文原句、无「查看原始报错」开关', () => {
+  it('zh ToolDetails：登记表文案上卡，无英文原句、无「查看原始报错」开关', async () => {
+    await runOnce();
     i18nState.lang = 'zh';
-    const markup = renderToStaticMarkup(React.createElement(ToolDetails, { toolCall: USER_DENY_CALL }));
+    const markup = renderToStaticMarkup(React.createElement(ToolDetails, {
+      toolCall: asToolCall('perm-deny-user-rule', 'Write', { file_path: '/etc/hosts', content: 'x' }, userDenyResult),
+    }));
     expect(markup).toContain('被你设置的权限规则拦下了，没有执行');
     expect(markup).toContain('用户级权限规则');
     expect(markup).not.toContain('Blocked by your permission deny rule');
@@ -105,9 +152,12 @@ describe('用户 deny 规则硬拒的人话卡片', () => {
     expect(markup).not.toContain('查看原始报错');
   });
 
-  it('en ToolDetails：registered copy renders, raw error hidden, no CJK', () => {
+  it('en ToolDetails：registered copy renders, raw error hidden, no CJK', async () => {
+    await runOnce();
     i18nState.lang = 'en';
-    const markup = renderToStaticMarkup(React.createElement(ToolDetails, { toolCall: USER_DENY_CALL }));
+    const markup = renderToStaticMarkup(React.createElement(ToolDetails, {
+      toolCall: asToolCall('perm-deny-user-rule', 'Write', { file_path: '/etc/hosts', content: 'x' }, userDenyResult),
+    }));
     expect(markup).toContain('was blocked by one of your permission rules and was not run');
     expect(markup).toContain('User-level permission rules');
     expect(markup).not.toContain('Blocked by your permission deny rule');
@@ -116,34 +166,63 @@ describe('用户 deny 规则硬拒的人话卡片', () => {
   });
 });
 
-describe('内置安全规则硬拒的人话卡片', () => {
-  it('zh：说清是 Neo 的内置安全底线、没执行、给出替代出路', () => {
-    const humanized = humanizeToolError(BUILTIN_SAFETY_ERROR, 'Read', zh, SAFETY_RULE_CALL.result!.metadata);
+describe('内置安全规则硬拒的人话卡片（真实 executor 结果）', () => {
+  let safetyResult: ToolExecutionResult;
+
+  beforeAll(() => {
+    getProtocolRegistry();
+  });
+  beforeEach(() => {
+    resetPolicyEngine();
+    resetPermissionModeManager();
+    getToolCache().clear();
+  });
+  afterEach(() => {
+    resetPolicyEngine();
+    resetPermissionModeManager();
+  });
+
+  // 只读探测不落盘：deny 发生在任何文件访问之前（同 guardFabricGate.builtinDeny 的 executor 用例）。
+  const sshProbe = () => path.join(os.homedir(), '.ssh', 'id_rsa');
+  const runOnce = async () => {
+    safetyResult = await executeRealDeny('Read', { file_path: sshProbe() });
+    expect(safetyResult.success).toBe(false);
+    expect(safetyResult.error).toContain('Blocked by built-in safety rule (Block SSH key access)');
+    expect(safetyResult.metadata?.hostReason).toMatchObject({ code: HostReasonCode.PermissionDeniedSafetyRule });
+  };
+
+  it('zh：说清是 Neo 的内置安全底线、没执行、给出替代出路', async () => {
+    await runOnce();
+    const humanized = humanizeToolError(safetyResult.error, 'Read', zh, safetyResult.metadata);
     expect(humanized?.summary).toContain('触碰了 Neo 的内置安全底线，已被拦截，没有执行');
     expect(humanized?.detail).toContain('工作文件夹内操作');
     expect(`${humanized?.summary ?? ''}${humanized?.detail ?? ''}`)
       .not.toMatch(/Blocked by built-in|Do not retry|workspace\/project/i);
 
-    const reason = humanizeToolFailureReason(SAFETY_RULE_CALL, zh);
+    const reason = humanizeToolFailureReason(asToolCall('t', 'Read', {}, safetyResult), zh);
     expect(reason).toContain('不会代做');
     expect(reason).toContain('工作文件夹内操作');
     expect(reason).not.toMatch(/Blocked by built-in/i);
   });
 
-  it('en：same wording contract, no CJK leaks into the English card', () => {
-    const humanized = humanizeToolError(BUILTIN_SAFETY_ERROR, 'Read', en, SAFETY_RULE_CALL.result!.metadata);
-    expect(humanized?.summary).toContain("hit one of Neo's built-in safety rules and was blocked; it did not run");
+  it('en：same wording contract, no CJK leaks into the English card', async () => {
+    await runOnce();
+    const humanized = humanizeToolError(safetyResult.error, 'Read', en, safetyResult.metadata);
+    expect(humanized?.summary).toContain('built-in safety rules and was blocked; it did not run');
     expect(humanized?.detail).toContain('workspace folder instead');
     expect(`${humanized?.summary ?? ''}${humanized?.detail ?? ''}`).not.toMatch(/[\u4e00-\u9fff]/);
 
-    const reason = humanizeToolFailureReason(SAFETY_RULE_CALL, en);
+    const reason = humanizeToolFailureReason(asToolCall('t', 'Read', {}, safetyResult), en);
     expect(reason).toContain('workspace folder instead');
     expect(reason).not.toMatch(/[\u4e00-\u9fff]/);
   });
 
-  it('zh ToolDetails：登记表文案上卡，无英文原句、无「查看原始报错」开关', () => {
+  it('zh ToolDetails：登记表文案上卡，无英文原句、无「查看原始报错」开关', async () => {
+    await runOnce();
     i18nState.lang = 'zh';
-    const markup = renderToStaticMarkup(React.createElement(ToolDetails, { toolCall: SAFETY_RULE_CALL }));
+    const markup = renderToStaticMarkup(React.createElement(ToolDetails, {
+      toolCall: asToolCall('perm-deny-safety-rule', 'Read', { file_path: sshProbe() }, safetyResult),
+    }));
     expect(markup).toContain('触碰了 Neo 的内置安全底线，已被拦截，没有执行');
     expect(markup).toContain('工作文件夹内操作');
     expect(markup).not.toContain('Blocked by built-in safety rule');
@@ -151,9 +230,12 @@ describe('内置安全规则硬拒的人话卡片', () => {
     expect(markup).not.toContain('查看原始报错');
   });
 
-  it('en ToolDetails：registered copy renders, raw error hidden, no CJK', () => {
+  it('en ToolDetails：registered copy renders, raw error hidden, no CJK', async () => {
+    await runOnce();
     i18nState.lang = 'en';
-    const markup = renderToStaticMarkup(React.createElement(ToolDetails, { toolCall: SAFETY_RULE_CALL }));
+    const markup = renderToStaticMarkup(React.createElement(ToolDetails, {
+      toolCall: asToolCall('perm-deny-safety-rule', 'Read', { file_path: sshProbe() }, safetyResult),
+    }));
     // markup 里撇号被转义成 &#x27;，断言避开撇号本体。
     expect(markup).toContain('built-in safety rules and was blocked; it did not run');
     expect(markup).toContain('workspace folder instead');

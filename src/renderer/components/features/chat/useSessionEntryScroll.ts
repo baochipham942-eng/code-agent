@@ -27,6 +27,8 @@ export function isScrollerNearBottom(
   return scroller.scrollHeight - scroller.scrollTop - scroller.clientHeight <= threshold;
 }
 
+const SETTLE_STABLE_FRAMES = 16;
+
 interface BottomSettlementOptions {
   turnsAtJump: TraceTurn[];
   projectionTurnsRef: RefObject<TraceTurn[]>;
@@ -49,6 +51,8 @@ export function startBottomSettlement({
   onCancel = () => undefined,
 }: BottomSettlementOptions): void {
   let remainingFrames = 60;
+  let stableFrames = 0;
+  let lastScrollHeight = -1;
   let settled = false;
   let frame: number | ReturnType<typeof setTimeout> | null = null;
   const cancelSettlement = () => {
@@ -76,9 +80,15 @@ export function startBottomSettlement({
       return;
     }
     const scroller = scrollerElementRef.current;
-    if (scroller) scroller.scrollTop = scroller.scrollHeight;
+    if (scroller) {
+      scroller.scrollTop = scroller.scrollHeight;
+      const atBottom = scroller.scrollHeight === lastScrollHeight
+        && scroller.scrollHeight - scroller.scrollTop - scroller.clientHeight <= 1;
+      stableFrames = atBottom ? stableFrames + 1 : 0;
+      lastScrollHeight = scroller.scrollHeight;
+    }
     remainingFrames -= 1;
-    if (remainingFrames <= 0) {
+    if (remainingFrames <= 0 || stableFrames >= SETTLE_STABLE_FRAMES) {
       settled = true;
       onSettled();
       cancelSettlement();

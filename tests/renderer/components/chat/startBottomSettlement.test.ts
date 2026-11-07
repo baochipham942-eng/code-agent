@@ -45,15 +45,25 @@ describe('startBottomSettlement', () => {
       cb();
       tick();
     }
-    return { frames, onSettled, onCancel };
+    return { frames, onSettled, onCancel, scroller };
   }
 
   it('stops early once scrollHeight is stable and the scroller is at the bottom', () => {
     const { frames, onSettled, onCancel } = run(() => 3000);
     expect(frames).toBeLessThan(60);
-    expect(frames).toBe(9);
+    expect(frames).toBe(17);
     expect(onSettled).toHaveBeenCalledTimes(1);
     expect(onCancel).not.toHaveBeenCalled();
+  });
+
+  it('keeps settling when scrollHeight grows after the first stable window', () => {
+    const { frames, onSettled, scroller } = run((frame) => frame < 9 ? 3000 : 3400);
+    const distanceFromBottom = scroller.scrollHeight - scroller.scrollTop - scroller.clientHeight;
+
+    expect(frames).toBeGreaterThan(9);
+    expect(frames).toBeLessThan(60);
+    expect(distanceFromBottom).toBe(0);
+    expect(onSettled).toHaveBeenCalledTimes(1);
   });
 
   it('keeps going while scrollHeight still grows, up to the 60-frame cap', () => {

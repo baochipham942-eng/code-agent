@@ -27,7 +27,7 @@ export function isScrollerNearBottom(
   return scroller.scrollHeight - scroller.scrollTop - scroller.clientHeight <= threshold;
 }
 
-const SETTLE_STABLE_FRAMES = 8;
+const SETTLE_STABLE_FRAMES = 16;
 
 interface BottomSettlementOptions {
   turnsAtJump: TraceTurn[];

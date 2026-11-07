@@ -69,6 +69,7 @@ import { recordMessageProcessorModelCallTelemetry } from './messageProcessorTele
 import { handleTruncatedToolCalls } from './messageProcessorToolTruncation';
 import { noteStagnationFingerprint } from '../../model/cacheHitObservation';
 import { deniedToolRetryGuidance, isToolDeniedForRun } from './toolRunPolicy';
+import { describeDeniedShellCalls } from './foregroundShellDenial';
 import { attachTurnQualityMetadata } from './turnQuality';
 import { wasMessagePersistedByContextAssembly } from './contextAssembly/systemContextStack';
 import { shouldEndRunForPlanApproval } from './planApprovalRunBoundary';
@@ -667,11 +668,13 @@ export class MessageProcessor {
       }
       this.guardState.toolCallRetryCount++;
       const deniedNames = Array.from(new Set(deniedToolCalls.map((toolCall) => toolCall.name))).join(', ');
+      const shellDenial = describeDeniedShellCalls(this.ctx, deniedToolCalls);
       this.contextAssembly.injectSystemMessage(
         [
           '<tool-run-policy>',
           `The previous tool call requested disabled tools for this run: ${deniedNames}.`,
           deniedToolRetryGuidance(this.ctx),
+          ...(shellDenial ? [shellDenial.guidance] : []),
           '</tool-run-policy>',
         ].join('\n'),
         'tool-policy-guard',
@@ -680,7 +683,7 @@ export class MessageProcessor {
         const finalMessage: Message = {
           id: this.contextAssembly.generateId(),
           role: 'assistant',
-          content: `本轮请求了后台运行禁用的交互工具（${deniedNames}），已停止继续调用工具。`,
+          content: shellDenial?.finalMessage ?? `本轮请求了后台运行禁用的交互工具（${deniedNames}），已停止继续调用工具。`,
           timestamp: Date.now(),
           effortLevel: this.ctx.turn.effortLevel,
           metadata: attachTurnQualityMetadata(this.ctx, undefined, response),

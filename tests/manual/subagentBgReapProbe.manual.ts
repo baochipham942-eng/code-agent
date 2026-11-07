@@ -89,10 +89,15 @@ async function main() {
     });
   } catch (e) { log(`agent THREW ${(e as Error).message}`); }
   log(`agent COMPLETED success=${result?.success} toolsUsed=${JSON.stringify(result?.toolsUsed)} output=${String(result?.output ?? result?.error ?? '').slice(0, 200)}`);
+  const failures: string[] = [];
   const snap = (label: string) => {
     log(`== ${label}: pgrep=${pg()}`);
     for (const t of bg.getAllBackgroundTasks()) log(`   ledger ${JSON.stringify({ ...t, command: t.command.slice(-40) })}`);
     if (!bg.getAllBackgroundTasks().length) log('   ledger (empty)');
+    // Premise under test: after the agent completes, the child is still alive and the ledger says running.
+    const alive = pg() !== '(none)';
+    const running = bg.getAllBackgroundTasks().some((t) => t.status === 'running');
+    if (!alive || !running) failures.push(`${label}: alive=${alive} ledgerRunning=${running}`);
   };
   try {
     snap('at completion');
@@ -102,6 +107,11 @@ async function main() {
     try { execSync(`pkill -f "${MARK}"`); } catch { /* none */ }
     log(`cleanup pgrep=${pg()}`);
   }
+  if (failures.length) {
+    for (const f of failures) log(`FAIL premise not held -> ${f}`);
+    process.exit(1);
+  }
+  log('PASS premise held: child alive + ledger running at completion, +10s, +60s');
   process.exit(0);
 }
 main().catch((e) => { try { execSync(`pkill -f "${MARK}"`); } catch { /* */ } console.error(e); process.exit(1); });

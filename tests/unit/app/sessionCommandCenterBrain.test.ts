@@ -101,7 +101,7 @@ describe('SESSION_COMMAND_CENTER_BRAIN_CONTEXT design notice', () => {
     expect(SESSION_COMMAND_CENTER_BRAIN_CONTEXT).toContain('这条点名路由优先于 3a');
     expect(SESSION_COMMAND_CENTER_BRAIN_CONTEXT).toContain('把用户的命令意图完整写入 prompt');
     expect(SESSION_COMMAND_CENTER_BRAIN_CONTEXT).toContain('再一句话说明它已经开始');
-    expect(SESSION_COMMAND_CENTER_BRAIN_CONTEXT).toContain('3a. 对普通邮件、日历和提醒请求');
+    expect(SESSION_COMMAND_CENTER_BRAIN_CONTEXT).toContain('3a. 本轮工具表里已有邮件、日历、提醒事项工具时');
   });
 
   it('covers direct foreground writes and contextual file references', () => {

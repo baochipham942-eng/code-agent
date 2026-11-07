@@ -170,6 +170,7 @@ function score(messages: AssistantMessage[]): RoundResult {
 
 async function chatCall(
   apiKey: string,
+  provider: Provider,
   tier: ReplayTier,
   messages: ChatMessage[],
   tools: Array<Record<string, unknown>>,
@@ -185,6 +186,7 @@ async function chatCall(
       tool_choice: toolChoice,
       temperature: TEMPERATURE,
       max_tokens: MAX_OUTPUT_TOKENS,
+      ...(provider === 'xiaomi' ? { thinking: { type: 'disabled' } } : {}),
     }),
     signal: AbortSignal.timeout(CALL_TIMEOUT_MS),
   });
@@ -214,6 +216,7 @@ function replayToolOutput(call: ToolCall): string {
 
 async function runRound(
   apiKey: string,
+  provider: Provider,
   tier: ReplayTier,
   prompt: string,
   tools: Array<Record<string, unknown>>,
@@ -227,6 +230,7 @@ async function runRound(
   for (let step = 0; step < MAX_MODEL_STEPS; step += 1) {
     const message = await chatCall(
       apiKey,
+      provider,
       tier,
       messages,
       tools,
@@ -270,7 +274,7 @@ async function runPrompt(
   const forceToolOnFirstStep = prompt.id === 'P3';
   if (forceToolOnFirstStep) console.log(`TOOL_CHOICE prompt=${prompt.id} first_step=required later_steps=auto`);
   for (let round = 1; round <= ROUNDS; round += 1) {
-    const messages = await runRound(apiKey, tier, prompt.text, tools, forceToolOnFirstStep);
+    const messages = await runRound(apiKey, provider, tier, prompt.text, tools, forceToolOnFirstStep);
     const result = score(messages);
     totals.disabledWording += Number(result.disabledWording);
     totals.delegateTaskCalls += result.delegateTaskCalls;
@@ -333,7 +337,7 @@ async function main(): Promise<void> {
   const apiKey = (process.env[keyEnv] ?? '').trim();
   if (!apiKey) throw new Error(`${keyEnv} is required; refusing to skip the real-model replay`);
   await loadProductModules();
-  console.log(`REPLAY provider=${provider} model=${tier.model} endpoint=${tier.baseUrl} temperature=${TEMPERATURE} rounds=${ROUNDS} reminders_config=in-process-enabled`);
+  console.log(`REPLAY provider=${provider} model=${tier.model} endpoint=${tier.baseUrl} temperature=${TEMPERATURE} rounds=${ROUNDS} thinking=${provider === 'xiaomi' ? 'disabled' : 'provider-default'} reminders_config=in-process-enabled`);
   const results = {} as Record<PromptId, PromptTotals>;
   for (const prompt of PROMPTS) results[prompt.id] = await runPrompt(apiKey, provider, tier, prompt);
   if (expectAfter) {

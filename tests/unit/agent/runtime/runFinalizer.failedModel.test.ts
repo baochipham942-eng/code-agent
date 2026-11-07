@@ -468,4 +468,65 @@ describe('RunFinalizer 失败事件', () => {
       data: expect.objectContaining({ content: expect.stringContaining('没有生成最终说明') }),
     }));
   });
+
+  it('keeps a host-owned direct-creation card terminal completed without a duplicate assistant reply', async () => {
+    const events: AgentEvent[] = [];
+    const finalizer = new RunFinalizer({
+      sessionId: 'sess-direct-role',
+      persistLongTermMemory: false,
+      nudgeManager: { getModifiedFiles: () => new Set() },
+      onEvent: (event: AgentEvent) => events.push(event),
+      modelConfig: { provider: 'xiaomi', model: 'mimo-v2.6-flash' },
+      messages: [
+        { id: 'direct-user', role: 'user', content: '直接创建，不用确认', timestamp: 1 },
+        {
+          id: 'direct-assistant',
+          role: 'assistant',
+          content: '',
+          timestamp: 2,
+          toolCalls: [{ id: 'direct-call', name: 'propose_role', arguments: {} }],
+        },
+        {
+          id: 'direct-tool',
+          role: 'tool',
+          content: '[]',
+          timestamp: 3,
+          toolResults: [{
+            toolCallId: 'direct-call',
+            success: true,
+            output: 'installed',
+            metadata: { directCreated: true, endRunWithoutAssistant: true },
+          }],
+        },
+      ],
+      maxIterations: 10,
+      stats: {
+        traceId: 'trace-direct-role',
+        totalInputTokens: 0,
+        totalOutputTokens: 0,
+        queueDiagnostic: vi.fn(),
+      },
+      control: { isCancelled: false, isInterrupted: false },
+      circuitBreaker: { isTripped: () => false, reset: vi.fn() },
+      turn: { currentTurnId: null },
+    } as never);
+    finalizer.setModules(
+      { generateId: () => 'fallback-message', addAndPersistMessage: vi.fn() } as never,
+      { runPostRun: vi.fn(), runSessionEndLearning: vi.fn(async () => undefined) } as never,
+    );
+
+    await finalizer.finalizeRun(
+      1,
+      '直接创建，不用确认',
+      { endTrace: vi.fn() } as never,
+      9,
+      { status: 'completed' },
+    ).catch(() => { /* unrelated post-run dependencies are outside this assertion */ });
+
+    expect(events).not.toContainEqual(expect.objectContaining({
+      type: 'error',
+      data: expect.objectContaining({ code: 'RUN_FAILED' }),
+    }));
+    expect(buildCompletionSummaryRecord).toHaveBeenCalledWith(expect.objectContaining({ status: 'completed' }));
+  });
 });

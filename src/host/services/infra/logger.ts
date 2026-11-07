@@ -7,7 +7,7 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import { getUserDataPath } from '../../platform/appPaths';
-import { redactSecrets, sanitizeLogValue } from '../../security/secretRedaction';
+import { redactCommandSecrets, sanitizeLogOutput } from '../../security/secretRedaction';
 import { getCorrelationFields } from '../../telemetry/runTraceContext';
 
 export enum LogLevel {
@@ -247,8 +247,8 @@ class Logger {
   }
 
   private log(level: string, message: string, args: unknown[]): void {
-    const sanitizedMessage = redactSecrets(message);
-    const sanitizedArgs = args.map((arg) => sanitizeLogValue(arg));
+    const sanitizedMessage = redactCommandSecrets(message);
+    const sanitizedArgs = args.map((arg) => sanitizeLogOutput(arg));
 
     // CLI 模式下只输出 ERROR（运行时检查，防止 ESM import hoisting 导致构造时 env 未设置）
     // WEB 模式不适用 — 见 constructor 注释

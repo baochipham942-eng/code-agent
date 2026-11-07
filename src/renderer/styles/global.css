@@ -408,6 +408,21 @@ pre code {
   50% { opacity: 0.5; }
 }
 
+/* 定时任务运行记录状态行的呼吸点（role-wake-prototype-v2 屏四 .pulse 同款：
+   1.4s 呼吸 + 轻缩放；reduced-motion 下停动画保常亮） */
+.cron-run-pulse-dot {
+  animation: cronRunPulse 1.4s ease-in-out infinite;
+}
+
+@keyframes cronRunPulse {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50% { opacity: 0.35; transform: scale(0.8); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .cron-run-pulse-dot { animation: none; }
+}
+
 @keyframes shimmer {
   0% { background-position: -200% 0; }
   100% { background-position: 200% 0; }

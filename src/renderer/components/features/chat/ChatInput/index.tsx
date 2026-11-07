@@ -4,7 +4,7 @@
 // 深度研究通过语义自动检测触发，无需手动切换
 // ============================================================================
 
-import React, { useState, useRef, useCallback, useEffect, useImperativeHandle, forwardRef, useMemo } from 'react';
+import React, { useState, useRef, useCallback, useEffect, useImperativeHandle, forwardRef, useMemo, useSyncExternalStore } from 'react';
 import { Image, FileText } from 'lucide-react';
 import type { MessageAttachment } from '../../../../../shared/contract';
 import type {
@@ -127,6 +127,13 @@ import { ReadOnlySessionNotice } from './ReadOnlySessionNotice';
 import { ImportedSessionNotice } from './ImportedSessionNotice';
 import { useImportedSessionNotice } from '../../../../hooks/useImportedSessionResume';
 import { useComposerAppEvents } from './useComposerAppEvents';
+import {
+  deriveCronRunStatusLine,
+  findCronExecutionForSession,
+  getObservedCronRunStatusForSession,
+  subscribeObservedCronRunStatus,
+} from '../cronRunSessionStatus';
+import { useCronStore } from '../../../../stores/cronStore';
 
 // ============================================================================
 // 类型定义
@@ -380,6 +387,34 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
   const currentSessionReadOnly = useSessionStore((s) => (
     s.sessions.find((session) => session.id === currentSessionId)?.readOnly === true
   ));
+  // 定时任务运行记录（N-UI-CRON-RUN-RECORD-CLEAR）：readOnly 只是「记录不改写」的内部
+  // 标志，对用户不出现「只读」。composer 照常可用，发送经 useCronRunFollowUpSend
+  // fork 出新对话带走任务+结果，placeholder 直接说清去向。
+  const isCronRunRecordSession = useSessionStore((s) => {
+    const kind = s.sessions.find((session) => session.id === currentSessionId)?.origin?.kind;
+    return kind === 'cron' || kind === 'heartbeat';
+  });
+  const cronRunFollowUpMode = currentSessionReadOnly && isCronRunRecordSession;
+  const observedCronRunStatus = useSyncExternalStore(
+    subscribeObservedCronRunStatus,
+    () => getObservedCronRunStatusForSession(currentSessionId),
+    () => null,
+  );
+  const cronStoreStatusKind = useCronStore((state) => {
+    if (!cronRunFollowUpMode || !currentSessionId) return null;
+    const session = useSessionStore.getState().sessions.find((item) => item.id === currentSessionId);
+    const jobId = session?.origin?.id?.trim();
+    if (!jobId) return null;
+    const latestForJob = state.latestExecutions[jobId];
+    const candidates = [
+      ...(state.executionsByJobId[jobId] ?? []),
+      ...(latestForJob ? [latestForJob] : []),
+      ...state.recentExecutions.filter((item) => item.jobId === jobId),
+    ];
+    const execution = findCronExecutionForSession(candidates, { executionId: session?.sourceRunId, sessionId: currentSessionId });
+    return deriveCronRunStatusLine({ execution, pendingApproval: null })?.kind ?? null;
+  });
+  const cronRunStatusKind = observedCronRunStatus?.kind ?? cronStoreStatusKind;
   // 导入的外部历史会话：composer 保持可用，上方挂一行「发送即开新会话续聊」说明。
   const importedSessionNotice = useImportedSessionNotice();
   const [pendingPromptCommand, setPendingPromptCommand] = useState<ComposerPromptCommandSelection | null>(null);
@@ -975,10 +1010,16 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
 
   const resolvedPlaceholder = useMemo(() => {
     if (placeholder) return placeholder;
+    if (cronRunFollowUpMode) {
+      // 只有 finished 有结果可带；中断/没跑成/取消/进行中一律不承诺「带上这次的结果」。
+      return cronRunStatusKind === 'finished'
+        ? t.chatInput.cronFollowUpPlaceholder
+        : t.chatInput.cronFollowUpPlaceholderNoResult;
+    }
     if (inputPlaceholder) return inputPlaceholder;
     if (!isProcessing) return undefined;
     return t.chatInputSubmit.runtimeInputPlaceholder;
-  }, [inputPlaceholder, isProcessing, placeholder, t]);
+  }, [cronRunFollowUpMode, cronRunStatusKind, inputPlaceholder, isProcessing, placeholder, t]);
 
   // 提交发送管线（schedule/loop/goal/agent 命令分支 + appshot 注入 + ! shell 快捷 + 失败回滚）
   const { handleSubmit, runScheduleCreation, confirmScheduleCreation, startGoalRun, submitSeedComposer } = useChatInputSubmit({
@@ -992,6 +1033,7 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
     artifactReferences,
     currentSessionId,
     isProcessing,
+    neverQueueToSession: cronRunFollowUpMode,
     disabled,
     isUploading,
     onSend,
@@ -1418,7 +1460,7 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
           }}
         />
 
-        {composerDraft.notice && !currentSessionReadOnly && (
+        {composerDraft.notice && (!currentSessionReadOnly || cronRunFollowUpMode) && (
           <UnsentDraftNotice
             preview={composerDraft.notice.preview}
             onPutBack={composerDraft.putBack}
@@ -1428,7 +1470,7 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
         {!currentSessionReadOnly && importedSessionNotice && (
           <ImportedSessionNotice state={importedSessionNotice} />
         )}
-        {currentSessionReadOnly ? (
+        {currentSessionReadOnly && !cronRunFollowUpMode ? (
           <ReadOnlySessionNotice />
         ) : (
         // composer 浮起（2026-08-04 §3.1）：L2 底 + 投影，默认无边框、聚焦描边显现，

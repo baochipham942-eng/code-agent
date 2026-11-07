@@ -62,6 +62,7 @@ vi.mock('../../../src/renderer/components/features/settings/WebModeBanner', () =
 
 import { CronCenterPanel } from '../../../src/renderer/components/features/cron/CronCenterPanel';
 import { useCronStore } from '../../../src/renderer/stores/cronStore';
+import { useAppStore } from '../../../src/renderer/stores/appStore';
 
 beforeEach(() => {
   invokeDomain.mockReset();
@@ -131,6 +132,16 @@ describe('CronCenterPanel 双 tab（批C4 WorkBuddy 式改造）', () => {
     expect(screen.getByTestId('stub-job-list')).toBeTruthy();
     // 收件箱仍在 DOM（待过目数据源），但被 hidden 收起
     expect(screen.getByTestId('stub-inbox').parentElement!.className).toContain('hidden');
+  });
+
+  it('面板已开在 jobs 时 openCronCenterRuns() 切到 runs 并清掉一次性请求', async () => {
+    render(<CronCenterPanel onClose={() => undefined} />);
+    expect(screen.getByTestId('cron-center-tab-jobs').getAttribute('aria-selected')).toBe('true');
+    act(() => { useAppStore.getState().openCronCenterRuns(); });
+    await vi.waitFor(() => {
+      expect(screen.getByTestId('cron-center-tab-runs').getAttribute('aria-selected')).toBe('true');
+    });
+    expect(useAppStore.getState().cronCenterRunsRequested).toBe(false);
   });
 
   it('切「运行记录」：拉跨任务执行流并渲染任务名列，任务工作台让位', async () => {

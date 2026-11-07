@@ -31,9 +31,24 @@ import {
 import { buildCronJobInput, buildDraftFromJob } from '../../../src/renderer/components/features/cron/types';
 import { useAppStore } from '../../../src/renderer/stores/appStore';
 
+// 与 timeInput24.test.tsx 同款：把区域钉成 en-US 十二小时制，验证 24 小时下拉不出现 AM/PM。
+function stubTwelveHourLocale(): void {
+  vi.stubGlobal('navigator', { language: 'en-US' });
+  vi.spyOn(Intl.DateTimeFormat.prototype, 'resolvedOptions').mockReturnValue({
+    locale: 'en-US',
+    calendar: 'gregory',
+    numberingSystem: 'latn',
+    timeZone: 'America/Los_Angeles',
+    hourCycle: 'h12',
+    hour12: true,
+  });
+}
+
 afterEach(() => {
   cleanup();
   vi.clearAllMocks();
+  vi.restoreAllMocks();
+  vi.unstubAllGlobals();
   useAppStore.setState({ language: 'zh' });
 });
 
@@ -192,9 +207,46 @@ describe('CronSimpleCreate', () => {
     expect(suggested).toBeGreaterThanOrEqual(1);
     expect(suggested).toBeLessThanOrEqual(59);
 
-    // 时间改成 09:17：不再撞整点，建议消失
-    fireEvent.change(screen.getByDisplayValue('09:00'), { target: { value: '09:17' } });
+    // 分钟下拉改成 17 → 09:17：不再撞整点，建议消失
+    fireEvent.change(screen.getByTestId('cron-simple-time-minute'), { target: { value: '17' } });
     expect(screen.queryByTestId('cron-stagger-hint')).toBeNull();
+  });
+
+  it('选 08:30 保存 → cron 表达式 30 8 * * *（小时/分钟下拉驱动）', async () => {
+    createJob.mockImplementation(async (input) => ({
+      ...(input as object),
+      id: 'new-job-830',
+      createdAt: 1,
+      updatedAt: 1,
+    } as CronJobDefinition));
+    const onDone = vi.fn();
+    render(<CronSimpleCreate onDone={onDone} />);
+    fireEvent.change(screen.getByPlaceholderText(/竞品动态/), {
+      target: { value: '每天八点半盯竞品' },
+    });
+    fireEvent.change(screen.getByTestId('cron-simple-time-hour'), { target: { value: '08' } });
+    fireEvent.change(screen.getByTestId('cron-simple-time-minute'), { target: { value: '30' } });
+    fireEvent.click(screen.getByText('创建自动化'));
+    await waitFor(() => {
+      expect(onDone).toHaveBeenCalled();
+    });
+    const submitted = createJob.mock.calls[0][0] as CronJobDefinition;
+    expect(submitted.schedule).toEqual({ type: 'cron', expression: '30 8 * * *', timezone: undefined });
+  });
+
+  it('en-US h12 区域下时间选择器仍是 24 小时双下拉，无 AM/PM、无原生 time 输入', () => {
+    stubTwelveHourLocale();
+    const { container } = render(<CronSimpleCreate onDone={() => undefined} />);
+
+    expect(container.querySelector('input[type="time"]')).toBeNull();
+    const picker = screen.getByTestId('cron-simple-time');
+    const selects = picker.querySelectorAll('select');
+    expect(selects.length).toBe(2);
+    const hour = screen.getByTestId('cron-simple-time-hour') as HTMLSelectElement;
+    const minute = screen.getByTestId('cron-simple-time-minute') as HTMLSelectElement;
+    expect(hour.value).toBe('09');
+    expect(minute.value).toBe('00');
+    expect(document.body.textContent).not.toMatch(/AM|PM/);
   });
 
   it.each([

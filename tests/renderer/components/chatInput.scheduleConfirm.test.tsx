@@ -641,7 +641,8 @@ describe('ScheduleConfirmCard — 卡内编辑', () => {
 
     fireEvent.click(screen.getByRole('button', { name: '编辑 什么时候' }));
     fireEvent.change(screen.getByLabelText('什么时候'), { target: { value: 'daily' } });
-    fireEvent.change(screen.getByLabelText('时间'), { target: { value: '08:30' } });
+    fireEvent.change(screen.getByLabelText('小时'), { target: { value: '08' } });
+    fireEvent.change(screen.getByLabelText('分钟'), { target: { value: '30' } });
     fireEvent.click(screen.getByText('保存'));
 
     expect(onDraftChange).toHaveBeenCalledTimes(1);
@@ -660,7 +661,8 @@ describe('ScheduleConfirmCard — 卡内编辑', () => {
 
     fireEvent.click(screen.getByRole('button', { name: '编辑 什么时候' }));
     fireEvent.change(screen.getByLabelText('什么时候'), { target: { value: 'weekly' } });
-    fireEvent.change(screen.getByLabelText('时间'), { target: { value: '09:00' } });
+    fireEvent.change(screen.getByLabelText('小时'), { target: { value: '09' } });
+    fireEvent.change(screen.getByLabelText('分钟'), { target: { value: '00' } });
     fireEvent.change(screen.getByLabelText('星期几'), { target: { value: '3' } });
     fireEvent.click(screen.getByText('保存'));
     expect((onDraftChange.mock.calls[0]?.[0] as PendingScheduleDraft).input.schedule)
@@ -694,7 +696,8 @@ describe('ScheduleConfirmCard — 卡内编辑', () => {
 
     // 选「每天」后输入出现、应用可用，应用即覆盖复杂表达式
     fireEvent.change(screen.getByLabelText('什么时候'), { target: { value: 'daily' } });
-    fireEvent.change(screen.getByLabelText('时间'), { target: { value: '09:15' } });
+    fireEvent.change(screen.getByLabelText('小时'), { target: { value: '09' } });
+    fireEvent.change(screen.getByLabelText('分钟'), { target: { value: '15' } });
     fireEvent.click(screen.getByText('保存'));
     expect((onDraftChange.mock.calls[0]?.[0] as PendingScheduleDraft).input.schedule)
       .toEqual({ type: 'cron', expression: '15 9 * * *' });
@@ -707,7 +710,8 @@ describe('ScheduleConfirmCard — 卡内编辑', () => {
     );
 
     fireEvent.click(screen.getByRole('button', { name: '编辑 什么时候' }));
-    fireEvent.change(screen.getByLabelText('时间'), { target: { value: '23:59' } });
+    fireEvent.change(screen.getByLabelText('小时'), { target: { value: '23' } });
+    fireEvent.change(screen.getByLabelText('分钟'), { target: { value: '59' } });
     fireEvent.click(screen.getByText('不改了'));
     expect(onDraftChange).not.toHaveBeenCalled();
   });

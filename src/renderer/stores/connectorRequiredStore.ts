@@ -29,6 +29,8 @@ interface ConnectorRequiredState {
   entries: Record<string, ConnectorRequiredEntry>;
   report: (sessionId: string, items: ConnectorRequiredItem[]) => void;
   dismiss: (sessionId: string, connectorId: string) => void;
+  /** 授权完成后的关闭：直接删除记录，不像 dismiss 那样永久静音 */
+  resolve: (sessionId: string, connectorId: string) => void;
   claimResume: (sessionId: string, connectorId: string) => boolean;
   recordPoll: (sessionId: string, connectorId: string, cap: number) => void;
   setReauth: (sessionId: string, connectorId: string, reauth: ConnectorRequiredEntry['reauth']) => void;
@@ -67,6 +69,13 @@ export const useConnectorRequiredStore = create<ConnectorRequiredState>((set, ge
     const entry = state.entries[key];
     if (!entry) return state;
     return { entries: { ...state.entries, [key]: { ...entry, status: 'dismissed' } } };
+  }),
+
+  resolve: (sessionId, connectorId) => set((state) => {
+    const key = connectorRequiredKey(sessionId, connectorId);
+    if (!(key in state.entries)) return state;
+    const { [key]: _removed, ...entries } = state.entries;
+    return { entries };
   }),
 
   claimResume: (sessionId, connectorId) => {

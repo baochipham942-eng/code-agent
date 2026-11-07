@@ -40,7 +40,7 @@ function InsufficientScopeCard({ entry, name }: { entry: ConnectorRequiredEntry;
       </span>
       <span className="flex shrink-0 gap-2">
         {state === 'done' ? (
-          <Button type="button" variant="ghost" size="sm" data-testid="connector-required-dismiss" onClick={dismiss}>{t.connectorRequired.dismiss}</Button>
+          <Button type="button" variant="ghost" size="sm" data-testid="connector-required-dismiss" onClick={() => useConnectorRequiredStore.getState().resolve(entry.sessionId, entry.connectorId)}>{t.connectorRequired.dismiss}</Button>
         ) : (
           <>
             {entry.helpUrl && (

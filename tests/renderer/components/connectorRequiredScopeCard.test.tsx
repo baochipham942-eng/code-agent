@@ -75,6 +75,19 @@ describe('insufficient_scope connector card', () => {
     expect(screen.getByTestId('connector-required-card-notion').textContent).toContain('已重新授权');
   });
 
+  it('after successful reauthorize, 知道了 clears the entry so later cards for the same connector can reappear', async () => {
+    ipcMock.reauthorize.mockResolvedValue({ success: true });
+    useConnectorRequiredStore.getState().report('s1', [scopeItem]);
+    render(<ConnectorRequiredCards />);
+    await act(async () => { fireEvent.click(screen.getByTestId('connector-required-reauthorize')); });
+    await act(async () => { fireEvent.click(screen.getByTestId('connector-required-dismiss')); });
+    expect(screen.queryByTestId('connector-required-card-notion')).toBeNull();
+    act(() => { useConnectorRequiredStore.getState().report('s1', [scopeItem]); });
+    expect(screen.getByTestId('connector-required-card-notion')).toBeTruthy();
+    act(() => { useConnectorRequiredStore.getState().report('s1', [{ id: 'notion', source: 'selected', reason: 'not_connected' }]); });
+    expect(useConnectorRequiredStore.getState().entries['s1::notion']?.status).toBe('pending');
+  });
+
   it('is NOT auto-resolved by the watcher while the connector reports connected', async () => {
     vi.useFakeTimers();
     useConnectorRequiredStore.getState().report('s1', [scopeItem]);

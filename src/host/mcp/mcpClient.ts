@@ -1101,7 +1101,8 @@ export class MCPClient extends EventEmitter {
         // 模型拿到的是「下一步做什么」，不是一句裸报错加一次无效重连。
         error: formatMcpConnectorErrorExit(error) ?? errorMessage,
         duration: Date.now() - startTime,
-        ...(mcpInsufficientScopeMetadata(error) ? { metadata: mcpInsufficientScopeMetadata(error) } : {}),
+        // 「重新授权」只对 OAuth 连接器走得通；API Key / Bearer / stdio 的 403 不发卡
+        ...(this.isOAuthServer(serverName) && mcpInsufficientScopeMetadata(error) ? { metadata: mcpInsufficientScopeMetadata(error) } : {}),
       };
     }
   }
@@ -1109,6 +1110,11 @@ export class MCPClient extends EventEmitter {
   // --------------------------------------------------------------------------
   // Resource Operations (delegated to registry)
   // --------------------------------------------------------------------------
+
+  private isOAuthServer(serverName: string): boolean {
+    const config = this.getServerState(serverName)?.config;
+    return !!config && isHttpStreamableConfig(config) && config.auth === 'oauth';
+  }
 
   getResources(): MCPResource[] {
     return this.registry.getResources();

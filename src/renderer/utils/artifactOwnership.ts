@@ -11,6 +11,7 @@ import type {
 } from '@shared/contract/turnTimeline';
 import { buildTurnFileChanges } from './turnDiffSummary';
 import { buildReceiptPresentation } from './receiptPresentation';
+import { deliverableDedupeKeyPath } from './deliverablePath';
 
 function basename(path: string): string {
   return path.split('/').filter(Boolean).pop() || path;
@@ -82,8 +83,11 @@ function ownerLabelForToolArtifact(
 function dedupeKeyForToolArtifact(
   artifact: NormalizedToolArtifactMeta,
   sourceNodeId: string,
+  workingDirectory: string | null | undefined,
 ): string {
-  if (artifact.path) return `file:${artifact.path}`;
+  // 去重键走 deliverableDedupeKeyPath：相对/绝对同一文件在工作目录已知时折叠成一条
+  // 条目；item.path（展示与打开目标）保持工具原始写法，不在这一步改写。
+  if (artifact.path) return `file:${deliverableDedupeKeyPath(artifact.path, workingDirectory)}`;
   if (artifact.url) return `url:${artifact.url}`;
   if (artifact.artifactId) return `artifact:${artifact.artifactId}`;
   return `artifact:${sourceNodeId}:${artifact.kind}:${artifact.label}`;
@@ -92,6 +96,7 @@ function dedupeKeyForToolArtifact(
 export function buildArtifactOwnershipItems(
   turn: TraceTurn,
   routingEvidence?: TurnRoutingEvidence,
+  workingDirectory?: string | null,
 ): TurnArtifactOwnershipItem[] {
   const items: TurnArtifactOwnershipItem[] = [];
   const itemIndexByKey = new Map<string, number>();
@@ -178,7 +183,7 @@ export function buildArtifactOwnershipItems(
         role: 'deliverable',
         path: outputPath,
         sourceNodeId: node.id,
-      }, `file:${outputPath}`);
+      }, `file:${deliverableDedupeKeyPath(outputPath, workingDirectory)}`);
     }
 
     // metadata 里的 filePath / imagePath / videoPath 才是模糊的——它们可能是**输入**
@@ -194,7 +199,7 @@ export function buildArtifactOwnershipItems(
           role: 'deliverable',
           path,
           sourceNodeId: node.id,
-        }, `file:${path}`);
+        }, `file:${deliverableDedupeKeyPath(path, workingDirectory)}`);
       }
     }
 
@@ -238,7 +243,7 @@ export function buildArtifactOwnershipItems(
             }
           : undefined,
         sourceNodeId: node.id,
-      }, dedupeKeyForToolArtifact(artifact, node.id));
+      }, dedupeKeyForToolArtifact(artifact, node.id, workingDirectory));
     }
   }
 

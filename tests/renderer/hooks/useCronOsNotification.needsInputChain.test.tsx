@@ -11,8 +11,13 @@ const plugin = vi.hoisted(() => ({
   sendNotification: vi.fn(),
   onAction: vi.fn(),
 }));
+const getNativeDesktopPermissionStatus = vi.hoisted(() => vi.fn());
 
 vi.mock('@tauri-apps/plugin-notification', () => plugin);
+vi.mock('../../../src/renderer/services/nativeDesktop', () => ({
+  getNativeDesktopPermissionStatus,
+  isNativeDesktopAvailable: () => true,
+}));
 vi.mock('../../../src/renderer/services/ipcService', () => ({
   default: {
     on: (channel: string, cb: (e: unknown) => void) => {
@@ -44,6 +49,9 @@ beforeEach(() => {
   vi.spyOn(document, 'hasFocus').mockReturnValue(true); // app 聚焦且页面可见
   plugin.isPermissionGranted.mockResolvedValue(true);
   plugin.onAction.mockResolvedValue({ unregister: vi.fn() });
+  getNativeDesktopPermissionStatus.mockResolvedValue({
+    permissions: [{ kind: 'notifications', status: 'granted' }],
+  });
 });
 
 afterEach(() => {
@@ -64,7 +72,7 @@ describe('needs_input 聚焦链路（hook → postOsNotification）', () => {
     expect(invokeDomain).toHaveBeenCalledWith(
       IPC_DOMAINS.NOTIFICATION,
       'reportClientDelivery',
-      expect.objectContaining({ dispatched: true, urgent: true }),
+      expect.objectContaining({ granted: true, dispatched: true, urgent: true }),
     );
   });
 

@@ -8,7 +8,7 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { ChevronUp, ChevronDown, KeyRound, Search, Share2 } from 'lucide-react';
 import type { AppSettings } from '@shared/contract';
 import type { ServiceApiKey } from '@shared/contract/configService';
-import { SEARCH_SOURCE_CATALOG, SHARE_SERVICE, type SearchSourceCatalogEntry } from '@shared/constants';
+import { SEARCH_SOURCE_CATALOG, SHARE_SERVICE, resolveShareBaseUrl, type SearchSourceCatalogEntry } from '@shared/constants';
 import { SettingsPage, SettingsSection } from '../SettingsLayout';
 import { ConfirmDialog } from '../../../composites/ConfirmDialog';
 import { Button } from '../../../primitives';
@@ -80,7 +80,7 @@ export function SearchSettings() {
           setDisabled(new Set(prefs?.disabledSources ?? []));
           setExternalSource(prefs?.externalSource ?? 'auto');
           setServiceKeys(keys ?? {});
-          setShareBaseUrl(settings?.shareService?.baseUrl?.trim() || SHARE_SERVICE.DEFAULT_BASE_URL);
+          setShareBaseUrl(resolveShareBaseUrl(settings?.shareService?.baseUrl));
         })
         .catch(() => {
           // 失败只给关闭不给重试会让用户卡死（N-SETTINGS-PERM-403-TOAST）——toast 支持动作按钮。

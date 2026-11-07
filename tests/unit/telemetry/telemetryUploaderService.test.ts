@@ -608,6 +608,121 @@ describe('TelemetryUploaderService', () => {
     expect(sessionRow).toHaveProperty('origin_kind', null);
   });
 
+  describe('PGRST204 degradation: cloud schema lags the app on optional turn columns', () => {
+    const PGRST204_TURN_SOURCE = {
+      code: 'PGRST204',
+      message: "Could not find the 'turn_source' column of 'telemetry_turns' in the schema cache",
+    };
+
+    function captureTurnBatches(onFirstAttemptError: () => boolean): Array<Array<Record<string, unknown>>> {
+      // 快照式捕获：service 重试时复用同一个数组对象并原地改行，直接存引用会看不出
+      // 第一发到底带了什么。这里 push 的是行的浅拷贝。
+      const batches: Array<Array<Record<string, unknown>>> = [];
+      mocks.from.mockImplementation((table: string) => ({
+        upsert: vi.fn(async (rows: Record<string, unknown>[]) => {
+          if (table !== 'telemetry_turns') return { error: null };
+          batches.push(rows.map((row) => ({ ...row })));
+          return { error: onFirstAttemptError() ? PGRST204_TURN_SOURCE : null };
+        }),
+      }));
+      return batches;
+    }
+
+    it('drops turn_source, retries the same batch once, and the round still syncs every session', async () => {
+      const session2: TelemetrySession = { ...session, id: 'session-2' };
+      const turn2: TelemetryTurn = { ...turn, id: 'turn-2', sessionId: 'session-2' };
+      mocks.storage.getUnsyncedSessions.mockReturnValue([session, session2]);
+      mocks.storage.getTurnsBySession.mockImplementation((sessionId: string) => (
+        sessionId === 'session-1' ? [turn] : [turn2]
+      ));
+      let failedOnce = false;
+      const batches = captureTurnBatches(() => {
+        if (failedOnce) return false;
+        failedOnce = true;
+        return true;
+      });
+
+      const { TelemetryUploaderService } = await import('../../../src/host/telemetry/telemetryUploaderService');
+      const service = new TelemetryUploaderService();
+
+      // 第一发撞旧云端 schema → 剔列重试同批成功：整轮（含另一个会话的行）照常上云
+      await expect(service.upload()).resolves.toBe(2);
+      expect(batches).toHaveLength(2);
+      expect(batches[0]?.every((row) => 'turn_source' in row)).toBe(true);
+      expect(batches[1]?.every((row) => !('turn_source' in row))).toBe(true);
+      expect(batches[1]?.map((row) => row.session_id)).toEqual(['session-1', 'session-2']);
+      expect(mocks.storage.markSessionsSynced).toHaveBeenCalledWith(['session-1', 'session-2']);
+      // 降级被吸收：不算上传失败，健康状态不记账
+      expect(service.getUploadHealth()).toMatchObject({ uploadFailureCount: 0, lastUploadError: null });
+
+      // 第二轮：同一进程不再带 turn_source，一次成功；两轮合计只 warn 这一次
+      await expect(service.upload()).resolves.toBe(2);
+      expect(batches).toHaveLength(3);
+      expect(batches[2]?.every((row) => !('turn_source' in row))).toBe(true);
+      expect(mocks.logger.warn).toHaveBeenCalledTimes(1);
+      expect(String(mocks.logger.warn.mock.calls[0]?.[0])).toContain("cloud column missing 'turn_source'");
+      expect(String(mocks.logger.warn.mock.calls[0]?.[0])).toContain('field dropped');
+    });
+
+    it('a PGRST204 naming a non-allowlisted column still fails the round exactly as before', async () => {
+      mocks.from.mockImplementation((table: string) => ({
+        upsert: vi.fn(async () => ({
+          error: table === 'telemetry_turns'
+            ? { code: 'PGRST204', message: "Could not find the 'payload' column of 'telemetry_turns' in the schema cache" }
+            : null,
+        })),
+      }));
+
+      const { TelemetryUploaderService } = await import('../../../src/host/telemetry/telemetryUploaderService');
+      const service = new TelemetryUploaderService();
+
+      await expect(service.upload()).resolves.toBe(0);
+      expect(mocks.storage.markSessionsSynced).not.toHaveBeenCalled();
+      expect(service.getUploadHealth().uploadFailureCount).toBe(1);
+      expect(mocks.logger.warn).not.toHaveBeenCalled();
+    });
+
+    it('a non-PGRST204 error still fails the round exactly as before', async () => {
+      mocks.from.mockImplementation((table: string) => ({
+        upsert: vi.fn(async () => ({
+          error: table === 'telemetry_turns'
+            ? { code: '08006', message: 'connection failure' }
+            : null,
+        })),
+      }));
+
+      const { TelemetryUploaderService } = await import('../../../src/host/telemetry/telemetryUploaderService');
+      const service = new TelemetryUploaderService();
+
+      await expect(service.upload()).resolves.toBe(0);
+      expect(mocks.storage.markSessionsSynced).not.toHaveBeenCalled();
+      expect(service.getUploadHealth().uploadFailureCount).toBe(1);
+      expect(mocks.logger.warn).not.toHaveBeenCalled();
+    });
+
+    it('after the cloud is fixed rows carry turn_source again only in a NEW process (new service instance), not in the degraded one', async () => {
+      let cloudFixed = false;
+      let seenTurnBatches = 0;
+      const batches = captureTurnBatches(() => {
+        seenTurnBatches += 1;
+        return !cloudFixed && seenTurnBatches === 1;
+      });
+
+      const { TelemetryUploaderService } = await import('../../../src/host/telemetry/telemetryUploaderService');
+      const degraded = new TelemetryUploaderService();
+      await degraded.upload(); // 撞 PGRST204 → 进程级剔列
+
+      cloudFixed = true;
+      await degraded.upload();
+      expect(batches[batches.length - 1]?.every((row) => !('turn_source' in row))).toBe(true);
+
+      // 降级账本不回看云端：只有新实例（= app 重启后的新进程）会重新带上 turn_source
+      const fresh = new TelemetryUploaderService();
+      await fresh.upload();
+      expect(batches[batches.length - 1]?.every((row) => 'turn_source' in row)).toBe(true);
+    });
+  });
+
   describe('T5 resilience: backoff + circuit breaker on persistent 4xx/policy failures', () => {
     it('classifies 42501 (RLS) as non-retryable and trips the circuit breaker on the very first hit', async () => {
       // 42501 = insufficient_privilege（含 RLS WITH CHECK 拒绝）：需要服务端策略修好，

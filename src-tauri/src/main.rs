@@ -28,11 +28,14 @@ mod agent_halo;
 mod appshots;
 mod native_app_icon;
 mod native_desktop;
+mod native_manifest;
 mod pip;
 mod quit_guard;
 mod resident_host;
 mod resident_host_windows;
 mod traffic_lights;
+mod webserver_exit;
+mod webserver_supervise;
 
 use appshots::{
     appshots_last_front_app, appshots_read_image_data_url, appshots_read_image_data_url_by_id,
@@ -204,8 +207,13 @@ struct AppState {
     web_server: Mutex<Option<OwnedWebServerChild>>,
     /// 附着到的常驻守护。没有 Child 句柄，cleanup 按 pid 发信号。
     attached_daemon: Mutex<Option<resident_host::DaemonPidRecord>>,
+    /// 退出收尸已开跑（cleanup_server 置位，进程生命周期内不复位）：监督重启
+    /// 在每次 spawn 前后都再看一眼它，退出竞态下绝不把新孩子塞回槽里变孤儿
+    /// （N-WEBSERVER-DEATH-SUPERVISE-RESTART）。
+    shutting_down: AtomicBool,
 }
 
+#[derive(Debug)]
 struct OwnedWebServerChild {
     child: Child,
     pid: u32,
@@ -253,9 +261,22 @@ struct KeybindingGlobalHotkeyResult {
 }
 
 impl AppState {
-    fn store_child(&self, child: Child) {
+    /// 入槽前在**同一把锁里**核 shutting_down：cleanup 已经把旧世界收走时
+    /// 拒绝入槽并当场收掉这个刚拉起的孩子（kill + wait）——否则它会在壳退出
+    /// 后变成孤儿占着端口。Some(pid) = 已入槽。
+    fn store_child(&self, child: Child) -> Option<u32> {
         let pid = child.id();
         let mut guard = self.web_server.lock().expect("web_server mutex poisoned");
+        if self.shutting_down.load(std::sync::atomic::Ordering::SeqCst) {
+            drop(guard);
+            let mut child = child;
+            let _ = child.kill();
+            let _ = child.wait();
+            eprintln!(
+                "webserver-supervise: shutting-down raced the respawn; reaped child pid {pid} instead of storing it"
+            );
+            return None;
+        }
         *guard = Some(OwnedWebServerChild {
             child,
             pid,
@@ -263,6 +284,7 @@ impl AppState {
             started_at: now_millis_string(),
             stdin_eof_cleanup: true,
         });
+        Some(pid)
     }
 
     fn store_attached_daemon(&self, record: resident_host::DaemonPidRecord) {
@@ -1616,28 +1638,12 @@ fn resource_check(
     }
 }
 
-fn better_sqlite3_prebuild_name() -> String {
-    let platform = if cfg!(all(target_os = "linux", target_env = "musl")) {
-        "linuxmusl"
-    } else if cfg!(target_os = "linux") {
-        "linux"
-    } else if cfg!(target_os = "macos") {
-        "darwin"
-    } else if cfg!(target_os = "windows") {
-        "win32"
-    } else {
-        std::env::consts::OS
-    };
-    let arch = if cfg!(target_arch = "aarch64") {
-        "arm64"
-    } else if cfg!(target_arch = "x86_64") {
-        "x64"
-    } else {
-        std::env::consts::ARCH
-    };
-    format!("{}-{}.node", platform, arch)
-}
-
+/// 桌面壳首启资源预检。native 条目（better-sqlite3）读 `<root>/dist/native/manifest.json`
+/// （ADR-086 §4.6 T4）。`cargo tauri dev`（debug）下 root 是 candidate_roots 选出的
+/// working_dir（首个含 dist/web/webServer.cjs 的候选；dev 序首位是工程根，即
+/// CARGO_MANIFEST_DIR 的父目录），清单从 `<repo>/dist/native/manifest.json` 读——构建
+/// 链产出过它才在。清单缺席时预检只进诊断、不拦启动（调用点的 !cfg!(debug_assertions)
+/// 闸，保持不动）；release 包缺清单走既有 Layer 3 首启失败弹窗。
 fn desktop_shell_resource_preflight(
     root: &Path,
     resource_dir: Option<&Path>,
@@ -1689,17 +1695,11 @@ fn desktop_shell_resource_preflight(
             false,
             false,
         ),
-        resource_check(
+        native_manifest::manifest_native_resource_check(
+            root,
+            "better-sqlite3",
             "better-sqlite3-native",
             "better-sqlite3 native module",
-            DesktopShellResourceKind::NativeModule,
-            root.join("dist")
-                .join("native")
-                .join("better-sqlite3")
-                .join("prebuilds")
-                .join(better_sqlite3_prebuild_name()),
-            true,
-            false,
         ),
     ]
 }
@@ -2041,6 +2041,43 @@ fn spawn_web_server_recording(
         const CREATE_NO_WINDOW: u32 = 0x0800_0000;
         command.creation_flags(CREATE_NO_WINDOW);
     }
+    // stdout/stderr 落盘取证：launchd 下 inherit 的输出直接丢失（batch-24 三连死
+    // 查不到现场的原因之一），webServer 自己的 "Shutting down..." 也只有 console。
+    // 打开失败回退 inherit 并落 warning 事件——不许静默降级（取证缺失要说出来）。
+    let (stdout_stdio, stderr_stdio) = match web_server_log_dir(app) {
+        Some(log_dir) => match webserver_exit::open_stdio_log(&log_dir) {
+            Ok(file) => match file.try_clone() {
+                Ok(stderr_file) => (Stdio::from(file), Stdio::from(stderr_file)),
+                Err(error) => {
+                    write_shell_event(
+                        app,
+                        diagnostics,
+                        "warning",
+                        "desktop-shell-webserver-stdio-log-failed",
+                        &format!("webServer stderr log handle failed, falling back to inherit: {error}"),
+                        Some(serde_json::json!({
+                            "path": webserver_exit::stdio_log_path(&log_dir),
+                        })),
+                    );
+                    (Stdio::inherit(), Stdio::inherit())
+                }
+            },
+            Err(error) => {
+                write_shell_event(
+                    app,
+                    diagnostics,
+                    "warning",
+                    "desktop-shell-webserver-stdio-log-failed",
+                    &format!("webServer stdio log failed, falling back to inherit: {error}"),
+                    Some(serde_json::json!({
+                        "path": webserver_exit::stdio_log_path(&log_dir),
+                    })),
+                );
+                (Stdio::inherit(), Stdio::inherit())
+            }
+        },
+        None => (Stdio::inherit(), Stdio::inherit()),
+    };
     command
         .arg(&script_path)
         .current_dir(&working_dir)
@@ -2052,8 +2089,8 @@ fn spawn_web_server_recording(
         // stdin 用 pipe：本进程死亡（含 panic/SIGABRT）时管道关闭，
         // webServer 监听 stdin EOF 自杀，不留孤儿进程占住端口
         .stdin(Stdio::piped())
-        .stdout(Stdio::inherit())
-        .stderr(Stdio::inherit());
+        .stdout(stdout_stdio)
+        .stderr(stderr_stdio);
 
     for (key, value) in web_server_runtime_env(&working_dir, resource_dir.as_deref()) {
         command.env(key, value.as_os_str());
@@ -2198,27 +2235,84 @@ fn renderer_navigation_failure_message(error: &str) -> String {
 /// webServer 已死则先重新拉起。保证用户双击图标永远能得到一个窗口。
 fn recreate_main_window(app: &tauri::AppHandle) -> Result<(), String> {
     if !is_server_running() {
-        // 与 setup 同一附着判定：is_server_running 偶发失败但守护活着且健康时
-        // 附着而不是 spawn——后者会经 clear_stale_web_server_port kill -9 活守护。
-        let attach_daemon = if !cfg!(debug_assertions) {
-            resident_host::decide_startup_io(real_data_dir().as_deref(), &health_url())
+        // 单飞闸（与死亡重启共用）：拿不到说明监督线程正在拉起，不与其抢
+        // spawn；它成功后会自己 navigate main 窗口。拿到则由本路径自愈。
+        if let Some(_restart_guard) = webserver_supervise::acquire_restart_guard() {
+            // 与 setup 同一附着判定：is_server_running 偶发失败但守护活着且健康时
+            // 附着而不是 spawn——后者会经 clear_stale_web_server_port kill -9 活守护。
+            let attach_daemon = if !cfg!(debug_assertions) {
+                resident_host::decide_startup_io(real_data_dir().as_deref(), &health_url())
+            } else {
+                None
+            };
+            if let Some(record) = attach_daemon {
+                app.state::<AppState>().store_attached_daemon(record.clone());
+                webserver_supervise::spawn_daemon_watcher(app.clone(), record.clone());
+                let diagnostics = new_boot_diagnostics(app);
+                write_shell_event(
+                    app,
+                    &diagnostics,
+                    "info",
+                    "desktop-shell-attached-daemon",
+                    "attached to resident daemon webServer (window recreate)",
+                    Some(serde_json::json!({ "daemonPid": record.pid })),
+                );
+            } else {
+                // SpawnOwned 同款闸：decide_startup_io 判 None 可能只是守护**忙**
+                //（身份在、/health 超时）。身份仍吻合 = 活守护，绝不 spawn——
+                // spawn 路径的 clear_stale_web_server_port 会 kill -9 它。
+                let attached = app
+                    .state::<AppState>()
+                    .attached_daemon
+                    .lock()
+                    .map(|guard| guard.clone())
+                    .unwrap_or_else(|poisoned| poisoned.into_inner().clone());
+                let attached_alive = attached.as_ref().is_some_and(|record| {
+                    resident_host::process_identity_matches(
+                        record,
+                        resident_host::ps_process_identity(record.pid).as_deref(),
+                    )
+                });
+                if attached_alive {
+                    let diagnostics = new_boot_diagnostics(app);
+                    write_shell_event(
+                        app,
+                        &diagnostics,
+                        "warning",
+                        "desktop-shell-webserver-restart-skipped",
+                        "webServer restart skipped: attached daemon alive but unhealthy (busy, not dead); not killing it",
+                        Some(serde_json::json!({
+                            "reason": webserver_supervise::SKIP_DAEMON_ALIVE,
+                            "path": "window-recreate",
+                            "daemonPid": attached.map(|record| record.pid),
+                        })),
+                    );
+                } else {
+                    let child = start_web_server(app)?;
+                    if let Some(child_pid) = app.state::<AppState>().store_child(child) {
+                        // 收管即监视：子进程死在槽里（非 cleanup 接手）才落
+                        // desktop-shell-webserver-exited-unexpectedly 事件，之后交给
+                        // 监督线程自动重启（N-WEBSERVER-DEATH-SUPERVISE-RESTART）
+                        webserver_exit::spawn_exit_watcher(app.clone(), child_pid);
+                    }
+                }
+            }
+            // 窗口重开自愈成功 = 新一轮：give-up 计数清零（重开窗口必须永远
+            // 能自愈，不能被上一轮的 3 连败卡死）。
+            webserver_supervise::reset_history();
         } else {
-            None
-        };
-        if let Some(record) = attach_daemon {
-            app.state::<AppState>().store_attached_daemon(record.clone());
             let diagnostics = new_boot_diagnostics(app);
             write_shell_event(
                 app,
                 &diagnostics,
-                "info",
-                "desktop-shell-attached-daemon",
-                "attached to resident daemon webServer (window recreate)",
-                Some(serde_json::json!({ "daemonPid": record.pid })),
+                "warning",
+                "desktop-shell-webserver-restart-skipped",
+                "webServer restart skipped: restart-guard-held (supervisor already recovering)",
+                Some(serde_json::json!({
+                    "reason": webserver_supervise::SKIP_GUARD_HELD,
+                    "path": "window-recreate",
+                })),
             );
-        } else {
-            let child = start_web_server(app)?;
-            app.state::<AppState>().store_child(child);
         }
     }
 
@@ -2262,6 +2356,11 @@ fn show_startup_failure(error: &str, diagnostic_file: Option<&str>) {
 }
 
 fn cleanup_server(app: &tauri::AppHandle) {
+    // 先立停机牌再收尸：监督重启路径（spawn 前后两道检查 + store_child 的锁内
+    // 检查）从此绝不再拉起/入槽，退出竞态下不会漏出一个孤儿 webServer。
+    app.state::<AppState>()
+        .shutting_down
+        .store(true, std::sync::atomic::Ordering::SeqCst);
     // 「停止并退出」意图已被 daemon 确认时，cleanup 走「等自退」通道（最多 65s）。
     let stop_intent_landed = app
         .state::<Arc<quit_guard::QuitCoordinator>>()
@@ -3281,8 +3380,9 @@ fn open_update_url(url: String) -> Result<(), String> {
 
 #[cfg(test)]
 mod runtime_env_tests {
+    use super::native_manifest;
     use super::{
-        better_sqlite3_prebuild_name, bundled_node_candidates, channel_web_port, desktop_shell_channel,
+        bundled_node_candidates, channel_web_port, desktop_shell_channel,
         desktop_shell_event_payload, desktop_shell_resource_preflight, dev_channel_data_dir,
         dev_slot, packaged_exe_roots, parse_port_holder_pids, previous_boot_failure_from_value,
         renderer_navigation_failure_message,
@@ -3321,6 +3421,20 @@ mod runtime_env_tests {
 
     #[cfg(not(unix))]
     fn make_executable(_path: &Path) {}
+
+    /// 写一份声明 better-sqlite3 native 位置的合法清单（ADR-086 §4.1 形状）。
+    /// 预检三态失败与自定义文件名的用例在 native_manifest.rs 的测试模块里。
+    fn write_native_manifest(root: &Path, native: &str) {
+        write_file(
+            &native_manifest::manifest_path(root),
+            &format!(
+                "{{\"kind\":\"agent_neo_native_dep_manifest\",\"schemaVersion\":1,\
+                 \"platform\":\"test\",\"generatedAt\":\"2026-11-04T00:00:00.000Z\",\
+                 \"modules\":{{\"better-sqlite3\":{{\"kind\":\"node-module\",\
+                 \"entry\":\"dist/native/better-sqlite3\",\"native\":\"{native}\"}}}}}}"
+            ),
+        );
+    }
 
     #[test]
     fn packaged_exe_roots_include_macos_resources() {
@@ -3494,37 +3608,6 @@ mod runtime_env_tests {
         fs::remove_dir_all(root).ok();
     }
 
-    /// better-sqlite3 13.0.3 的 `prebuilds/` 里就这 8 个文件名（实测包内容）。
-    /// 判据钉在**上游的命名词表**，不是拿同一套 `cfg!` 再算一遍来自比——那样两边同错
-    /// 就同绿。Rust 侧把 macos 写成 "macos"、把 windows 写成 "windows"，或 arch 忘了
-    /// 从 aarch64/x86_64 翻成 arm64/x64，在对应平台的构建上会当场红。
-    #[test]
-    fn better_sqlite3_prebuild_name_matches_upstream_vocabulary() {
-        const UPSTREAM_PREBUILDS: [&str; 8] = [
-            "darwin-arm64.node",
-            "darwin-x64.node",
-            "linux-arm64.node",
-            "linux-x64.node",
-            "linuxmusl-arm64.node",
-            "linuxmusl-x64.node",
-            "win32-arm64.node",
-            "win32-x64.node",
-        ];
-        let name = better_sqlite3_prebuild_name();
-        assert!(
-            UPSTREAM_PREBUILDS.contains(&name.as_str()),
-            "better_sqlite3_prebuild_name() 产出 {name}，不在 better-sqlite3 v13 的预编译文件名里"
-        );
-
-        // 再钉一次「是本机那一个」：走 std::env::consts::ARCH 而不是 cfg!，与实现不同源。
-        let expected_arch = match std::env::consts::ARCH {
-            "aarch64" => "arm64",
-            "x86_64" => "x64",
-            other => other,
-        };
-        assert!(name.ends_with(&format!("-{expected_arch}.node")), "{name}");
-    }
-
     #[test]
     fn desktop_shell_preflight_accepts_required_packaged_resources() {
         let root = temp_root("agent-shell-preflight-ok");
@@ -3543,13 +3626,12 @@ mod runtime_env_tests {
             .join("node");
         write_file(&node, "#!/usr/bin/env node\n");
         make_executable(&node);
+        write_native_manifest(&root, "dist/native/better-sqlite3/darwin-arm64.node");
         write_file(
-            &root
-                .join("dist")
+            &root.join("dist")
                 .join("native")
                 .join("better-sqlite3")
-                .join("prebuilds")
-                .join(better_sqlite3_prebuild_name()),
+                .join("darwin-arm64.node"),
             "native",
         );
 
@@ -4523,6 +4605,9 @@ fn main() {
                 // cleanup_server 才能 SIGTERM 这个守护（进程不是这次 spawn 的，没有 Child）。
                 app.state::<AppState>()
                     .store_attached_daemon(record.clone());
+                // 附着守护没有退出 watcher（不是我们的子进程）——监督模块的
+                // daemon watcher 负责盯它死没死（N-WEBSERVER-DEATH-SUPERVISE-RESTART）。
+                webserver_supervise::spawn_daemon_watcher(app.handle().clone(), record.clone());
                 write_shell_event(
                     &app.handle(),
                     &boot_diagnostics,
@@ -4539,7 +4624,14 @@ fn main() {
                 );
             } else {
                 match start_web_server_recording(&app.handle(), &mut boot_diagnostics) {
-                    Ok(child) => app.state::<AppState>().store_child(child),
+                    Ok(child) => {
+                        if let Some(child_pid) = app.state::<AppState>().store_child(child) {
+                            // 收管即监视：子进程死在槽里（非 cleanup 接手）才落
+                            // desktop-shell-webserver-exited-unexpectedly 事件，
+                            // 之后交给监督线程自动重启（N-WEBSERVER-DEATH-SUPERVISE-RESTART）
+                            webserver_exit::spawn_exit_watcher(app.handle().clone(), child_pid);
+                        }
+                    }
                     Err(error) => {
                         // 不走 panic（SIGABRT 闪退无提示）：弹错误框告知用户后干净退出
                         show_startup_failure(&error, boot_diagnostics.diagnostic_file.as_deref());

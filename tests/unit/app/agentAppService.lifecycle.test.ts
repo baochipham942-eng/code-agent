@@ -1,5 +1,6 @@
  
 import { readFile } from 'node:fs/promises';
+import path from 'node:path';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { AgentAppServiceImpl } from '../../../src/host/app/agentAppService';
 import { DurableRunReadService } from '../../../src/host/app/durableRunReadService';
@@ -9,6 +10,7 @@ import { getSessionManager } from '../../../src/host/services';
 import { getDatabase } from '../../../src/host/services/core/databaseService';
 import { getFileCheckpointService } from '../../../src/host/services/checkpoint';
 import { loadStreamSnapshot } from '../../../src/host/session/streamSnapshot';
+import { getDefaultWorkDirectory } from '../../../src/host/config/configPaths';
 
 vi.mock('../../../src/host/services', () => ({
   getSessionManager: vi.fn(),
@@ -104,6 +106,7 @@ describe('AgentAppService lifecycle routing', () => {
     applyPromptRewind: ReturnType<typeof vi.fn>;
     restorePromptRewind: ReturnType<typeof vi.fn>;
     repairConversationLineage: ReturnType<typeof vi.fn>;
+    listRecordedWorkingDirectories: ReturnType<typeof vi.fn>;
   };
   let checkpointService: {
     getFirstCheckpointAtOrAfter: ReturnType<typeof vi.fn>;
@@ -156,6 +159,7 @@ describe('AgentAppService lifecycle routing', () => {
       applyPromptRewind: vi.fn(),
       restorePromptRewind: vi.fn(),
       repairConversationLineage: vi.fn(),
+      listRecordedWorkingDirectories: vi.fn(() => []),
     };
     checkpointService = {
       getFirstCheckpointAtOrAfter: vi.fn(),
@@ -344,6 +348,28 @@ describe('AgentAppService lifecycle routing', () => {
       workingDirectory: '/current/project',
     }));
     expect(orchestrator.setWorkingDirectory).toHaveBeenCalledWith('/current/project');
+  });
+
+  it('preserves an explicitly selected planned task directory even when another session recorded it', async () => {
+    const selectedDirectory = path.join(
+      getDefaultWorkDirectory(),
+      '任务_1107_写一篇文章',
+    );
+    database.listRecordedWorkingDirectories.mockReturnValue([selectedDirectory]);
+    const service = createServiceWithConfig(taskManager, {
+      getSettings: () => ({ model: { provider: 'openai', model: 'gpt-5.4' } }),
+    });
+
+    const session = await service.createSession({
+      title: '继续写文章',
+      workingDirectory: selectedDirectory,
+    });
+
+    expect(session.workingDirectory).toBe(selectedDirectory);
+    expect(sessionManager.createSession).toHaveBeenCalledWith(expect.objectContaining({
+      title: '继续写文章',
+      workingDirectory: selectedDirectory,
+    }));
   });
 
   it('persists only expertThread after creating an expert session and preserves existing metadata', async () => {

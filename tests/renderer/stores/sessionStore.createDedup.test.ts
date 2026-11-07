@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { executeCreateSession, type SessionCreateDeps } from '../../../src/renderer/stores/sessionCreate';
+import { useAppStore } from '../../../src/renderer/stores/appStore';
 import type { SessionWithMeta } from '../../../src/renderer/stores/sessionStore';
 
 const mockDomainInvoke = vi.fn();
@@ -34,6 +35,7 @@ describe('executeCreateSession optimistic insert deduplication', () => {
     (globalThis as Record<string, unknown>).window = {
       domainAPI: { invoke: mockDomainInvoke },
     };
+    useAppStore.setState({ workingDirectory: null });
     state = {
       sessions: [makeRawSession('existing-1') as SessionWithMeta],
       currentSessionId: 'existing-1',
@@ -106,5 +108,44 @@ describe('executeCreateSession optimistic insert deduplication', () => {
     });
     expect(mockDomainInvoke.mock.calls.some(([, action]) => action === 'getModelOverride')).toBe(false);
     expect(mockDomainInvoke.mock.calls.some(([, action]) => action === 'switchModel')).toBe(false);
+  });
+
+  it('creates a plain new chat folderless instead of inheriting the active session directory', async () => {
+    const previousSessionDirectory = '/tmp/Neo/任务_1107_上一篇文章';
+    useAppStore.setState({ workingDirectory: previousSessionDirectory });
+    mockDomainInvoke.mockImplementation(async (_domain: string, action: string) => {
+      if (action === 'create') return { success: true, data: makeRawSession('new-folderless') };
+      return { success: true, data: null };
+    });
+
+    await executeCreateSession(deps, '下一篇文章');
+
+    const createCall = mockDomainInvoke.mock.calls.find(([, action]) => action === 'create');
+    expect(createCall?.[2]).toEqual(expect.objectContaining({
+      title: '下一篇文章',
+      workingDirectory: null,
+    }));
+  });
+
+  it('preserves a task folder explicitly selected by a workspace entry point', async () => {
+    const selectedDirectory = '/tmp/Neo/任务_1107_写一篇文章';
+    useAppStore.setState({ workingDirectory: '/tmp/Neo/任务_1107_上一篇文章' });
+    mockDomainInvoke.mockImplementation(async (_domain: string, action: string) => {
+      if (action === 'create') {
+        return {
+          success: true,
+          data: { ...makeRawSession('new-in-workspace'), workingDirectory: selectedDirectory },
+        };
+      }
+      return { success: true, data: null };
+    });
+
+    await executeCreateSession(deps, '继续写文章', { workingDirectory: selectedDirectory });
+
+    const createCall = mockDomainInvoke.mock.calls.find(([, action]) => action === 'create');
+    expect(createCall?.[2]).toEqual(expect.objectContaining({
+      title: '继续写文章',
+      workingDirectory: selectedDirectory,
+    }));
   });
 });

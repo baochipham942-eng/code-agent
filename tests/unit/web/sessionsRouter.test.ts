@@ -7,10 +7,23 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createSessionsRouter } from '../../../src/web/routes/sessions';
 import { DurableRunReadService } from '../../../src/host/app/durableRunReadService';
 import { resolveDurableRunRollout } from '../../../src/host/app/durableRunRollout';
+import { getDefaultWorkDirectory } from '../../../src/host/config/configPaths';
 import {
   inMemorySessionsProjection as inMemorySessions,
   sessionMessagesProjection as sessionMessages,
 } from '../../../src/web/helpers/webSessionStore';
+
+const reservationFixture = vi.hoisted(() => ({ paths: [] as string[] }));
+
+vi.mock('../../../src/host/services/core/databaseService', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../../../src/host/services/core/databaseService')>();
+  return {
+    ...actual,
+    getDatabase: () => ({
+      listRecordedWorkingDirectories: () => reservationFixture.paths,
+    }),
+  };
+});
 
 interface SessionApiBody {
   success: boolean;
@@ -215,6 +228,7 @@ function durableReadServiceFor(statusBySessionId: Record<string, ReturnType<type
 
 beforeEach(() => {
   vi.clearAllMocks();
+  reservationFixture.paths = [];
   inMemorySessions.clear();
   sessionMessages.clear();
 });
@@ -463,7 +477,12 @@ describe('createSessionsRouter', () => {
     expect((includeArchived.body.data as unknown as Array<{ id: string }>).map((session) => session.id)).toEqual(['archived', 'new', 'old']);
   });
 
-  it('passes workingDirectory through to SessionManager when creating a session', async () => {
+  it('passes an explicitly selected planned task directory through to SessionManager', async () => {
+    const selectedDirectory = path.join(
+      getDefaultWorkDirectory(),
+      '任务_1107_写一篇文章',
+    );
+    reservationFixture.paths = [selectedDirectory];
     const createSession = vi.fn(async (options: { title: string; workingDirectory?: string }) => ({
       id: 'session-sm',
       title: options.title,
@@ -484,14 +503,14 @@ describe('createSessionsRouter', () => {
 
     const body = await postSession({
       title: 'Workbench',
-      workingDirectory: '  /Users/linchen/Downloads/ai/code-agent  ',
+      workingDirectory: `  ${selectedDirectory}  `,
     });
 
     expect(body.success).toBe(true);
-    expect(body.data?.workingDirectory).toBe('/Users/linchen/Downloads/ai/code-agent');
+    expect(body.data?.workingDirectory).toBe(selectedDirectory);
     expect(createSession).toHaveBeenCalledWith(expect.objectContaining({
       title: 'Workbench',
-      workingDirectory: '/Users/linchen/Downloads/ai/code-agent',
+      workingDirectory: selectedDirectory,
     }));
     expect(setCurrentSession).toHaveBeenCalledWith('session-sm');
   });

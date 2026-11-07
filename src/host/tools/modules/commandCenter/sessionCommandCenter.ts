@@ -7,8 +7,12 @@ import type {
   ToolResult,
 } from '../../../protocol/tools';
 import type { MessageAttachment } from '../../../../shared/contract';
-import { getSessionCommandCenter, type SessionTaskReferenceResult } from '../../../services/commandCenter/sessionCommandCenter';
-import type { SpawnSessionTaskResult } from '../../../services/commandCenter/sessionCommandCenter';
+import {
+  getSessionCommandCenter,
+  type SessionCommandTask,
+  type SessionTaskReferenceResult,
+  type SpawnSessionTaskResult,
+} from '../../../services/commandCenter/sessionCommandCenter';
 import { resolveBackgroundWorkspaceAuthority } from '../../../runtime/workspaceAuthority';
 import {
   cancelTaskSchema,
@@ -81,6 +85,21 @@ export function describeDelegateTaskResult(result: Exclude<SpawnSessionTaskResul
   return `accepted：后台任务「${task.shortName}」(${task.id}) 已开始。accepted 不等于完成；结果只以后续任务终态回流为准。${retryContext}`;
 }
 
+function sessionTaskMeta(
+  outcome: 'accepted' | 'queued' | 'reused' | 'status',
+  tasks: SessionCommandTask[],
+): Record<string, unknown> {
+  return {
+    sessionTask: {
+      outcome,
+      tasks: tasks.map((task) => {
+        const detail = task.resultText ?? task.detail ?? task.summary;
+        return { shortName: task.shortName, status: task.status, ...(detail ? { detail } : {}) };
+      }),
+    },
+  };
+}
+
 export async function executeDelegateTask(
   args: Record<string, unknown>,
   ctx: ToolContext,
@@ -142,12 +161,12 @@ export async function executeDelegateTask(
     };
   }
   if (result.outcome === 'reused') {
-    return { ok: true, output: describeDelegateTaskResult(result) };
+    return { ok: true, output: describeDelegateTaskResult(result), meta: sessionTaskMeta('reused', [result.task]) };
   }
   if (result.outcome === 'queued') {
-    return { ok: true, output: describeDelegateTaskResult(result) };
+    return { ok: true, output: describeDelegateTaskResult(result), meta: sessionTaskMeta('queued', [result.task]) };
   }
-  return { ok: true, output: describeDelegateTaskResult(result) };
+  return { ok: true, output: describeDelegateTaskResult(result), meta: sessionTaskMeta('accepted', [result.task]) };
 }
 
 export async function executeSteerTask(
@@ -199,6 +218,7 @@ export async function executeTaskStatus(
       const resultText = task.resultText ?? task.summary;
       return `${index + 1}. ${task.shortName} [${task.status}] id=${task.id}${resultText ? `：${resultText}` : ''}`;
     }).join('\n'),
+    meta: sessionTaskMeta('status', tasks),
   };
 }
 

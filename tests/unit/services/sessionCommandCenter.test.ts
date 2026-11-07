@@ -12,6 +12,7 @@ import {
 import { resetSessionTaskConcurrencyPoolForTest } from '../../../src/host/services/commandCenter/sessionTaskSlotLedger';
 import {
   describeDelegateTaskResult,
+  executeDelegateTask,
   executeTaskStatus,
 } from '../../../src/host/tools/modules/commandCenter/sessionCommandCenter';
 import {
@@ -145,6 +146,74 @@ describe('SessionCommandCenter', () => {
     expect(repeated).toMatchObject({ outcome: 'reused', task: { shortName: '任务1' } });
     expect(manager.startBackgroundTask).toHaveBeenCalledTimes(2);
     center.dispose();
+  });
+
+  it('keeps model output byte-stable while adding id-free sessionTask metadata for all four outcomes', async () => {
+    singletonTaskManagerHolder.manager = new FakeTaskManager();
+    resetSessionCommandCenterForTest();
+    const allow = vi.fn().mockResolvedValue({ allow: true }) as CanUseToolFn;
+    const ctx = {
+      sessionId: 'session-meta',
+      workspace: PROJECT_SCOPE.primaryRoot,
+      workspaceScope: PROJECT_SCOPE,
+      abortSignal: new AbortController().signal,
+    } as unknown as ToolContext;
+    const firstArgs = {
+      title: '读取项目名',
+      short_name: '首项',
+      lane_key: 'inspect',
+      submission_key: 'inspect-1',
+      prompt: '读取 package.json 的 name',
+    };
+
+    try {
+      const accepted = await executeDelegateTask(firstArgs, ctx, allow);
+      const queued = await executeDelegateTask({
+        ...firstArgs,
+        title: '读取版本号',
+        short_name: '排队',
+        submission_key: 'inspect-2',
+        prompt: '读取 package.json 的 version',
+        queue_when_full: true,
+      }, ctx, allow);
+      const reused = await executeDelegateTask(firstArgs, ctx, allow);
+      const tasks = getSessionCommandCenter().list('session-meta');
+      const status = await executeTaskStatus({}, ctx, allow);
+
+      expect(accepted).toEqual({
+        ok: true,
+        output: `accepted：后台任务「首项」(${tasks[0].id}) 已开始。accepted 不等于完成；结果只以后续任务终态回流为准。`,
+        meta: { sessionTask: { outcome: 'accepted', tasks: [{ shortName: '首项', status: 'running' }] } },
+      });
+      expect(queued).toEqual({
+        ok: true,
+        output: `queued：已把「排队」(${tasks[1].id}) 放进同一任务线，前序任务结束后自动开始。`,
+        meta: { sessionTask: { outcome: 'queued', tasks: [{ shortName: '排队', status: 'queued' }] } },
+      });
+      expect(reused).toEqual({
+        ok: true,
+        output: `reused：复用「首项」(${tasks[0].id})，当前状态 [running]。`,
+        meta: { sessionTask: { outcome: 'reused', tasks: [{ shortName: '首项', status: 'running' }] } },
+      });
+      expect(status).toEqual({
+        ok: true,
+        output: `1. 首项 [running] id=${tasks[0].id}\n2. 排队 [queued] id=${tasks[1].id}`,
+        meta: {
+          sessionTask: {
+            outcome: 'status',
+            tasks: [
+              { shortName: '首项', status: 'running' },
+              { shortName: '排队', status: 'queued' },
+            ],
+          },
+        },
+      });
+      expect(JSON.stringify([accepted.meta, queued.meta, reused.meta, status.meta]))
+        .not.toContain('session-work-');
+    } finally {
+      resetSessionCommandCenterForTest();
+      singletonTaskManagerHolder.manager = undefined;
+    }
   });
 
   it('projects task_progress to the exact taskId when two background runs share one session', async () => {

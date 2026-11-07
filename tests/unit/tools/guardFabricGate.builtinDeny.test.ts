@@ -23,6 +23,7 @@ import { ToolExecutor } from '../../../src/host/tools/toolExecutor';
 import { normalizeToolName } from '../../../src/host/tools/toolNames';
 import { evaluateGuardFabricGate } from '../../../src/host/tools/guardFabricGate';
 import type { PermissionRequestData } from '../../../src/host/tools/types';
+import { HostReasonCode } from '../../../src/shared/contract/permission';
 import { getPolicyEngine, resetPolicyEngine } from '../../../src/host/permissions/policyEngine';
 import type { ExecutionTopology } from '../../../src/host/permissions';
 import { getPermissionModeManager, resetPermissionModeManager } from '../../../src/host/permissions/modes';
@@ -54,6 +55,9 @@ describe('guardFabricGate 内置不可覆盖 deny', () => {
     expect(r.deny).toBeDefined();
     expect(r.deny!.error).toContain('Blocked by built-in safety rule (Block root filesystem writes)');
     expect(r.deny!.error).toContain('workspace');
+    // N-FIX-PERM-DENY-ENGLISH-COPY：硬拒带结构化 hostReason；error 原文（模型可见）不变。
+    expect(r.deny!.hostReason?.code).toBe(HostReasonCode.PermissionDeniedSafetyRule);
+    expect(r.deny!.hostReason?.metadata).toMatchObject({ toolName: 'Write' });
     expect(r.deny!.trace?.steps[0]).toMatchObject({ layer: 'policy_enforcer', rule: 'block-root-write', result: 'deny' });
   });
 
@@ -93,6 +97,8 @@ describe('guardFabricGate 内置不可覆盖 deny', () => {
     const r = gate('Write', { file_path: '/usr/bin/x' }, 'write');
     expect(r.deny?.error).toContain('Blocked by your permission deny rule');
     expect(r.deny?.reason).toMatch(/^user-config:/);
+    // N-FIX-PERM-DENY-ENGLISH-COPY：用户规则硬拒的 hostReason 码独立于内置规则码。
+    expect(r.deny?.hostReason?.code).toBe(HostReasonCode.PermissionDeniedUserRule);
   });
 });
 
@@ -132,6 +138,8 @@ describe('ToolExecutor 内置硬拒（端到端，零审批卡）', () => {
     const result = await executor().execute('Write', { file_path: '/usr/bin/neo-probe', content: 'x' }, { sessionId: 'bd-w' });
     expect(result.success).toBe(false);
     expect(result.error).toContain('Blocked by built-in safety rule');
+    // N-FIX-PERM-DENY-ENGLISH-COPY：硬拒结果透传 hostReason（renderer 登记表据此出人话）。
+    expect(result.metadata?.hostReason).toMatchObject({ code: HostReasonCode.PermissionDeniedSafetyRule });
     expect(permissionRequests).toHaveLength(0);
   });
 

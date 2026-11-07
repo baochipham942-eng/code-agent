@@ -10,6 +10,8 @@
 // ============================================================================
 
 import type { CronJobExecution } from '@shared/contract/cron';
+import type { TraceTurn } from '@shared/contract/trace';
+import { isParkedApprovalClosureSentence } from '@shared/parkedApprovalClosure';
 
 export interface CronRunAwaitingApproval {
   /** requestId；批准/拒绝走 IPC_CHANNELS.AGENT_PERMISSION_RESPONSE。 */
@@ -28,6 +30,13 @@ export type CronRunStatusLine =
   | { kind: 'cancelled' }
   | { kind: 'finished'; durationMs: number };
 
+export function hasParkedApprovalClosure(turn: Pick<TraceTurn, 'nodes'>): boolean {
+  return turn.nodes.some((node) => (
+    node.type === 'tool_call'
+    && isParkedApprovalClosureSentence(node.toolCall?.result)
+  ));
+}
+
 /**
  * 判断失败运行是否由命令/权限被拒引起（与执行记录 error 字段及权限拒绝信号同源，
  * 不扫模型自由回复文本）。中文关键词用 Unicode 转义，满足 chatI18nRatchet 对源码无汉字字面量的要求。
@@ -44,7 +53,7 @@ const PERMISSION_DENIAL_ZH_TOKENS = [
   String.fromCharCode(0x672a, 0x83b7, 0x81ea, 0x52a8, 0x6279, 0x51c6), // 未获自动批准
 ];
 
-function isCronExecutionPermissionDenialError(error: string | undefined | null): boolean {
+export function isCronExecutionPermissionDenialError(error: string | undefined | null): boolean {
   if (!error) return false;
   if (PERMISSION_DENIAL_ERROR_RE.test(error)) return true;
   return PERMISSION_DENIAL_ZH_TOKENS.some((token) => error.includes(token));

@@ -10,6 +10,18 @@ export const PARKED_APPROVAL_CLOSURE_SENTENCES = {
 
 const CLOSURE_SENTENCE_SET: ReadonlySet<string> = new Set(Object.values(PARKED_APPROVAL_CLOSURE_SENTENCES));
 
+/**
+ * 台账/收件箱里持久化的是中文原句；展示侧拿原句做**精确**查表换出 i18n 词条键。
+ * 差一个字都返回 null（当普通失败文案处理），不做任何模糊匹配。
+ */
+export function lookupParkedApprovalClosureKey(text: unknown): keyof typeof PARKED_APPROVAL_CLOSURE_SENTENCES | null {
+  if (typeof text !== 'string') return null;
+  for (const key of Object.keys(PARKED_APPROVAL_CLOSURE_SENTENCES) as (keyof typeof PARKED_APPROVAL_CLOSURE_SENTENCES)[]) {
+    if (PARKED_APPROVAL_CLOSURE_SENTENCES[key] === text) return key;
+  }
+  return null;
+}
+
 export function isParkedApprovalClosureSentence(text: unknown): text is string {
   return typeof text === 'string' && CLOSURE_SENTENCE_SET.has(text);
 }

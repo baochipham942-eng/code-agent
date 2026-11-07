@@ -36,8 +36,8 @@ resources:
         NODE_ENV: "production"
         UPDATE_RELEASE_CHANNEL: "stable"
         UPDATE_RELEASE_MANIFEST_URL: "https://agent-neo-releases.oss-cn-shanghai.aliyuncs.com/stable/release.json"
-        UPDATE_GITHUB_REPOSITORY: "baochipham942-eng/code-agent"
-        GITHUB_REPOSITORY: "baochipham942-eng/code-agent"
+        UPDATE_GITHUB_REPOSITORY: "neo-cowork/code-agent"
+        GITHUB_REPOSITORY: "neo-cowork/code-agent"
         AUTH_SECRET: ${env(AUTH_SECRET)}
         DATABASE_URL: ${env(DATABASE_URL)}
         DEEPSEEK_API_KEY: ${env(DEEPSEEK_API_KEY)}

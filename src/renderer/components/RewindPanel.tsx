@@ -11,6 +11,7 @@ import ipcService from '../services/ipcService';
 import { Button, Modal } from './primitives';
 import { ConfirmDialog } from './composites/ConfirmDialog';
 import { useI18n } from '../hooks/useI18n';
+import { formatDateTime } from '../utils/formatDateTime';
 import { undeclaredToolDisplayName } from '../utils/humanizeToolStep';
 
 interface Checkpoint {
@@ -34,7 +35,7 @@ interface RewindPanelProps {
 }
 
 export const RewindPanel: React.FC<RewindPanelProps> = ({ isOpen, onClose, onCheckedOut }) => {
-  const { t } = useI18n();
+  const { t, language } = useI18n();
   const r = t.taskStatusPanels.rewind;
   const [checkpoints, setCheckpoints] = useState<Checkpoint[]>([]);
   const [selectedMessageId, setSelectedMessageId] = useState<string | null>(null);
@@ -243,7 +244,7 @@ export const RewindPanel: React.FC<RewindPanelProps> = ({ isOpen, onClose, onChe
                   {cp.description || r.checkpointFallback.replace('{id}', cp.id.slice(0, 8))}
                 </span>
                 <span className="text-xs text-zinc-500">
-                  {new Date(cp.timestamp).toLocaleTimeString()}
+                  {formatDateTime(cp.timestamp, language)}
                 </span>
               </div>
               <span className="text-xs text-zinc-500 mt-1 block">

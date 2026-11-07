@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { Archive, Brain, Check, ChevronDown, ChevronRight, HelpCircle, Loader2, MessageSquare, Send, Sparkles, X } from 'lucide-react';
 import type { NeoWorkCardDetail, NeoWorkCardPriority } from '@shared/contract/tag';
 import type { Message } from '@shared/contract/message';
+import type { Language } from '../../../i18n';
 import {
   isInternalRuntimeText,
   NEO_WORK_CARD_PHASE_CHIP_STYLE,
@@ -19,6 +20,7 @@ import {
 } from './projectCollaborationData';
 import { useNeoWorkCardStore } from '../../../stores/neoWorkCardStore';
 import { useI18n } from '../../../hooks/useI18n';
+import { formatDateTime } from '../../../utils/formatDateTime';
 import { toast } from '../../../hooks/useToast';
 import { Badge } from '../../primitives';
 
@@ -39,8 +41,8 @@ export interface ProjectCollaborationDetailPaneProps {
   onApproveMemory?: (candidateId: string) => void | Promise<void>;
 }
 
-function formatTime(timestamp: number): string {
-  return new Date(timestamp).toLocaleString();
+function formatTime(timestamp: number, lang: Language): string {
+  return formatDateTime(timestamp, lang);
 }
 
 function uniqueNonEmpty(items: string[]): string[] {
@@ -63,6 +65,7 @@ const RoundItem: React.FC<{
   index: number;
   onOpenConversation?: (sessionId: string) => void;
 }> = ({ round, index, onOpenConversation }) => {
+  const { language } = useI18n();
   const [expanded, setExpanded] = useState(false);
   const reply = round.reply ?? '';
   const needsClamp = reply.length > REPLY_CLAMP_CHARS;
@@ -75,7 +78,7 @@ const RoundItem: React.FC<{
           <span className="whitespace-pre-wrap break-words">{round.request}</span>
         </div>
         <span className="flex shrink-0 items-center gap-1.5">
-          <span className="text-[10px] text-zinc-600">{formatTime(round.at)}</span>
+          <span className="text-[10px] text-zinc-600">{formatTime(round.at, language)}</span>
           {/* 轮级跳转（ADR-035）：跳到该轮真正发生的会话 */}
           {onOpenConversation && round.conversationId && (
             <button
@@ -130,7 +133,7 @@ export const ProjectCollaborationDetailPane: React.FC<ProjectCollaborationDetail
   const [followUpText, setFollowUpText] = useState('');
   const [followUpError, setFollowUpError] = useState<string | null>(null);
   const [followUpSending, setFollowUpSending] = useState(false);
-  const { t } = useI18n();
+  const { t, language } = useI18n();
 
   // topic 参与过的会话集合（ADR-035）：源会话 + 各轮 delta 归属；老卡自然退化为单会话
   const conversationIds = useMemo(
@@ -248,7 +251,7 @@ export const ProjectCollaborationDetailPane: React.FC<ProjectCollaborationDetail
               {NEO_WORK_CARD_PHASE_LABEL[phase]}
             </Badge>
             <span>发起人 {formatRequesterLabel(workCard.requesterUserId, currentUser)}</span>
-            <span>更新于 {formatTime(workCard.updatedAt)}</span>
+            <span>更新于 {formatTime(workCard.updatedAt, language)}</span>
             <select
               value={workCard.priority ?? 'medium'}
               onChange={(event) => handlePriorityChange(event.target.value)}

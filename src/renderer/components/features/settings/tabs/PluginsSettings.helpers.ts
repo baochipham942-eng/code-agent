@@ -4,6 +4,8 @@
 // ============================================================================
 
 import { zh } from '../../../../i18n/zh';
+import type { Language } from '../../../../i18n';
+import { formatDateTime } from '../../../../utils/formatDateTime';
 import type {
   InstalledPlugin,
   MarketplacePluginEntry,
@@ -260,11 +262,15 @@ export function formatMarketplaceSource(source: MarketplaceSource): string {
   }
 }
 
-export function formatDate(value?: string, labels: PluginDateLabels = zh.settings.plugins.date): string {
+export function formatDate(
+  value?: string,
+  labels: PluginDateLabels = zh.settings.plugins.date,
+  lang: Language = 'zh',
+): string {
   if (!value) return labels.unknown;
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return value;
-  return date.toLocaleString();
+  return formatDateTime(date, lang);
 }
 
 /**

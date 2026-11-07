@@ -10,13 +10,13 @@ import { useSessionStore } from '../../../stores/sessionStore';
 import { sessionAutomationClient } from '../../../services/sessionAutomationClient';
 import { Button } from '../../primitives/Button';
 import {
-  formatDateTime,
   formatDuration,
   formatRunCostUsd,
   getExecutionStatusMeta,
   isPermissionDeniedExecution,
   prettyJson,
 } from './types';
+import { formatDateTime } from '../../../utils/formatDateTime';
 import { CronRunsOnPill } from './CronRunsOnSelector';
 import { cronLoginWallCopy, openCronLoginWallSite } from './cronLoginWallNotice';
 import { cronFailureSentence } from './cronFailureNotice';

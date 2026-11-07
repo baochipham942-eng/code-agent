@@ -97,7 +97,7 @@ async function invokePluginReloadBatch() {
 }
 
 export const PluginsSettings: React.FC = () => {
-  const { t } = useI18n();
+  const { t, language } = useI18n();
   const pluginsText = t.settings.plugins;
   const currentUser = useAuthStore((state) => state.user);
   const canAccessPluginAdmin = canAccessFeature(
@@ -560,7 +560,7 @@ export const PluginsSettings: React.FC = () => {
                         </Pill>
                       </div>
                       <div className="mt-2 text-xs leading-5 text-zinc-500">
-                        {pluginsText.installed.installedAtPrefix}{formatDate(plugin.installedAt, pluginsText.date)}
+                        {pluginsText.installed.installedAtPrefix}{formatDate(plugin.installedAt, pluginsText.date, language)}
                         {plugin.projectPath ? `${pluginsText.installed.projectPrefix}${toDisplayPath(plugin.projectPath)}` : ''}
                       </div>
                       {/* 安装目录只在下面「Plugin asset」格里出现一次：卡片名下再渲染一遍是重复外泄 */}
@@ -893,7 +893,7 @@ export const PluginsSettings: React.FC = () => {
                         </div>
                         <div className="mt-1 break-all text-xs text-zinc-600">
                           {pluginsText.marketplaceSources.cachePrefix}{marketplace.installLocation}
-                          {pluginsText.marketplaceSources.updatePrefix}{formatDate(marketplace.lastUpdated, pluginsText.date)}
+                          {pluginsText.marketplaceSources.updatePrefix}{formatDate(marketplace.lastUpdated, pluginsText.date, language)}
                         </div>
                       </div>
                       <div className="flex shrink-0 gap-2">

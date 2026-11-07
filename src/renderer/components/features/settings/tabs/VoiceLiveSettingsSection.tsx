@@ -24,6 +24,7 @@ import { PROVIDER_MODELS, PROVIDER_MODELS_MAP } from '@shared/constants/models';
 import ipcService from '../../../../services/ipcService';
 import { createLogger } from '../../../../utils/logger';
 import { useI18n } from '../../../../hooks/useI18n';
+import { formatDateTime } from '../../../../utils/formatDateTime';
 import { Toggle } from '../../../primitives/Toggle';
 import { Button } from '../../../primitives/Button';
 import { ConfirmDialog } from '../../../composites/ConfirmDialog';
@@ -77,7 +78,8 @@ interface VoiceRecordingOverviewView {
 const formatMb = (bytes: number): string => `${(bytes / 1024 / 1024).toFixed(1)} MB`;
 
 export const VoiceLiveSettingsSection: React.FC = () => {
-  const { t } = useI18n();
+  // uiLanguage：界面语言（本组件的 language state 是语音会话语言 auto/zh/en，两者无关）。
+  const { t, language: uiLanguage } = useI18n();
   const text = t.voice.settings;
   const { usage } = useVoiceLiveAvailability();
 
@@ -795,7 +797,7 @@ export const VoiceLiveSettingsSection: React.FC = () => {
               {recording.lastCleanup === null
                 ? text.recordCallsNeverCleaned
                 : text.recordCallsLastCleanup
-                  .replace('{time}', new Date(recording.lastCleanup.at).toLocaleString())
+                  .replace('{time}', formatDateTime(recording.lastCleanup.at, uiLanguage))
                   .replace('{count}', String(recording.lastCleanup.deleted))
                   .replace('{size}', formatMb(recording.lastCleanup.freedBytes))
                   .replace('{rule}', [

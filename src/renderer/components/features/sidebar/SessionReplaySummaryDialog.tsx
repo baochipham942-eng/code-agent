@@ -14,6 +14,7 @@ import type {
 import type { Task } from '@shared/contract/backgroundTask';
 import type { ScriptRunSnapshot } from '@shared/contract/scriptRun';
 import { useI18n } from '../../../hooks/useI18n';
+import { formatDateTime } from '../../../utils/formatDateTime';
 import type { SessionReplayEvidence } from '../../../utils/sessionReplayEvidence';
 import {
   TRAJECTORY_DATASET_ROLE_OPTIONS,
@@ -106,7 +107,7 @@ export const SessionReplaySummaryDialog: React.FC<SessionReplaySummaryDialogProp
   onOpenEvidence,
   onClose,
 }) => {
-  const { t } = useI18n();
+  const { t, language } = useI18n();
   const labels = t.sessionReplay;
   const [focusedReplayOwner, setFocusedReplayOwner] = React.useState<FocusedReplayOwner | null>(null);
   const [updatingDatasetRole, setUpdatingDatasetRole] = React.useState<AgentTrajectoryDatasetRole | null>(null);
@@ -339,9 +340,9 @@ export const SessionReplaySummaryDialog: React.FC<SessionReplaySummaryDialogProp
                     </div>
                     <div className="mt-0.5 truncate text-[10px] text-zinc-500">
                       {focusedWorkflowRun
-                        ? `${formatWorkflowStatus(focusedWorkflowRun, labels)} · ${formatWorkflowRunMeta(focusedWorkflowRun, labels)}`
+                        ? `${formatWorkflowStatus(focusedWorkflowRun, labels)} · ${formatWorkflowRunMeta(focusedWorkflowRun, labels, language)}`
                         : focusedBackgroundTask
-                          ? `${formatTaskStatus(focusedBackgroundTask, labels)} · ${formatBackgroundTaskMeta(focusedBackgroundTask, labels)}`
+                          ? `${formatTaskStatus(focusedBackgroundTask, labels)} · ${formatBackgroundTaskMeta(focusedBackgroundTask, labels, language)}`
                           : ''}
                     </div>
                   </div>
@@ -443,10 +444,10 @@ export const SessionReplaySummaryDialog: React.FC<SessionReplaySummaryDialogProp
                             {formatTaskEventLabel(event)}
                           </span>
                           <span className="shrink-0 text-zinc-600">
-                            {new Date(event.timestamp).toLocaleTimeString()}
+                            {formatDateTime(event.timestamp, language)}
                           </span>
                         </div>
-                        <div className="mt-0.5 truncate text-zinc-500">{formatTaskEventDetail(event)}</div>
+                        <div className="mt-0.5 truncate text-zinc-500">{formatTaskEventDetail(event, language)}</div>
                       </div>
                     ))}
                     {focusedBackgroundTask.events.length > 5 && (
@@ -480,7 +481,7 @@ export const SessionReplaySummaryDialog: React.FC<SessionReplaySummaryDialogProp
                         {formatWorkflowStatus(snapshot, labels)}
                       </div>
                       <div className="mt-0.5 truncate text-[10px] text-badge-accent/45">
-                        {formatWorkflowRunMeta(snapshot, labels)}
+                        {formatWorkflowRunMeta(snapshot, labels, language)}
                       </div>
                     </div>
                     <div className="shrink-0 text-right text-[10px] text-badge-accent/60">
@@ -574,7 +575,7 @@ export const SessionReplaySummaryDialog: React.FC<SessionReplaySummaryDialogProp
                       <div className="truncate font-medium text-badge-info">{task.title}</div>
                       <div className="mt-0.5 truncate text-[10px] text-badge-info/60">{formatTaskStatus(task, labels)}</div>
                       <div className="mt-0.5 truncate text-[10px] text-badge-info/45">
-                        {formatBackgroundTaskMeta(task, labels)}
+                        {formatBackgroundTaskMeta(task, labels, language)}
                       </div>
                     </div>
                     <div className="shrink-0 text-right text-[10px] text-badge-info/60">
@@ -624,10 +625,10 @@ export const SessionReplaySummaryDialog: React.FC<SessionReplaySummaryDialogProp
                               {formatTaskEventLabel(event)}
                             </span>
                             <span className="shrink-0 text-badge-info/50">
-                              {new Date(event.timestamp).toLocaleTimeString()}
+                              {formatDateTime(event.timestamp, language)}
                             </span>
                           </div>
-                          <div className="mt-0.5 truncate text-zinc-500">{formatTaskEventDetail(event)}</div>
+                          <div className="mt-0.5 truncate text-zinc-500">{formatTaskEventDetail(event, language)}</div>
                         </div>
                       ))}
                     </div>

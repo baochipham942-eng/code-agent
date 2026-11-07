@@ -32,6 +32,7 @@ import { SettingsPage } from '../SettingsLayout';
 import type { DoctorFixCode } from '@shared/constants/doctor';
 import { toast } from '../../../../hooks/useToast';
 import { useI18n } from '../../../../hooks/useI18n';
+import { formatDateTime } from '../../../../utils/formatDateTime';
 import { useBundledCapabilityStore } from '../../../../stores/bundledCapabilityStore';
 import { useDoctorStore } from '../../../../stores/doctorStore';
 import {
@@ -150,7 +151,7 @@ const DoctorItemRow: React.FC<{
 // ============================================================================
 
 export const DoctorSettings: React.FC = () => {
-  const { t } = useI18n();
+  const { t, language } = useI18n();
   const doctorText = t.settings.providerDoctor;
   const {
     report,
@@ -317,7 +318,7 @@ export const DoctorSettings: React.FC = () => {
             {report.summary.skip}{doctorText.summary.skipSuffix}
           </span>
           <span className="ml-auto text-xs text-zinc-500">
-            {(report.durationMs / 1000).toFixed(1)}s · {new Date(report.timestamp).toLocaleTimeString()}
+            {(report.durationMs / 1000).toFixed(1)}s · {formatDateTime(report.timestamp, language)}
           </span>
         </div>
       )}

@@ -11,7 +11,8 @@ import type {
 } from '@shared/contract/agentTrajectory';
 import type { Task, TaskEvent, TaskOutputRef } from '@shared/contract/backgroundTask';
 import type { ScriptRunAgentSnapshot, ScriptRunSnapshot } from '@shared/contract/scriptRun';
-import type { Translations } from '../../../i18n';
+import type { Language, Translations } from '../../../i18n';
+import { formatDateTime } from '../../../utils/formatDateTime';
 import type { SessionReplayEvidence } from '../../../utils/sessionReplayEvidence';
 
 type FocusedReplayOwner = { kind: 'workflow'; id: string } | { kind: 'background'; id: string };
@@ -27,7 +28,7 @@ function formatDuration(ms: number | undefined, { dialog: d }: SessionReplayLabe
   return remainder > 0 ? `${minutes} ${d.unitMinute} ${remainder} ${d.unitSecond}` : `${minutes} ${d.unitMinute}`;
 }
 
-function formatTimestamp(timestamp: number | undefined): string | null {
+function formatTimestamp(timestamp: number | undefined, lang: Language): string | null {
   if (timestamp === undefined || !Number.isFinite(timestamp)) {
     return null;
   }
@@ -35,7 +36,7 @@ function formatTimestamp(timestamp: number | undefined): string | null {
   if (Number.isNaN(date.getTime())) {
     return null;
   }
-  return date.toLocaleString();
+  return formatDateTime(date, lang);
 }
 
 function getWorkflowSortTime(snapshot: ScriptRunSnapshot): number {
@@ -189,9 +190,9 @@ function formatWorkflowStatus(snapshot: ScriptRunSnapshot, { dialog: d }: Sessio
   }
 }
 
-function formatWorkflowRunMeta(snapshot: ScriptRunSnapshot, labels: SessionReplayLabels): string {
-  const started = formatTimestamp(snapshot.startedAt);
-  const finished = formatTimestamp(snapshot.finishedAt);
+function formatWorkflowRunMeta(snapshot: ScriptRunSnapshot, labels: SessionReplayLabels, lang: Language): string {
+  const started = formatTimestamp(snapshot.startedAt, lang);
+  const finished = formatTimestamp(snapshot.finishedAt, lang);
   return [
     `run ${snapshot.runId}`,
     started ? labels.dialog.metaStarted.replace('{time}', started) : null,
@@ -235,9 +236,9 @@ function formatTaskStatus(task: Task, { dialog: d }: SessionReplayLabels): strin
   }
 }
 
-function formatBackgroundTaskMeta(task: Task, labels: SessionReplayLabels): string {
-  const started = formatTimestamp(task.startedAt);
-  const updated = formatTimestamp(task.updatedAt);
+function formatBackgroundTaskMeta(task: Task, labels: SessionReplayLabels, lang: Language): string {
+  const started = formatTimestamp(task.startedAt, lang);
+  const updated = formatTimestamp(task.updatedAt, lang);
   return [
     `task ${task.id}`,
     started ? labels.dialog.metaStarted.replace('{time}', started) : null,
@@ -287,7 +288,7 @@ function formatTaskEventLabel(event: TaskEvent): string {
   return `${event.type}${status}`;
 }
 
-function formatTaskEventDetail(event: TaskEvent): string {
+function formatTaskEventDetail(event: TaskEvent, lang: Language): string {
   if (event.message) {
     return truncateContent(event.message, 96);
   }
@@ -298,7 +299,7 @@ function formatTaskEventDetail(event: TaskEvent): string {
       return 'event data';
     }
   }
-  return new Date(event.timestamp).toLocaleTimeString();
+  return formatDateTime(event.timestamp, lang);
 }
 
 function formatBlockLabel(block: ReplayBlock, { dialog: d }: SessionReplayLabels): string {

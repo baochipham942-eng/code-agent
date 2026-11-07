@@ -11,6 +11,8 @@ import {
   formatDuration,
   formatCost,
 } from '../../../../shared/contract/dagVisualization';
+import { useAppStore } from '../../../stores/appStore';
+import { formatDateTime } from '../../../utils/formatDateTime';
 
 interface TaskDetailPanelProps {
   task: TaskNodeData | null;
@@ -21,6 +23,8 @@ interface TaskDetailPanelProps {
  * 任务详情面板
  */
 export const TaskDetailPanel = memo(({ task, onClose }: TaskDetailPanelProps) => {
+  // hooks 必须在早退 return 之前调用；语言来自全局 store（本面板无 i18n 文案树）。
+  const language = useAppStore((state) => state.language);
   if (!task) return null;
 
   const colors = TASK_STATUS_COLORS[task.status];
@@ -82,10 +86,10 @@ export const TaskDetailPanel = memo(({ task, onClose }: TaskDetailPanelProps) =>
         {/* 时间信息 */}
         <Section title="Timing">
           {task.startedAt && (
-            <InfoRow label="Started" value={new Date(task.startedAt).toLocaleString()} />
+            <InfoRow label="Started" value={formatDateTime(task.startedAt, language)} />
           )}
           {task.completedAt && (
-            <InfoRow label="Completed" value={new Date(task.completedAt).toLocaleString()} />
+            <InfoRow label="Completed" value={formatDateTime(task.completedAt, language)} />
           )}
           {actualDuration !== null && (
             <InfoRow label="Duration" value={formatDuration(actualDuration)} />

@@ -24,6 +24,7 @@ import {
 import type { Message } from '@shared/contract/message';
 import { useSessionStore } from '../../../stores/sessionStore';
 import { useI18n } from '../../../hooks/useI18n';
+import { formatDateTime } from '../../../utils/formatDateTime';
 import { buildNeoWorkCardDraftRequest } from '../chat/neoTagSubmit';
 import { Button, Modal, ModalFooter } from '../../primitives';
 import {
@@ -252,7 +253,7 @@ function TopicRow({
   currentUser?: { id?: string | null; name?: string | null; email?: string | null } | null;
   onSelect: (id: string) => void;
 }) {
-  const { t } = useI18n();
+  const { t, language } = useI18n();
   const { workCard } = detail;
   const phase = statusPhase(workCard.status);
   const snippet = topicActivitySnippet(detail);
@@ -301,7 +302,7 @@ function TopicRow({
       {snippet && <div className="mt-1 line-clamp-1 text-[11px] leading-5 text-zinc-500">{snippet}</div>}
       <div className="mt-1.5 flex min-w-0 flex-wrap items-center gap-x-2 gap-y-0.5 text-[10px] text-zinc-600">
         <span className="truncate">{formatRequesterLabel(workCard.requesterUserId, currentUser)}</span>
-        <span>{new Date(workCard.updatedAt).toLocaleString()}</span>
+        <span>{formatDateTime(workCard.updatedAt, language)}</span>
         {workCard.dueAt != null && (
           <span
             className={dueOverdue ? 'font-medium text-badge-danger' : undefined}

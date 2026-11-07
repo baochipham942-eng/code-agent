@@ -10,7 +10,7 @@ import ipcService from '../../../services/ipcService';
 import { cronClient } from '../../../services/cronClient';
 import { useI18n } from '../../../hooks/useI18n';
 import { useAppStore } from '../../../stores/appStore';
-import { formatDateTime } from '../cron/types';
+import { formatDateTime } from '../../../utils/formatDateTime';
 import { isCronExecutionPermissionDenialError } from '../chat/cronRunSessionStatus';
 import { Button } from '../../primitives/Button';
 import { SettingsSection } from '../settings/SettingsLayout';

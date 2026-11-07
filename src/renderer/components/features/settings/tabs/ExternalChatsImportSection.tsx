@@ -16,6 +16,7 @@ import ipcService from '../../../../services/ipcService';
 import { useSessionStore } from '../../../../stores/sessionStore';
 import { useExternalImportHistoryStore } from '../../../../stores/externalImportHistoryStore';
 import { useI18n } from '../../../../hooks/useI18n';
+import { formatDateTime } from '../../../../utils/formatDateTime';
 import { Button, Toggle } from '../../../primitives';
 
 type ExternalChatsImportCopy = ReturnType<
@@ -45,7 +46,7 @@ function summaryLine(copy: ExternalChatsImportCopy, counts: Record<'imported' | 
 }
 
 export const ExternalChatsImportSection: React.FC = () => {
-  const { t } = useI18n();
+  const { t, language } = useI18n();
   const copy = t.settings.externalImport.chatsImport;
   const [busy, setBusy] = useState(false);
   const [failed, setFailed] = useState(false);
@@ -97,7 +98,7 @@ export const ExternalChatsImportSection: React.FC = () => {
     : sync.mode === 'on'
       ? (sync.lastRun
         ? copy.sync.statusOnLast
-          .replace('{time}', new Date(sync.lastRun.at).toLocaleString())
+          .replace('{time}', formatDateTime(sync.lastRun.at, language))
           .replace('{count}', String(sync.lastRun.imported))
         : copy.sync.statusOn)
       : copy.sync.statusOff;

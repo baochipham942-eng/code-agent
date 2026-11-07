@@ -5,6 +5,7 @@
 import type { Connector, ConnectorExecutionResult, ConnectorStatus } from '../base';
 import {
   buildAppleScriptDateVar,
+  describeAppleScriptFailure,
   escapeAppleScriptString,
   parseAppleScriptDate,
   runAppleScript,
@@ -45,7 +46,7 @@ function parseLine(line: string): string[] {
 }
 
 function errorMessage(error: unknown): string {
-  return error instanceof Error ? error.message : String(error);
+  return describeAppleScriptFailure('Reminders', error).message;
 }
 
 function buildRemindersStatus(capabilities: string[]): ConnectorStatus {

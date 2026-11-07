@@ -118,11 +118,24 @@ describe('calendarModule (native)', () => {
       if (!result.ok) expect(result.code).toBe('NOT_INITIALIZED');
     });
 
-    it('wraps connector errors', async () => {
-      execMock.mockRejectedValue(new Error('boom'));
-      const result = await run({ action: 'get_status' });
+    it('returns a plain reason without the osascript command line', async () => {
+      const script = 'tell application "Calendar"\nset a to 1\nreturn a\nend tell';
+      execMock.mockRejectedValue(Object.assign(
+        new Error(`Command failed: osascript -e ${script}\nCalendar got an error: Can't get mailbox "INBOX". (-1728)`),
+        { code: 1 },
+      ));
+      const ctx = makeCtx();
+      const result = await run({ action: 'get_status' }, ctx);
       expect(result.ok).toBe(false);
-      if (!result.ok) expect(result.error).toContain('Calendar connector failed: boom');
+      if (!result.ok) {
+        expect(result.error).not.toMatch(/osascript|Command failed|tell application|set a to 1|return a/);
+        expect(result.error).toContain('Calendar');
+      }
+      const warn = vi.mocked(ctx.logger.warn);
+      expect(warn).toHaveBeenCalledTimes(1);
+      const meta = warn.mock.calls[0][1] as { connector: string; code: string; detail: string };
+      expect(meta).toMatchObject({ connector: 'calendar', code: 'not_found' });
+      expect(meta.detail.length).toBeLessThanOrEqual(300);
     });
   });
 

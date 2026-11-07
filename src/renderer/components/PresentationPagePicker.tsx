@@ -25,6 +25,16 @@ interface Props {
   preview?: PresentationPagePreviewResult;
 }
 
+function missingCopy(
+  code: string | undefined,
+  design: Pick<ReturnType<typeof useI18n>['t']['design'], 'slidesPreviewMissing' | 'slidesPreviewOffline' | 'slidesPreviewInstallFailed' | 'slidesPreviewUnsupported'>,
+): string {
+  if (code === 'LIBREOFFICE_RUNTIME_OFFLINE') return design.slidesPreviewOffline;
+  if (code === 'LIBREOFFICE_RUNTIME_UNSUPPORTED') return design.slidesPreviewUnsupported;
+  if (code?.startsWith('LIBREOFFICE_RUNTIME_')) return design.slidesPreviewInstallFailed;
+  return design.slidesPreviewMissing;
+}
+
 async function loadPresentationPreview(filePath: string): Promise<PresentationPagePreviewResult> {
   const response = await window.domainAPI?.invoke<PresentationPagePreviewResult>(
     IPC_DOMAINS.WORKSPACE,
@@ -35,6 +45,16 @@ async function loadPresentationPreview(filePath: string): Promise<PresentationPa
     throw new Error(response?.error?.message || 'PPT 逐页预览不可用');
   }
   return response.data;
+}
+
+/**
+ * libreoffice-missing 且还没有失败码（安装仍在后台进行）时的有界自动重试节奏：
+ * 逐次退避，总和 < 10 分钟；出页图 / 拿到具体失败码 / 换文件 / 卸载即停。
+ */
+const MISSING_RETRY_DELAYS_MS = [3_000, 7_000, 15_000, 30_000, 60_000, 90_000, 120_000, 150_000];
+
+function shouldRetryMissingPreview(result: PresentationPagePreviewResult): boolean {
+  return result.state === 'libreoffice-missing' && result.error === undefined;
 }
 
 function outlineText(page: PresentationOutlinePage): string[] {
@@ -52,31 +72,55 @@ export const PresentationPagePicker: React.FC<Props> = ({ title, filePath, outli
   useEffect(() => {
     setSelectedIndex(0);
     if (preview) {
+      // 首屏直接画传入的缓存结果（右栏文件预览路径由 PreviewPanel 提供）。
       setResolved(preview);
       setLoading(false);
       setLoadError(null);
-      return;
-    }
-    if (!filePath) {
+      // 缓存结果仍是「LibreOffice 准备中且无失败码」时不短路：继续走下面的
+      // 有界自动重试，后台装完即自动出页图，不要求用户手动刷新。
+      if (!filePath || !shouldRetryMissingPreview(preview)) return;
+    } else if (!filePath) {
       setResolved(undefined);
       setLoading(false);
       return;
     }
 
     let cancelled = false;
-    setLoading(true);
-    setLoadError(null);
-    void loadPresentationPreview(filePath)
-      .then((result) => {
-        if (!cancelled) setResolved(result);
-      })
-      .catch((error) => {
-        if (!cancelled) setLoadError(error instanceof Error ? error.message : String(error));
-      })
-      .finally(() => {
-        if (!cancelled) setLoading(false);
-      });
-    return () => { cancelled = true; };
+    let retryTimer: ReturnType<typeof setTimeout> | undefined;
+    let retryIndex = 0;
+    const request = (): void => {
+      void loadPresentationPreview(filePath)
+        .then((result) => {
+          if (cancelled) return;
+          setResolved(result);
+          // 安装仍在后台准备：按有界节奏自动重发一次预览请求，成功出页图或
+          // 拿到具体失败码后由条件自然停止。
+          if (shouldRetryMissingPreview(result) && retryIndex < MISSING_RETRY_DELAYS_MS.length) {
+            retryTimer = setTimeout(request, MISSING_RETRY_DELAYS_MS[retryIndex]);
+            retryIndex += 1;
+          }
+        })
+        .catch((error) => {
+          if (!cancelled) setLoadError(error instanceof Error ? error.message : String(error));
+        })
+        .finally(() => {
+          if (!cancelled) setLoading(false);
+        });
+    };
+    if (preview) {
+      // 首屏结果已有（缓存 missing）：不立即重发，从第一档退避开始等，
+      // 节奏与聊天附件路径一致。
+      retryTimer = setTimeout(request, MISSING_RETRY_DELAYS_MS[retryIndex]);
+      retryIndex += 1;
+    } else {
+      setLoading(true);
+      setLoadError(null);
+      request();
+    }
+    return () => {
+      cancelled = true;
+      if (retryTimer !== undefined) clearTimeout(retryTimer);
+    };
   }, [filePath, preview]);
 
   const pages = useMemo(() => {
@@ -113,7 +157,7 @@ export const PresentationPagePicker: React.FC<Props> = ({ title, filePath, outli
         <div className="mt-3 flex items-center gap-2 rounded border border-badge-warning/20 bg-amber-500/[0.05] px-2.5 py-2 text-xs text-badge-warning">
           <ImageOff className="h-3.5 w-3.5 shrink-0" />
           {resolved?.state === 'libreoffice-missing'
-            ? t.design.slidesPreviewMissing
+            ? missingCopy(resolved.error, t.design)
             : '截图转换失败，已切换为可选文字大纲。'}
         </div>
       )}

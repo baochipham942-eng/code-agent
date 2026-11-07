@@ -23,6 +23,12 @@ import {
 import { getToolCache } from '../services/infra/toolCache';
 import { extractComputerTargetApp } from '../permissions/computerAppTarget';
 import { cuaToolNeedsAppGrant, resolveCuaAppTarget } from '../permissions/cuaAppTarget';
+import {
+  classifyCuaSensitiveStep,
+  decorateSensitiveStepRequest,
+  sensitiveStepHandbackResolution,
+  stripSensitiveStepParams,
+} from '../permissions/cuaSensitiveStep';
 import { resolvePreAskGrant } from '../permissions/preAskGrant';
 import { createLogger } from '../services/infra/logger';
 import { getAuditLogger, maskSensitiveData, isKnownSafeCommand, validateCommand, getShellSafetyMode, getExecPolicyStore, getPolicyEnforcer, type PolicyEnforcer, type PolicyCheckResult, type ValidationResult } from '../security';
@@ -50,6 +56,7 @@ import { lookupMcpToolAfterReapedReconnect } from './mcpReapedToolLookup';
 import type { ConversationExecutionIntent, WorkbenchToolScope } from '../../shared/contract/conversationEnvelope';
 import { isBashToolName, normalizeToolName } from './toolNames';
 import { isToolDeniedByRunPolicy } from './runToolPolicy';
+import { evaluateSubagentPolicyDenial, type SubagentToolPolicy } from '../agent/subagentToolRuntime';
 import { finalizeSurfaceAwareToolResult } from './artifacts/surfaceExecutionToolResultPipeline';
 import { recordDecision, recordInToolPermissionAsk } from './toolExecutorDecisionTrace';
 import { checkNeoTagToolGuard } from './neoTagToolGuard';
@@ -419,7 +426,7 @@ export interface ExecuteOptions {
   // 策略只能收紧（deny），不能放宽：'deny' 直接拒，'ask' 继续走常规管道
   // （validateCommand / classifyPermission / exec policy / 审计 / cache）。
   // 这保证 subagent 与主 agent 走同一条 ToolExecutor 管道，而非绕过权限的旁路。
-  subagentPolicy?: { allowedTools: Set<string>; check: (toolName: string, params: Record<string, unknown>) => 'deny' | 'ask' };
+  subagentPolicy?: SubagentToolPolicy;
   /**
    * ADR-067 D3：本轮最新输入的 origin 链（可多条，判定取最不可信者）。
    * 子代理 loop 在 drain 注入时挂载；主 agent 常规用户输入铸 user 起源。
@@ -816,18 +823,13 @@ export class ToolExecutor {
     if (options.subagentPolicy) {
       if (!options.subagentPolicy.allowedTools.has(executionToolName)) {
         logger.warn('Tool not in subagent allowlist', { toolName: executionToolName });
-        return {
-          success: false,
-          error: `Tool not allowed for subagent: ${executionToolName}`,
-        };
+        return { success: false, error: `Tool not allowed for subagent: ${executionToolName}` };
       }
-      if (options.subagentPolicy.check(executionToolName, params) === 'deny') {
-        logger.warn('Denied by subagent permission policy', { toolName: executionToolName });
-        recordDecision(executionToolName, params, 'policy-deny', 'subagent policy', Date.now(), undefined, effectiveSessionId, this.ledgerOrigin);
-        return {
-          success: false,
-          error: `Denied by subagent permission policy: ${executionToolName}`,
-        };
+      const subagentDenial = evaluateSubagentPolicyDenial(options.subagentPolicy, executionToolName, params);
+      if (subagentDenial) {
+        logger.warn(subagentDenial.error, { toolName: executionToolName, policy: subagentDenial.policyName, reason: subagentDenial.reason });
+        recordDecision(executionToolName, params, 'policy-deny', subagentDenial.reason, Date.now(), undefined, effectiveSessionId, this.ledgerOrigin);
+        return { success: false, error: subagentDenial.error };
       }
     }
 
@@ -1235,6 +1237,7 @@ export class ToolExecutor {
       topology: executionTopology,
       sessionId: effectiveSessionId,
       agentId: options.agentId,
+      permissionLevel: toolDef.permissionLevel,
     });
     if (guardFabricGate.deny) {
       recordDecision(
@@ -1250,6 +1253,9 @@ export class ToolExecutor {
       return {
         success: false,
         error: guardFabricGate.deny.error,
+        metadata: guardFabricGate.deny.hostReason
+          ? { hostReason: guardFabricGate.deny.hostReason }
+          : undefined,
       };
     }
     if (guardFabricGate.forceApproval) {
@@ -2001,6 +2007,9 @@ export class ToolExecutor {
         }
       }
 
+      // ADR-088 一期：密码框输入交回用户。敏感判定必须早于 resolvePreAskGrant 消费——
+      // 已记住的应用授权压不掉交回卡；未命中才进入既有按应用审批链（规格 §2 判定顺序）。
+      const cuaSensitiveStep = classifyCuaSensitiveStep(executionToolName, params);
       const preAsk = needsUserApproval ? resolvePreAskGrant({
         toolName: executionToolName,
         sessionId: effectiveSessionId,
@@ -2010,7 +2019,8 @@ export class ToolExecutor {
           || guardFabricForcesApproval || protectedWriteForcesConfirmation
           || policyForcesConfirmation || unresolvedWriteTargetForcesAsk
           || Boolean(boundaryViolation) || readOnlyForcesConfirmation
-          || peerOriginForcesConfirmation || launderRetryForcesAsk,
+          || peerOriginForcesConfirmation || launderRetryForcesAsk
+          || Boolean(cuaSensitiveStep),
       }) : null;
       if (preAsk) {
         needsUserApproval = false;
@@ -2106,7 +2116,11 @@ export class ToolExecutor {
       // （与 messageProcessor 落库同一套 sanitize）算指纹 + 忠实标记，随请求上抛给
       // parkApproval 落进行 payload——重启批准时从台账重算比对，点的是 A 就绝不执行 B。
       if (options.currentToolCallId) {
-        const survival = computeLedgerArgsSurvival(requestedToolName, params);
+        // ADR-088 §3：交回请求的指纹输入必须剔除 text（低熵密码的哈希可被爆破）。
+        const survival = computeLedgerArgsSurvival(
+          requestedToolName,
+          cuaSensitiveStep ? stripSensitiveStepParams(params) : params,
+        );
         permissionRequest.argsFingerprint = survival.argsFingerprint;
         permissionRequest.ledgerFaithful = survival.ledgerFaithful;
       }
@@ -2125,6 +2139,19 @@ export class ToolExecutor {
       // 把 $HOME 写边界 ask 自动批掉、文件真落盘。
       if (readOnlyForcesConfirmation || guardFabricForcesApproval || boundaryAskForcesConfirmation || protectedWriteForcesConfirmation || unresolvedWriteTargetForcesAsk) {
         permissionRequest.forceConfirm = true;
+        // 返修 r2：记录 forceConfirm 的成因形态。W3 写边界 ask 是唯一成因（且无 peer
+        // 触发）时标 boundary-only——定时任务写授权只放行这一种 forceConfirm，其余成因
+        // （只读档/guardFabric/保护路径/不确定目标/peer 触发/确认门）照旧人工。
+        if (
+          boundaryAskForcesConfirmation
+          && !readOnlyForcesConfirmation
+          && !guardFabricForcesApproval
+          && !protectedWriteForcesConfirmation
+          && !unresolvedWriteTargetForcesAsk
+          && !peerOriginForcesConfirmation
+        ) {
+          permissionRequest.forceConfirmBoundaryOnly = true;
+        }
       }
       if (unresolvedWriteTargetForcesAsk) {
         permissionRequest.reasonCode = PermissionRequestReason.UncertainWriteTargetWithPathDeny;
@@ -2166,12 +2193,20 @@ export class ToolExecutor {
         }
         if (shouldForceConfirm) {
           permissionRequest.forceConfirm = true;
+          // 确认门也是 forceConfirm 成因之一：boundary-only 标记必须摘掉（返修 r2）。
+          permissionRequest.forceConfirmBoundaryOnly = false;
           permissionRequest.dangerLevel = riskLevel === 'high'
             ? 'danger'
             : (riskLevel === 'medium' ? 'warning' : 'normal');
         }
       } catch (error) {
         logger.debug('ConfirmationGate preview error:', error);
+      }
+
+      // ADR-088 一期：敏感步骤交回卡（放在确认门之后，details 整体替换——被键入的文本、
+      // 预确认门写入的 preview、targetApp 一并清空，请求只带 kind/elementLabel/appName+action）。
+      if (cuaSensitiveStep) {
+        decorateSensitiveStepRequest(permissionRequest, cuaSensitiveStep, computerApp, executionToolName);
       }
 
       // PermissionRequest hook: allow hooks to intercept/block before user prompt
@@ -2239,6 +2274,41 @@ export class ToolExecutor {
         }
       }
       const approved = ask.approved;
+
+      // ADR-088 一期：交回步**永不执行**（规格 §4 三层保证之 1——没有任何代码路径从这张
+      // 请求的应答通向原始工具调用）。应答只决定回话模板：allow=用户已亲手完成（done），
+      // deny/超时/取消=跳过（skipped）；两个出口都 success:true，不是权限失败。
+      if (cuaSensitiveStep) {
+        const outcome = approved ? 'done_by_user' : 'skipped';
+        traceBuilder.addStep(
+          'plan_approval',
+          'sensitive_step_handback',
+          approved ? 'allow' : 'deny',
+          approved
+            ? '敏感步骤交回：用户已亲手完成并点「完成后继续」，Neo 未执行这一步'
+            : `敏感步骤交回：用户跳过（来源：${ask.denialSource ?? 'user'}），Neo 未执行这一步`,
+        );
+        recordDecision(
+          executionToolName,
+          stripSensitiveStepParams(params), // 台账先剥掉 text（规格 §3），反正这步不会执行
+          approved ? 'ask-approved' : 'ask-denied',
+          `sensitive_step_handback:${outcome}`,
+          permStartTime,
+          traceBuilder.build(approved ? 'allow' : 'deny'),
+          effectiveSessionId,
+          this.ledgerOrigin,
+          getApprovalWaitMs(options.currentToolCallId, Date.now()),
+        );
+        const resolution = sensitiveStepHandbackResolution(cuaSensitiveStep, outcome, {
+          expiredUnanswered: ask.denialSource === 'timeout',
+        });
+        logger.info('Sensitive step handed back to the user; not executed', {
+          tool: executionToolName,
+          outcome,
+          kind: cuaSensitiveStep.kind,
+        });
+        return { success: true, result: resolution.result, metadata: resolution.metadata };
+      }
 
       if (approved) {
         const approvalSource = ask.approvalSource ?? 'unspecified';

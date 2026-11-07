@@ -1,10 +1,11 @@
 // @vitest-environment jsdom
 import React from 'react';
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { SessionAutomationRecord } from '../../../src/shared/contract/sessionAutomation';
 import type { ParkedApprovalInboxItem } from '../../../src/shared/contract/pendingApproval';
 import { useCronStore } from '../../../src/renderer/stores/cronStore';
+import { cronClient } from '../../../src/renderer/services/cronClient';
 
 const listPendingReview = vi.fn<() => Promise<SessionAutomationRecord[]>>();
 const listParkedApprovals = vi.fn<() => Promise<ParkedApprovalInboxItem[]>>();
@@ -13,6 +14,8 @@ const markReviewed = vi.fn().mockResolvedValue(null);
 const switchSession = vi.fn().mockResolvedValue(undefined);
 const ipcInvoke = vi.fn().mockResolvedValue(undefined);
 const ipcInvokeDomain = vi.fn().mockResolvedValue(undefined);
+// 面板「等批准」轮询的可变应答（Rework r1 用例翻转它模拟停车出现）
+const awaitingRunsMock = vi.hoisted(() => ({ value: [] as unknown[] }));
 const toastInfo = vi.fn();
 const toastError = vi.fn();
 const toastSuccess = vi.fn();
@@ -50,6 +53,7 @@ vi.mock('../../../src/renderer/services/sessionAutomationClient', () => ({
     listParkedApprovals: () => listParkedApprovals(),
     countPendingReview: () => countPendingReview(),
     markReviewed: (id: string) => markReviewed(id),
+    listAwaitingApprovalRuns: () => Promise.resolve(awaitingRunsMock.value),
   },
 }));
 
@@ -134,6 +138,7 @@ afterEach(() => {
 beforeEach(() => {
   // 默认两路都空；具体用例按需 override。
   webMode.value = false;
+  awaitingRunsMock.value = [];
   copyPathToClipboard.mockClear();
   copyPathToClipboard.mockResolvedValue(true);
   listPendingReview.mockResolvedValue([]);
@@ -527,6 +532,92 @@ describe('AutomationReviewInbox', () => {
     expect(screen.queryByTestId('parked-reject')).toBeNull();
   });
 
+  it('REALRUN ②：voided 项灰态只读，显示工具名 + 作废句，无按钮；标题计数只算 pending', async () => {
+    listParkedApprovals.mockResolvedValue([
+      makeParked({ id: 'perm_pending' }),
+      makeParked({
+        id: 'perm_void', status: 'voided', tool: 'Bash',
+        voidReason: '这一步等你确认超过 24 小时，已自动作废，没有执行。',
+      }),
+    ]);
+    render(<AutomationReviewInbox />);
+    await waitFor(() => {
+      expect(screen.getByTestId('parked-approval-voided')).toBeTruthy();
+    });
+    const voided = screen.getByTestId('parked-approval-voided');
+    expect(voided.textContent).toContain('Bash');
+    expect(voided.textContent).toContain('这一步等你确认超过 24 小时，已自动作废，没有执行。');
+    expect(voided.querySelector('button')).toBeNull();
+    expect(screen.getAllByTestId('parked-approve')).toHaveLength(1);
+    expect(screen.getByTestId('parked-approval-group').textContent).toContain('1 个操作等你确认');
+  });
+
+  it('REALRUN ②：只有 voided 项时不出「0 个操作等你确认」标题', async () => {
+    listParkedApprovals.mockResolvedValue([
+      makeParked({ id: 'perm_void', status: 'voided', tool: 'Bash', voidReason: 'x' }),
+    ]);
+    render(<AutomationReviewInbox />);
+    await waitFor(() => {
+      expect(screen.getByTestId('parked-approval-voided')).toBeTruthy();
+    });
+    expect(screen.getByTestId('parked-approval-group').textContent).not.toContain('0 个操作');
+  });
+
+  it('REALRUN ②：zh / en 两份文案都有 parkedVoidedLabel', async () => {
+    const { zh } = await import('../../../src/renderer/i18n/zh');
+    const { en } = await import('../../../src/renderer/i18n/en');
+    expect(zh.cronCenter.parkedVoidedLabel).toBeTruthy();
+    expect(en.cronCenter.parkedVoidedLabel).toBeTruthy();
+  });
+
+  // voidReason 持久化的是中文收口原句（含重启前落库的老行）；英文 UI 按原句查表翻出英文句，
+  // 中文 UI 输出与原句字节一致；非收口文本原样保留。三句 × 两语言。
+  it.each([
+    ['expiredAfterRestart24h', '这一步等你确认超过 24 小时，已自动作废，没有执行。',
+      'This step waited for your confirmation for over 24 hours, so it was voided automatically and did not run.'],
+    ['workingDirectoryUnavailable', '这次对话没有工作目录，重启后无法安全执行，没有执行。',
+      "This conversation has no working directory, so it can't be run safely after a restart. It did not run."],
+    ['runEndedAfterRestart', '所属运行已结束，没有执行；下次触发会重新询问你。',
+      'The run this step belonged to has already ended, so it did not run; you will be asked again the next time it triggers.'],
+    ['argsUnavailable', '应用重启后找不到这一步的完整信息，为安全起见没有执行。',
+      'After the app restarted, the full details of this step could not be found, so it was not run for safety.'],
+  ] as const)('voided 行 %s：zh 显原句 / en 显译文', async (_key, zhSentence, enSentence) => {
+    // zh：老行原句原样（字节一致）
+    listParkedApprovals.mockResolvedValue([
+      makeParked({ id: 'perm_void', status: 'voided', tool: 'Bash', voidReason: zhSentence }),
+    ]);
+    render(<AutomationReviewInbox />);
+    await waitFor(() => {
+      expect(screen.getByTestId('parked-approval-voided')).toBeTruthy();
+    });
+    expect(screen.getByTestId('parked-approval-voided').textContent).toContain(`已作废：${zhSentence}`);
+    cleanup();
+
+    // en：同一行（老行字面量）翻成英文句
+    i18nState.language = 'en';
+    listParkedApprovals.mockResolvedValue([
+      makeParked({ id: 'perm_void', status: 'voided', tool: 'Bash', voidReason: zhSentence }),
+    ]);
+    render(<AutomationReviewInbox />);
+    await waitFor(() => {
+      expect(screen.getByTestId('parked-approval-voided')).toBeTruthy();
+    });
+    expect(screen.getByTestId('parked-approval-voided').textContent).toContain(`Voided：${enSentence}`);
+    expect(screen.getByTestId('parked-approval-voided').textContent).not.toContain(zhSentence);
+  });
+
+  it('voidReason 是普通文本（非收口句）时原样显示，不套翻译', async () => {
+    i18nState.language = 'en';
+    listParkedApprovals.mockResolvedValue([
+      makeParked({ id: 'perm_void_raw', status: 'voided', tool: 'Bash', voidReason: '已手动取消' }),
+    ]);
+    render(<AutomationReviewInbox />);
+    await waitFor(() => {
+      expect(screen.getByTestId('parked-approval-voided')).toBeTruthy();
+    });
+    expect(screen.getByTestId('parked-approval-voided').textContent).toContain('Voided：已手动取消');
+  });
+
   // N-PARKED-APPROVAL-SURVIVE-RESTART-PERSIST ④：停车审批行带参数预览（host 已脱敏）
   it('item.argsPreview 在时渲染参数预览行（zh 词条）', async () => {
     listParkedApprovals.mockResolvedValue([
@@ -696,5 +787,127 @@ describe('pending review count parity', () => {
     });
     expect(screen.getAllByTestId('automation-review-item')).toHaveLength(2);
     expect(screen.getByTestId('automation-review-inbox-title').textContent).not.toContain('2 条');
+  });
+});
+
+// ── Rework r1（N-CRON-UNATTENDED-BASH-PARK-STUCK-VISIBLE）：常驻收件箱只在挂载时拉
+// listParkedApprovals；停车发生在面板开着时，徽章亮了但收件箱还是旧快照，「去处理」
+// 落到不含该审批的收件箱。修复：面板把等批准集合指纹作为 refreshSignal 传入，指纹变化
+// 收件箱即重拉。本用例走真收件箱 + 真面板（本文件 CronJobList/Detail 打桩、收件箱不打桩）。
+describe('awaiting-approval refresh signal (Rework r1)', () => {
+  it('面板开着时停车出现：等批准轮询发现后，收件箱不重挂载也拉到该审批卡', async () => {
+    awaitingRunsMock.value = [];
+    vi.mocked(cronClient.listJobs).mockResolvedValue([
+      {
+        id: 'job-1',
+        name: '每日晨报',
+        scheduleType: 'every',
+        schedule: { type: 'every', interval: 1, unit: 'days' },
+        action: { type: 'agent', agentType: 'default', prompt: 'x' },
+        runsOn: 'local',
+        enabled: true,
+      },
+    ] as never);
+    // latestExecutions 里 job-1 有一条 running（挂载刷新即拉），等批准轮询门因此打开
+    vi.mocked(cronClient.getExecutions).mockImplementation(async (jobId: string) =>
+      jobId === 'job-1'
+        ? [{ id: 'exec-1', jobId: 'job-1', status: 'running', scheduledAt: 1, startedAt: 1, retryAttempt: 0 }]
+        : []);
+    // 收件箱挂载首拉没有这条审批；等批准指纹变化触发重拉后才给
+    listParkedApprovals.mockResolvedValueOnce([]).mockResolvedValue([makeParked({})]);
+
+    render(<CronCenterPanel onClose={() => undefined} />);
+    await waitFor(() => {
+      expect(screen.getByTestId('automation-review-inbox')).toBeTruthy();
+    });
+    expect(screen.queryByTestId('parked-approval-item')).toBeNull();
+
+    // 停车发生：下一轮轮询拿到该运行 → 面板指纹变化 → 收件箱原地重拉（不重挂载）
+    awaitingRunsMock.value = [{ jobId: 'job-1', executionId: 'exec-1', requestId: 'req-1', requestedAt: 1 }];
+    await waitFor(
+      () => {
+        expect(screen.getByTestId('parked-approval-item')).toBeTruthy();
+      },
+      { timeout: 4000 },
+    );
+    expect(listParkedApprovals.mock.calls.length).toBeGreaterThanOrEqual(2);
+  });
+});
+
+// N-CRON-REVIEW-COUNT-LIVE：页面停着时数字自动刷新，服务掉线不显示假 0。
+describe('live refresh (N-CRON-REVIEW-COUNT-LIVE)', () => {
+  const setVisibility = (state: 'visible' | 'hidden') => {
+    Object.defineProperty(document, 'visibilityState', { configurable: true, get: () => state });
+  };
+  beforeEach(() => {
+    vi.useFakeTimers();
+    setVisibility('visible');
+  });
+  afterEach(() => {
+    vi.useRealTimers();
+    setVisibility('visible');
+  });
+  const tick = async (ms: number) => {
+    await act(async () => { await vi.advanceTimersByTimeAsync(ms); });
+  };
+
+  it('一个轮询间隔后标题与 onPendingCountChange 无需重挂载即更新', async () => {
+    listPendingReview.mockResolvedValue([makeRecord({ id: 'a1' })]);
+    countPendingReview.mockResolvedValue(1);
+    const onChange = vi.fn();
+    render(<AutomationReviewInbox onPendingCountChange={onChange} />);
+    await tick(0);
+    expect(screen.getByTestId('automation-review-inbox-title').textContent).toContain('1');
+
+    listPendingReview.mockResolvedValue([makeRecord({ id: 'a1' }), makeRecord({ id: 'a2', title: '新结果' })]);
+    countPendingReview.mockResolvedValue(2);
+    await tick(10_000);
+    expect(screen.getByTestId('automation-review-inbox-title').textContent).toContain('2');
+    expect(onChange).toHaveBeenLastCalledWith(2);
+  });
+
+  it('请求失败保留上次值、从不回报 0，恢复后下一次刷新', async () => {
+    listPendingReview.mockResolvedValue([makeRecord({ id: 'a1' })]);
+    countPendingReview.mockResolvedValue(4);
+    const onChange = vi.fn();
+    render(<AutomationReviewInbox onPendingCountChange={onChange} />);
+    await tick(0);
+    expect(screen.getByTestId('automation-review-inbox-title').textContent).toContain('4');
+
+    listPendingReview.mockRejectedValue(new Error('Load failed'));
+    countPendingReview.mockRejectedValue(new Error('Load failed'));
+    listParkedApprovals.mockRejectedValue(new Error('Load failed'));
+    await tick(10_000);
+    expect(screen.getByTestId('automation-review-inbox-title').textContent).toContain('4');
+    expect(onChange).not.toHaveBeenCalledWith(0);
+
+    listPendingReview.mockResolvedValue([makeRecord({ id: 'a1' })]);
+    countPendingReview.mockResolvedValue(5);
+    listParkedApprovals.mockResolvedValue([]);
+    await tick(10_000);
+    expect(screen.getByTestId('automation-review-inbox-title').textContent).toContain('5');
+  });
+
+  it('页面隐藏时暂停轮询，切回可见立即重拉；卸载后不再请求', async () => {
+    listPendingReview.mockResolvedValue([makeRecord({ id: 'a1' })]);
+    countPendingReview.mockResolvedValue(1);
+    const { unmount } = render(<AutomationReviewInbox />);
+    await tick(0);
+
+    setVisibility('hidden');
+    const before = listPendingReview.mock.calls.length;
+    await tick(30_000);
+    expect(listPendingReview.mock.calls.length).toBe(before);
+
+    setVisibility('visible');
+    await act(async () => { document.dispatchEvent(new Event('visibilitychange')); });
+    await tick(0);
+    expect(listPendingReview.mock.calls.length).toBe(before + 1);
+
+    unmount();
+    const afterUnmount = listPendingReview.mock.calls.length;
+    await act(async () => { window.dispatchEvent(new Event('focus')); });
+    await tick(30_000);
+    expect(listPendingReview.mock.calls.length).toBe(afterUnmount);
   });
 });

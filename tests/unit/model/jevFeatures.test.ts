@@ -11,14 +11,16 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const providerState = vi.hoisted(() => ({
-  route: null as null | { kind: 'official' | 'openrouter' },
-  keySource: 'none' as 'official' | 'openrouter' | 'openrouter_pending_consent' | 'disabled_by_user' | 'none',
+  route: null as null | { kind: 'official' | 'openrouter' | 'neo_hosted' },
+  keySource: 'none' as 'official' | 'openrouter' | 'neo_hosted' | 'openrouter_pending_consent' | 'disabled_by_user' | 'none',
+  hostedEligible: false,
   systemOne: vi.fn(),
 }));
 
 vi.mock('../../../src/host/model/providers/typesafeProvider', () => ({
   resolveJevRoute: () => providerState.route,
   probeJevKeySource: () => providerState.keySource,
+  probeJevHostedEligible: () => providerState.hostedEligible,
   systemOne: providerState.systemOne,
 }));
 
@@ -97,6 +99,7 @@ beforeEach(() => {
   vi.unstubAllEnvs();
   providerState.route = null;
   providerState.keySource = 'none';
+  providerState.hostedEligible = false;
   providerState.systemOne.mockReset();
   loggerWarns.length = 0;
 });

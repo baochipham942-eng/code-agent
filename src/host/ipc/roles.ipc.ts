@@ -14,6 +14,8 @@
 // - action 'listDrafts'     -> 列出待确认的角色草稿（对话式建角色）
 // - action 'confirmDraft'   -> 确认草稿：写 agents/<id>.md + 建 roles/<id>/（过安全闸）
 // - action 'rejectDraft'    -> 放弃草稿：删草稿目录
+// - action 'deleteRole'     -> 删除用户自建角色：定义 + 资产目录移入 roles-trash/（返回 trashId）
+// - action 'restoreDeletedRole' -> 从回收站整份还原（roleId 被重新占用时拒绝且不覆盖）
 // ============================================================================
 
 import { createHash } from 'crypto';
@@ -49,8 +51,11 @@ import {
   confirmRoleDraft,
   rejectRoleDraft,
   getFirstWakeSnapshot,
+  retryFirstWake,
   skipFirstWake,
   isSafeRoleId,
+  trashUserRole,
+  restoreTrashedRole,
 } from '../services/roleAssets';
 import type { RoleMemoryFile } from '../services/roleAssets/roleAssetService';
 import { sanitizeTopicList } from '../services/roleAssets/wakeRationale';
@@ -282,6 +287,10 @@ const PROACTIVITY_LEVELS: ReadonlySet<string> = new Set(['silent', 'daily', 'rea
 // 面板需要按 roleId 对照预设清单还原成 'builtin'（显示"预设"标签）
 const builtinRoleIdSet = new Set<string>(BUILTIN_ROLE_IDS);
 
+function normalizeBuiltinDefinition(definition: string): string {
+  return definition.replace(/\r\n/g, '\n').trimEnd();
+}
+
 async function loadFrontmatterVisual(roleId: string): Promise<RoleVisual> {
   try {
     return parseAgentMdVisual(await fs.readFile(path.join(getAgentsMdDir().user, `${roleId}.md`), 'utf-8'));
@@ -353,13 +362,21 @@ async function handleDetail(roleId: string): Promise<RolePanelDetail> {
     ...getProtocolRegistry().getSchemas().map((tool) => tool.name),
     ...Object.keys(TOOL_ALIASES),
   ])].sort();
-  const packState = builtinRoleIdSet.has(roleId) ? null : await getInstalledRolePackState(roleId);
-  const factory = builtinRoleIdSet.has(roleId)
-    ? { agentMd: BUILTIN_ROLES.find((role) => role.id === roleId)?.agentMd }
+  const isBuiltin = builtinRoleIdSet.has(roleId);
+  const builtinFactoryDefinition = isBuiltin ? BUILTIN_ROLES.find((role) => role.id === roleId)?.agentMd : undefined;
+  const packState = isBuiltin ? null : await getInstalledRolePackState(roleId);
+  const factory = isBuiltin
+    ? { agentMd: builtinFactoryDefinition }
     : packState ? await getRolePackFactoryDefinition(roleId) : null;
-  const restore = builtinRoleIdSet.has(roleId)
+  const restore = isBuiltin
     ? { available: Boolean(factory?.agentMd) }
     : packState ? { available: Boolean(factory?.agentMd), ...(!factory?.agentMd ? { disabledReason: '当前无法取得云端出厂定义' } : {}) } : undefined;
+  // 已发布模板若未来变更，仍持有旧模板的用户会被判为已修改；当前没有历史基线。
+  const locallyModified = isBuiltin
+    ? (definition != null && builtinFactoryDefinition != null
+        ? normalizeBuiltinDefinition(definition) !== normalizeBuiltinDefinition(builtinFactoryDefinition)
+        : undefined)
+    : packState?.locallyModified;
   return {
     roleId,
     definition,
@@ -375,7 +392,7 @@ async function handleDetail(roleId: string): Promise<RolePanelDetail> {
     history: history.map((line) => sanitizeLastWork(line)).filter(Boolean),
     proactivity,
     visual: getBuiltinRoleVisual(roleId) ?? (definition ? parseAgentMdVisual(definition) : {}),
-    isBuiltin: builtinRoleIdSet.has(roleId),
+    isBuiltin,
     personalization: readRolePersonalization(roleId),
     ...(parsed?.connectors?.length
       ? {
@@ -388,7 +405,7 @@ async function handleDetail(roleId: string): Promise<RolePanelDetail> {
         }
       : {}),
     ...(parsed ? { equipment: { skills: parsed.skills ?? [], tools: parsed.tools, model: parsed.model, ...(parsed.engine ? { engine: parsed.engine } : {}), ...(parsed.modelOverride ? { modelOverride: parsed.modelOverride } : {}), ...(parsed.permissionPreset ? { permissionPreset: parsed.permissionPreset } : {}), maxIterations: parsed.maxIterations, availableSkills, availableTools } } : {}),
-    ...(packState ? { locallyModified: packState.locallyModified } : {}),
+    ...(locallyModified !== undefined ? { locallyModified } : {}),
     ...(restore ? { restore } : {}),
   };
 }
@@ -697,6 +714,32 @@ const rolesHandlers: RawDomainRouteHandlers<RolesDomainRequest, void> = {
     await handleRestoreFactory(roleId);
     return { success: true, data: { restored: true } };
   },
+  // --- 删除用户自建角色（N-ROLE-CREATE-DIRECT-DELETE）：移入 roles-trash/，30 天可撤销 ---
+  deleteRole: async (_ctx, payload) => {
+    const { roleId } = (payload ?? {}) as RoleIdPayload;
+    if (!roleId) return { success: false, error: { code: 'INVALID_ARGS', message: 'roleId is required' } };
+    const result = await trashUserRole(roleId);
+    if (!result.success) return { success: false, error: { code: result.code, message: result.message } };
+    // 删除成功后立刻同步 cadence cron：清掉指向已删角色的 role-wake 闹钟（与启动时
+    // syncCadenceJobs 的孤儿清理同一逻辑），否则到点醒来对一个不存在的角色报错、
+    // 在自动化面板留失败鬼行。用户自建的 agent 型 cron job 是用户数据，不动（不级联删）。
+    const synced = await syncCadenceJobs().catch((error) => {
+      logger.warn('syncCadenceJobs after deleteRole failed (will sync on next startup)', error);
+      return null;
+    });
+    return { success: true, data: { trashId: result.trashId, ...(synced ? { cronSynced: true } : {}) } };
+  },
+  restoreDeletedRole: async (_ctx, payload) => {
+    const { trashId } = (payload ?? {}) as { trashId?: string };
+    if (!trashId) return { success: false, error: { code: 'INVALID_ARGS', message: 'trashId is required' } };
+    const result = await restoreTrashedRole(trashId);
+    if (!result.success) return { success: false, error: { code: result.code, message: result.message } };
+    // 还原后补一次 cadence 同步：settings 里的主动性配置原样保留，闹钟随角色一起回来。
+    await syncCadenceJobs().catch((error) => {
+      logger.warn('syncCadenceJobs after restoreDeletedRole failed (will sync on next startup)', error);
+    });
+    return { success: true, data: { roleId: result.roleId } };
+  },
   // --- 对话式建角色：草稿队列（role-creation-flow） ---
   listDrafts: async (_ctx, _payload) => {
     return { success: true, data: await listRoleDrafts() };
@@ -790,6 +833,18 @@ const rolesHandlers: RawDomainRouteHandlers<RolesDomainRequest, void> = {
       return { success: false, error: { code: 'FIRST_WAKE_SKIP_FAILED', message: 'skip failed' } };
     }
     return { success: true, data: { success: true } };
+  },
+  // --- 首次醒来重看（failed 终态复位 pending 重新排队；其余终态拒绝） ---
+  firstWakeRetry: async (_ctx, payload) => {
+    const { roleId } = (payload ?? {}) as RoleIdPayload;
+    if (!roleId || !isSafeRoleId(roleId)) {
+      return { success: false, error: { code: 'INVALID_ARGS', message: 'a safe roleId is required' } };
+    }
+    const result = await retryFirstWake(roleId);
+    if (!result.retried) {
+      return { success: false, error: { code: 'FIRST_WAKE_NOT_RETRYABLE', message: result.reason ?? 'not retryable' } };
+    }
+    return { success: true, data: { retried: true } };
   },
 };
 

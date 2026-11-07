@@ -29,11 +29,27 @@ describe('isPrivateOrLocalHost', () => {
     expect(isPrivateOrLocalHost('metadata')).toBe(true);
     expect(isPrivateOrLocalHost('instance-data')).toBe(true);
   });
+  it('原 httpRequest BLOCKED_HOSTS 的元数据条目全部仍判私有（rework r1 基线对齐）', () => {
+    expect(isPrivateOrLocalHost('100.100.100.200')).toBe(true); // Alibaba Cloud ECS metadata
+    expect(isPrivateOrLocalHost('metadata.azure.com')).toBe(true); // Azure IMDS 主机名形式
+    expect(isPrivateOrLocalHost('fd00:ec2::254')).toBe(true); // AWS IPv6 实例元数据（fd 前缀已覆盖）
+    expect(isPrivateOrLocalHost('169.254.169.254')).toBe(true);
+  });
+  it('100.64.0.0/10 CGNAT 其余地址不在拦截范围（父单已记录的已知边界）', () => {
+    expect(isPrivateOrLocalHost('100.64.0.1')).toBe(false);
+    expect(isPrivateOrLocalHost('100.101.0.1')).toBe(false);
+  });
   it('公网 IPv4 / 域名判为非私有', () => {
     expect(isPrivateOrLocalHost('8.8.8.8')).toBe(false);
     expect(isPrivateOrLocalHost('172.32.0.1')).toBe(false); // 172.32 出私网段
     expect(isPrivateOrLocalHost('api.openai.com')).toBe(false);
     expect(isPrivateOrLocalHost('dashscope-result.oss-cn.aliyuncs.com')).toBe(false);
+  });
+  it('localhost 变体（FQDN 尾点 / *.localhost 子域）判为私有（N-WEBFETCH-BLOCK-PRIVATE-NET）', () => {
+    expect(isPrivateOrLocalHost('localhost.')).toBe(true); // WHATWG URL 保留尾点
+    expect(isPrivateOrLocalHost('foo.localhost')).toBe(true); // RFC 6761/6762 解析到环回
+    expect(isPrivateOrLocalHost('BAR.localhost')).toBe(true); // 大小写归一后命中
+    expect(isPrivateOrLocalHost('example.com.')).toBe(false); // 公网域名的 FQDN 尾点形式仍放行
   });
   it('IPv6 环回/ULA/链路本地判为私有（含方括号字面量）', () => {
     expect(isPrivateOrLocalHost('[::1]')).toBe(true);

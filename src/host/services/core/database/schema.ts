@@ -727,6 +727,9 @@ export function applySchema(db: BetterSqlite3.Database, logger: Logger): void {
   // N-TRIGGER-CHANNEL-EVENT：执行记录带 trigger 溯源（event 运行的来源账号/事件数/丢弃数）。
   // 列名避开 SQL 关键字 TRIGGER，落 JSON 文本；调度触发的行保持 NULL。
   safeAlter(db, 'ALTER TABLE cron_executions ADD COLUMN trigger_json TEXT', logger);
+  // N-CRON-RUN-LEDGER-VISIBLE：本地运行实测成本（USD，scoped 计量器读数）。
+  // 无模型调用与云端运行为 NULL（UI 显示 dash）。
+  safeAlter(db, 'ALTER TABLE cron_executions ADD COLUMN cost_usd REAL CHECK (cost_usd IS NULL OR cost_usd >= 0)', logger);
   // N-TRIGGER-OBSERVE-MODE：事件自动化执行档（带一次性迁移戳）+ 逐事件决策台账。
   applyCronEventDecisionsSchema(db, logger);
 

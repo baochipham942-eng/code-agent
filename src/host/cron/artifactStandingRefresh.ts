@@ -8,7 +8,6 @@
 
 import * as fs from 'fs';
 import { createHash } from 'crypto';
-import { dirname, isAbsolute } from 'path';
 import type { CronJobDefinition } from '../../shared/contract/cron';
 import {
   findStandingRefreshJob,
@@ -16,6 +15,7 @@ import {
   type ArtifactRefreshMetadata,
   type StandingRefreshJobView,
 } from '../../shared/artifactStandingRefresh';
+import { cronWriteScopeFolder } from '../../shared/cronWriteScope';
 import {
   createSnapshot,
   publishVersion,
@@ -182,7 +182,7 @@ export async function finishArtifactRefresh(
 
 /**
  * 常设刷新会话的工作目录。产物路径是绝对路径时用其所在目录，否则沿用 fallback
- * （来源会话或当前焦点会话的目录，两者都没有时为 undefined）。
+ * （仅来源会话的目录，没有来源会话时为 undefined；不取 UI 焦点会话）。
  *
  * fallback 为空时 orchestrator 落到用户主目录。主目录上的信任扫描会走进可能让
  * readdir 永不返回的子目录，整趟停在 initializeUserHooks，inFlight 把后续 tick 挡住。
@@ -192,11 +192,9 @@ export function cronAgentWorkingDirectory(
   definition: CronJobDefinition,
   fallback: string | undefined,
 ): string | undefined {
-  const refresh = getArtifactRefreshMetadata(definition.metadata);
-  if (!refresh || !isAbsolute(refresh.path)) return fallback;
-  const parent = dirname(refresh.path);
-  if (!parent || parent === refresh.path) return fallback;
-  return parent;
+  // 判定唯一真源在 shared/cronWriteScope.cronWriteScopeFolder（renderer 任务详情的
+  // 写授权候选文件夹与这里必须是同一个答案，防止展示与实际授权漂移）。
+  return cronWriteScopeFolder(definition, fallback);
 }
 
 /**

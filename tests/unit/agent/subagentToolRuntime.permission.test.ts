@@ -195,6 +195,7 @@ describe('createSubagentToolRuntime permission forwarding', () => {
       'ExcelAutomate',
       'sleep_until',
       'wake_on',
+      'wake_on_event',
     ])('acceptEdits + file_write 的 %s 转发 permission.request 而非自动放行', async (tool) => {
       const { requestPermission, permissionRequest } = captureRequestPermission({
         effectiveMode: 'acceptEdits',

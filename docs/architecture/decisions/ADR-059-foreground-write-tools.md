@@ -84,3 +84,25 @@ ADR-054 的架构参照是语音 agent。通话中 agent 被任务阻塞十秒�
 3. 负例证明前台写仍经过 folder-trust、权限档与审批链路。
 4. 移除写工具的前台声明后，文字直接写用例失败；验证后还原变异。
 5. 证据档列出全部存量工具及每项适用性理由。
+
+## 修订（2026-11-04，N-FG-CONNECTOR-TOOLS）：连接器工具按轮进面
+
+「按 schema 常驻声明」的判据对连接器（邮件/日历/提醒）不适用：11 个连接器工具若都写
+`allowInTextForeground`，每一轮前台工具表都会携带全部连接器 schema，provider 前缀缓存整体
+失效（#2749 注释实测归因的成本）。本修订不改判据主体，只给连接器加一条**按轮进面**的通道：
+
+- 当轮输入命中连接器意图正则 **且** 该连接器在设置中启用（`connectors.enabledNative`）
+  **且** registry 就绪探测不是 failed/unavailable（unchecked 仍算可用，与 cron 口径一致）时，
+  `getTextForegroundToolNamesForPrompt` 把该连接器的读写工具名（`CONNECTOR_TOOL_NAMES`）
+  追加进本轮 `allowedToolNames`；deferred 预载层照白名单把 schema 送上轮。
+- 判据的单一真源在 `src/host/connectors/nativeConnectorIntent.ts`，deferred 预载
+  （`deferredToolPreload.ts`）与文字前台 allowlist 扩展共用，禁止复制正则副本。
+- 前置事实（修订动机）：#2749 已按意图预载连接器工具，但 `filterToolsByRunPolicyObserved`
+  会把不在非空 `allowedToolNames` 里的工具全部剔掉，预载在前台白白作废——模型先尝试
+  `mail_send` 被剔，退回 `delegate_task` 派后台（2026-11-04 无槽真机复现实录）。
+- 权限与审批链路一字不动：连接器写工具命中 C1 确定性 ask（`connectorTokenWrite.ts`），
+  聊天内出现可编辑审批卡，`trustBoundary` 不吃审批记忆；本修订放开的仍然只是
+  「模型能不能发起」，不是「能不能绕过审批」。
+- 语音通道不变；未启用 / 无意图 / 就绪不可用的轮次零新增（无 schema 膨胀）。
+- 指挥台 brain 提示词相应加一条：本轮工具表已有连接器工具时，发邮件/建日程/设提醒
+  直调，不派 `delegate_task`；仍只以工具成功结果为准。`PROMPT_VERSION` 已 bump。

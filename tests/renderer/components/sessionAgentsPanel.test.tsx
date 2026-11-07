@@ -9,6 +9,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { zh } from '../../../src/renderer/i18n/zh';
 import type { AgentTreeNode, AgentTreeSnapshot } from '../../../src/shared/contract/agentTree';
 import type { Task } from '../../../src/shared/contract/backgroundTask';
+import type { SwarmAgentContextSnapshot, SwarmAgentState } from '../../../src/shared/contract/swarm';
 import type { SwarmRunAgentRecord, SwarmRunDetail, SwarmRunListItem } from '../../../src/shared/contract/swarmTrace';
 import { IPC_CHANNELS, IPC_DOMAINS } from '../../../src/shared/ipc';
 
@@ -49,6 +50,17 @@ const record = (overrides: Partial<SwarmRunAgentRecord>): SwarmRunAgentRecord =>
   runId: 'run-1', agentId: 'researcher', name: '调研员', role: 'researcher', status: 'completed',
   startTime: 1, endTime: 4_001, durationMs: 4_000, tokensIn: 12, tokensOut: 34, toolCalls: 5, costUsd: 0.002,
   error: null, failureCategory: null, filesChanged: [], ...overrides,
+});
+
+/** swarmStore 流状态里的活成员（contextSnapshot.lastUpdated 是会随真实进展前进的活锚点）。 */
+const liveSnapshot = (lastUpdated: number): SwarmAgentContextSnapshot => ({
+  currentTokens: 100, maxTokens: 1_000, usagePercent: 10, messageCount: 2, warningLevel: 'normal',
+  lastUpdated, tools: [], attachments: [], previews: [], truncatedMessages: 0,
+});
+
+const liveAgentState = (overrides: Partial<SwarmAgentState> = {}): SwarmAgentState => ({
+  id: 'researcher', name: '调研员', role: 'researcher', status: 'running', iterations: 1,
+  ...overrides,
 });
 
 const ledgerRun: SwarmRunListItem = {
@@ -114,7 +126,7 @@ describe('SessionAgentsPanel', () => {
     appState.pendingPermissionRequest = null;
     appState.pendingPermissionSessionId = null;
     appState.queuedPermissionRequests = {};
-    useSwarmStore.setState({ activeSessionId: undefined, activeRunId: undefined, activeTreeId: undefined, lastEventAt: undefined, eventLog: [] });
+    useSwarmStore.setState({ activeSessionId: undefined, activeRunId: undefined, activeTreeId: undefined, lastEventAt: undefined, eventLog: [], agents: [] });
     useSessionStore.setState({ sessions: [], currentSessionId: 'session-1' });
     useComposerStore.setState({ selectedTeamRecipeId: null, standbyExcludedMemberKeys: [] });
     useTeamRecipeStore.setState({ recipes: [], isLoaded: true });
@@ -389,5 +401,148 @@ describe('SessionAgentsPanel', () => {
     const usage = screen.getByTestId('agents-panel-usage');
     expect(usage.textContent).toContain('2.0K');
     expect(usage.textContent).toContain('5 秒');
+  });
+
+  // ==========================================================================
+  // N-FIX-WF-STALL-SPAWN-AGENT：spawn_agent 静默子代理的行级「暂无进展」软提示。
+  // 阈值 WORKFLOW_STALL_THRESHOLDS.N_SOFT_MS。锚点只认活源（r4）：专家行 = 同 id 流状态
+  // 的 contextSnapshot.lastUpdated（SessionMemberBar 经 swarmStore 只读订阅装配）与并入
+  // 节点的 lastToolStep.at 取最新；账本记录/startTime 不充当进展，无活源 fail-closed。
+  // ==========================================================================
+  it('活锚点静默超 2 分钟：working 行尾出现「暂无进展」，锚点前进（新进展）即清掉', async () => {
+    mockLedger(
+      [record({ status: 'running', endTime: null, durationMs: null, startTime: Date.now() - 300_000 })],
+      { status: 'running' },
+    );
+    useSwarmStore.setState({ agents: [liveAgentState({ contextSnapshot: liveSnapshot(Date.now() - 130_000) })] });
+
+    render(<SessionAgentsPanel />);
+    // 活锚点 >2 分钟：行尾软提示（复用 workflowStall.quiet 词条），状态行自身文案不被叠字
+    const quiet = await screen.findByTestId('agents-panel-quiet-researcher');
+    expect(quiet.textContent).toContain('暂无进展');
+    expect(screen.getByTestId('agents-panel-status-researcher').textContent).toBe('工作中');
+
+    // 流状态刷出新进展（contextSnapshot.lastUpdated 前进）→ 提示消失
+    useSwarmStore.setState({ agents: [liveAgentState({ contextSnapshot: liveSnapshot(Date.now() - 5_000) })] });
+    await waitFor(() => expect(screen.queryByTestId('agents-panel-quiet-researcher')).toBeNull());
+  });
+
+  it('working 但活锚点在 2 分钟内：不报「暂无进展」', async () => {
+    mockLedger(
+      [record({ status: 'running', endTime: null, durationMs: null, startTime: Date.now() - 300_000 })],
+      { status: 'running' },
+    );
+    useSwarmStore.setState({ agents: [liveAgentState({ contextSnapshot: liveSnapshot(Date.now() - 60_000) })] });
+
+    render(<SessionAgentsPanel />);
+    await screen.findByTestId('agents-panel-row-researcher');
+    expect(screen.queryByTestId('agents-panel-quiet-researcher')).toBeNull();
+  });
+
+  // r4 回归（ai-review）：账本记录经 swarmRunAgentRecordToState 不带 contextSnapshot，
+  // member 的活锚点必须来自同 id 的 swarmStore 流状态（contextSnapshot.lastUpdated）；
+  // 只锚 startTime 会把「跑了 >2 分钟但 10 秒前刚有进展」的成员误报成「暂无进展」。
+  it('r4 回归：正在干活（活锚点 10s 前）的成员跑了 >2 分钟也不报「暂无进展」', async () => {
+    mockLedger(
+      [record({ status: 'running', endTime: null, durationMs: null, startTime: Date.now() - 200_000 })],
+      { status: 'running' },
+    );
+    useSwarmStore.setState({ agents: [liveAgentState({ contextSnapshot: liveSnapshot(Date.now() - 10_000) })] });
+
+    render(<SessionAgentsPanel />);
+    await screen.findByTestId('agents-panel-row-researcher');
+    expect(screen.queryByTestId('agents-panel-quiet-researcher')).toBeNull();
+  });
+
+  it('r4：只有账本记录（无活源）不报「暂无进展」（fail-closed，不回落 startTime）', async () => {
+    mockLedger(
+      [record({ status: 'running', endTime: null, durationMs: null, startTime: Date.now() - 130_000 })],
+      { status: 'running' },
+    );
+
+    render(<SessionAgentsPanel />);
+    await screen.findByTestId('agents-panel-row-researcher');
+    expect(screen.queryByTestId('agents-panel-quiet-researcher')).toBeNull();
+  });
+
+  it('等审批的行不报「暂无进展」（hold 优先于 quiet）', async () => {
+    appState.pendingPermissionSessionId = 'session-1';
+    appState.pendingPermissionRequest = { agentId: 'researcher', resolved: false };
+    mockLedger(
+      [record({ status: 'running', endTime: null, durationMs: null, startTime: Date.now() - 300_000 })],
+      { status: 'running' },
+    );
+    // 活锚点同样静默 >2 分钟：没有 hold 本该报——hold 才是压住提示的那个
+    useSwarmStore.setState({ agents: [liveAgentState({ contextSnapshot: liveSnapshot(Date.now() - 130_000) })] });
+
+    render(<SessionAgentsPanel />);
+    expect((await screen.findByTestId('agents-panel-status-researcher')).textContent).toBe('需要授权');
+    expect(screen.queryByTestId('agents-panel-quiet-researcher')).toBeNull();
+  });
+
+  // r4：并入专家行的节点，其 lastToolStep.at 必须算进展；node.updatedAt 不算（心跳风险）。
+  it('成员行无流状态时由并入节点的 lastToolStep.at 当锚点：old 报、前进即清；updatedAt 不参与', async () => {
+    mockLedger(
+      [record({ status: 'running', endTime: null, durationMs: null, startTime: Date.now() - 300_000 })],
+      { status: 'running' },
+    );
+    // 无 swarmStore 活源；节点 lastToolStep.at 静默 130s，updatedAt 故意刷得很新（诱错源）
+    mockTree(snapshotOf([treeNode({
+      id: 'researcher', role: 'researcher',
+      lastToolStep: { tool: 'Read', at: Date.now() - 130_000 },
+      updatedAt: Date.now() - 5_000,
+    })]));
+
+    render(<SessionAgentsPanel />);
+    const quiet = await screen.findByTestId('agents-panel-quiet-researcher');
+    expect(quiet.textContent).toContain('暂无进展');
+
+    // 节点工具步前进（新工具调用）→ 提示消失（树快照 3s 轮询，放宽 waitFor 超时）
+    mockTree(snapshotOf([treeNode({
+      id: 'researcher', role: 'researcher',
+      lastToolStep: { tool: 'Read', at: Date.now() - 5_000 },
+      updatedAt: Date.now() - 5_000,
+    })]));
+    useSwarmStore.setState({ lastEventAt: Date.now() });
+    await waitFor(() => expect(screen.queryByTestId('agents-panel-quiet-researcher')).toBeNull(), { timeout: 6_000 });
+  });
+
+  // r1：前台 spawn_agent 渲染的是 agentTree 节点行（无 member）。锚点 = lastToolStep.at ?? updatedAt ?? createdAt。
+  it('agentTree 节点行静默超 2 分钟：出现「暂无进展」', async () => {
+    mockTree(snapshotOf([treeNode({ updatedAt: Date.now() - 130_000 })]));
+
+    render(<SessionAgentsPanel />);
+    const quiet = await screen.findByTestId('agents-panel-quiet-agent-9');
+    expect(quiet.textContent).toContain('暂无进展');
+    expect(screen.getByTestId('agents-panel-status-agent-9').textContent).toBe('工作中');
+  });
+
+  it('agentTree 节点行 2 分钟内有进展（lastToolStep 较新）：不报', async () => {
+    mockTree(snapshotOf([treeNode({
+      updatedAt: Date.now() - 300_000,
+      lastToolStep: { tool: 'Read', at: Date.now() - 30_000 },
+    })]));
+
+    render(<SessionAgentsPanel />);
+    await screen.findByTestId('agents-panel-row-agent-9');
+    expect(screen.queryByTestId('agents-panel-quiet-agent-9')).toBeNull();
+  });
+
+  it('agentTree 节点行没有任何锚点：fail-closed 不报', async () => {
+    mockTree(snapshotOf([treeNode({})]));
+
+    render(<SessionAgentsPanel />);
+    await screen.findByTestId('agents-panel-row-agent-9');
+    expect(screen.queryByTestId('agents-panel-quiet-agent-9')).toBeNull();
+  });
+
+  it('agentTree 节点行等审批：不报', async () => {
+    appState.pendingPermissionSessionId = 'session-1';
+    appState.pendingPermissionRequest = { agentId: 'agent-9', resolved: false };
+    mockTree(snapshotOf([treeNode({ updatedAt: Date.now() - 130_000 })]));
+
+    render(<SessionAgentsPanel />);
+    expect((await screen.findByTestId('agents-panel-status-agent-9')).textContent).toBe('需要授权');
+    expect(screen.queryByTestId('agents-panel-quiet-agent-9')).toBeNull();
   });
 });

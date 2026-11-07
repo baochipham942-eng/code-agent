@@ -64,6 +64,7 @@ import { hasPendingPermissionForSession, hasQueuedPermissionForSession } from '.
 import { useSessionTurnActive } from '../../../hooks/useSessionTurnActive';
 import { resolveBusySignal } from '../../../utils/turnBusySignal';
 import { hasFoldHiddenMiddle, isNodeSkippedInMiddle } from './turnFoldVisibility';
+import { hasParkedApprovalClosure } from './cronRunSessionStatus';
 
 interface TurnCardProps {
   turn: TraceTurn;
@@ -84,7 +85,9 @@ interface TurnCardProps {
   onStreamingDisplayUpdate?: (nodeId: string, displayLength: number, isAnimating: boolean) => void;
   onRewindUserPrompt?: (messageId: string, content: string) => void;
   /** 渲染在该 turn 用户消息上方（目前用于分叉子会话首段的来源提示） */
-  beforeUserMessage?: React.ReactNode; suppressBusySignal?: boolean;
+  beforeUserMessage?: React.ReactNode;
+  /** 渲染在该 turn 用户消息下方（目前用于定时任务运行记录的状态行） */
+  afterUserMessage?: React.ReactNode; suppressBusySignal?: boolean;
 }
 
 export const TurnCard: React.FC<TurnCardProps> = ({
@@ -101,7 +104,7 @@ export const TurnCard: React.FC<TurnCardProps> = ({
   showSeparator = true,
   onStreamingDisplayUpdate,
   onRewindUserPrompt,
-  beforeUserMessage, suppressBusySignal,
+  beforeUserMessage, afterUserMessage, suppressBusySignal,
 }) => {
   const { t } = useI18n(); const policy = useWorkDetailPolicy();
   const createForkFromReply = useMessageActionStore((state) => state.createForkFromReply);
@@ -179,17 +182,24 @@ export const TurnCard: React.FC<TurnCardProps> = ({
   // + 折叠真藏得住中间内容（纯问答轮藏了个寂寞，不出「用时」空开关）。
   // 语音任务卡不套这条阈值——电话里派出去的活不管几步都折成卡（用户在打电话，不看屏幕），
   // 流式期间也折：live 信号由卡身底部的呼吸态指示承担，过程默认不铺开。
+  // 定时任务运行记录首轮由 afterUserMessage 展示唯一状态行，内部工具组默认收起，
+  // 但停车审批作废步骤必须展开，说明哪条命令没有运行及原因。
+  const hasExternalStatusLine = Boolean(afterUserMessage) && !hasParkedApprovalClosure(turn);
   const canFold = isVoiceTurn
     ? turn.nodes.length > 0
-    : turn.status === 'completed' &&
-      !isStreaming &&
-      turn.nodes.length >= policy.foldThreshold &&
-      Boolean(foldedView.finalTextNode) &&
-      hasFoldHiddenMiddle(displayNodes, foldedView.userNode, foldedView.finalTextNode);
+    : hasExternalStatusLine
+      ? true
+      : turn.status === 'completed' &&
+        !isStreaming &&
+        turn.nodes.length >= policy.foldThreshold &&
+        Boolean(foldedView.finalTextNode) &&
+        hasFoldHiddenMiddle(displayNodes, foldedView.userNode, foldedView.finalTextNode);
   // 会话还在跑（goal 多轮任务的轮间空档：轮已 completed、下一轮未开）时挂载的末轮
   // 不折——过程还在跑，折了就丢现场；等会话闲下来再由下面的自动折叠收口。
   const [userExpanded, setUserExpanded] = useState(
-    Boolean(defaultExpanded) || !canFold || Boolean(isSessionProcessing)
+    hasExternalStatusLine
+      ? false
+      : Boolean(defaultExpanded) || !canFold || Boolean(isSessionProcessing)
   );
   const expanded = userExpanded || Boolean(forceExpanded);
   const folded = canFold && !expanded;
@@ -401,6 +411,7 @@ export const TurnCard: React.FC<TurnCardProps> = ({
             rewindDisabled={Boolean(isSessionProcessing)}
           />
         )}
+        {afterUserMessage}
 
         {/* Neo 以参与者身份回复（像 Claude Tag）：轻量身份标识挂在回复头部，会话里不出现工作卡 */}
         {isNeoTagTurn && (
@@ -436,8 +447,9 @@ export const TurnCard: React.FC<TurnCardProps> = ({
         {skillActivity && <SkillActivityBanner activity={skillActivity} />}
 
         {/* "Worked for Xm Ys" toggle — always visible when foldable。
-            语音任务卡的展开/收起由上面的卡头承担，不再重复一个折叠钮。 */}
-        {canFold && !isVoiceTurn && (
+            语音任务卡的展开/收起由上面的卡头承担，不再重复一个折叠钮；
+            定时任务运行记录首轮同理（CronRunSessionStatusBar 已显示用时与状态）。 */}
+        {canFold && !isVoiceTurn && !hasExternalStatusLine && (
           <button
             onClick={handleToggleExpanded}
             className="flex items-center gap-1.5 text-xs leading-4 text-zinc-500 hover:text-zinc-300 transition-colors py-0.5"
@@ -534,8 +546,15 @@ export const TurnCard: React.FC<TurnCardProps> = ({
           />
         )}
 
-        {/* Final AI answer (always shown when foldable; non-foldable turns already rendered in map above) */}
-        {canFold && foldedView?.finalTextNode && (
+        {/* Final AI answer (always shown when foldable; non-foldable turns already rendered in map above).
+            定时任务运行记录若在工具调用前有过渡句且后续工具尚未完成（等批准/运行中/已中断），
+            不把那句过渡话当最终结果展示。 */}
+        {canFold && foldedView?.finalTextNode && !(
+          hasExternalStatusLine
+          && turn.nodes
+            .slice(turn.nodes.indexOf(foldedView.finalTextNode) + 1)
+            .some((node) => node.type === 'tool_call' && node.toolCall?.result === undefined)
+        ) && (
           <TraceNodeRenderer
             node={foldedView.finalTextNode}
             sessionId={sessionId}

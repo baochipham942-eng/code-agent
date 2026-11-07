@@ -41,5 +41,8 @@ ${CONNECTION_STATE_HONESTY}`,
   category: 'mcp',
   permissionLevel: 'read',
   readOnly: true,
+  // Titles are user-authored or written by invite-accepted iCloud shared-list
+  // collaborators — authenticated text, same class as jira/github_pr.
+  readsUntrustedContent: 'annotate',
   allowInPlanMode: true,
 };

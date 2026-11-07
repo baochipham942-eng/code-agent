@@ -34,6 +34,7 @@ import {
 import { isWebMode, openExternalLink } from '../../../../utils/platform';
 import { WebModeBanner } from '../WebModeBanner';
 import { SettingsPage, SettingsSection } from '../SettingsLayout';
+import { Button } from '../../../primitives';
 import PermissionGrantList from './PermissionGrantList';
 import type { SettingsTab } from '../../../../utils/settingsTabs';
 import { useI18n } from '../../../../hooks/useI18n';
@@ -46,6 +47,19 @@ import {
 import { refreshThirdPartyPluginUi } from '../../../../slots/thirdPartyPluginUiLoader';
 
 type SetupState = 'idle' | 'running' | 'completed' | 'error';
+
+// 出云掩码替换回执（N-PROMPT-SECRET-MASK-FU2）：host 只回占位符形态，契约面无原值。
+interface OutboundMaskReplacement {
+  kind: string;
+  placeholder: string;
+}
+
+interface OutboundMaskRecordEntry {
+  timestamp: number;
+  provider?: string;
+  model?: string;
+  replacements: OutboundMaskReplacement[];
+}
 
 interface SetupStatus {
   state: SetupState;
@@ -137,6 +151,85 @@ function PrivacySwitch(props: {
   );
 }
 
+/**
+ * 替换回执卡（N-PROMPT-SECRET-MASK-FU2）：开关下方一行「最近一次请求替换了什么」，
+ * 展开后按行显示 种类 → 厂商收到的占位符。只渲染占位符形态——回执链路（recorder →
+ * IPC）本身就没有原值，这里也不引入任何能带出原值的字段。开关关 / 没记录 → 空态文案。
+ */
+function OutboundMaskReceiptCard(props: {
+  enabled: boolean;
+  records: OutboundMaskRecordEntry[];
+  expanded: boolean;
+  onToggleExpand: () => void;
+}): React.ReactElement {
+  const { t } = useI18n();
+  const receiptText = t.settings.outboundMaskReceipt;
+  const lastRecord = props.records.length > 0 ? props.records[props.records.length - 1] : undefined;
+  const replacements = lastRecord?.replacements ?? [];
+  // 汇总按种类计数（保持首次出现顺序）：「OPENAI_KEY 2, ENV_SECRET_ASSIGNMENT 1」。
+  const kindCounts: Array<[string, number]> = [];
+  for (const replacement of replacements) {
+    const existing = kindCounts.find(([kind]) => kind === replacement.kind);
+    if (existing) existing[1] += 1;
+    else kindCounts.push([replacement.kind, 1]);
+  }
+  const summary = receiptText.lastRequest
+    .replace('{count}', String(replacements.length))
+    .replace(
+      '{breakdown}',
+      kindCounts
+        .map(([kind, count]) => receiptText.kindCount.replace('{kind}', kind).replace('{count}', String(count)))
+        .join(', '),
+    );
+  const metaLine = [
+    lastRecord?.provider,
+    lastRecord?.model,
+    lastRecord ? new Date(lastRecord.timestamp).toLocaleTimeString() : undefined,
+  ].filter(Boolean).join(' · ');
+
+  return (
+    <div className="mt-2 rounded-lg border border-zinc-800 bg-zinc-900/40 p-3" data-testid="privacy-outbound-mask-receipt">
+      {!props.enabled || lastRecord === undefined ? (
+        <div className="text-xs text-zinc-500" data-testid="privacy-outbound-mask-receipt-empty">
+          {receiptText.noneYet}
+        </div>
+      ) : (
+        <>
+          <div className="flex items-center justify-between gap-3">
+            <div className="text-xs text-zinc-300" data-testid="privacy-outbound-mask-receipt-summary">
+              {summary}
+            </div>
+            <Button
+              variant="ghost"
+              size="sm"
+              className="shrink-0"
+              data-testid="privacy-outbound-mask-receipt-toggle"
+              onClick={props.onToggleExpand}
+            >
+              {props.expanded ? receiptText.collapse : receiptText.expand}
+            </Button>
+          </div>
+          <div className="mt-1 text-xs text-zinc-600">{receiptText.noPlaintextHint}</div>
+          {props.expanded ? (
+            <div className="mt-2" data-testid="privacy-outbound-mask-receipt-rows">
+              {metaLine ? <div className="mb-1 text-xs text-zinc-500">{metaLine}</div> : null}
+              <ul className="space-y-1">
+                {replacements.map((replacement, index) => (
+                  <li key={`${replacement.placeholder}-${index}`} className="flex flex-wrap items-baseline gap-2 text-xs">
+                    <span className="font-mono text-zinc-300">{replacement.kind}</span>
+                    <span className="text-zinc-600">→</span>
+                    <span className="break-all font-mono text-zinc-400">{replacement.placeholder}</span>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          ) : null}
+        </>
+      )}
+    </div>
+  );
+}
+
 const PrivacySettings: React.FC<PrivacySettingsProps> = ({ onNavigateSettings }) => {
   const { t } = useI18n();
   const privacyText = t.settings.privacy;
@@ -157,6 +250,12 @@ const PrivacySettings: React.FC<PrivacySettingsProps> = ({ onNavigateSettings })
   // 从「开」切回来等于没切（ai-review PR #1650 Important①）。
   const [postLaunchScoring, setPostLaunchScoring] = useState<'on' | 'off' | 'auto'>('auto');
   const [postLaunchReflow, setPostLaunchReflow] = useState<'on' | 'off' | 'auto'>('auto');
+  // 出云密钥掩码（N-PROMPT-SECRET-MASK）：缺省关；写 settings.privacy.outboundSecretMask，
+  // host 侧 ModelRouter._callProvider 每次请求现读现用。
+  const [outboundMaskEnabled, setOutboundMaskEnabled] = useState(false);
+  // 替换回执（N-PROMPT-SECRET-MASK-FU2）：最近被掩码请求的回显，只含占位符形态。
+  const [maskRecords, setMaskRecords] = useState<OutboundMaskRecordEntry[]>([]);
+  const [maskRecordsExpanded, setMaskRecordsExpanded] = useState(false);
   const [thirdPartyUiEnabled, setThirdPartyUiEnabled] = useState(false);
   // 评测反馈池钩子命令（ADR-071 Q4）。空串 = 抽屉按钮退化成「复制 fb add 命令」。
   const [feedbackHookCommand, setFeedbackHookCommand] = useState('');
@@ -211,6 +310,7 @@ const PrivacySettings: React.FC<PrivacySettingsProps> = ({ onNavigateSettings })
         setChannels(resolvePrivacyFlags(s, readReportedTelemetryEnv()));
         setPostLaunchScoring(s?.privacy?.postLaunchScoring ?? 'auto');
         setPostLaunchReflow(s?.privacy?.postLaunchReflow ?? 'auto');
+        setOutboundMaskEnabled(s?.privacy?.outboundSecretMask === true);
         setThirdPartyUiEnabled(isThirdPartyPluginUiEnabled(s));
         setFeedbackHookCommand(s?.evaluation?.feedbackHookCommand ?? '');
       } catch {
@@ -270,6 +370,40 @@ const PrivacySettings: React.FC<PrivacySettingsProps> = ({ onNavigateSettings })
       setPrivacySaving(false);
     }
   }, [postLaunchReflow]);
+
+  const handleOutboundMaskToggle = useCallback(async (next: boolean) => {
+    const previous = outboundMaskEnabled;
+    setPrivacySaving(true);
+    setOutboundMaskEnabled(next);
+    try {
+      const nextCfg = { ...(privacyCfgRef.current ?? {}), outboundSecretMask: next };
+      await ipcService.invokeDomain(IPC_DOMAINS.SETTINGS, 'set', { privacy: nextCfg } as Partial<AppSettings>);
+      privacyCfgRef.current = nextCfg;
+    } catch {
+      setOutboundMaskEnabled(previous);
+    } finally {
+      setPrivacySaving(false);
+    }
+  }, [outboundMaskEnabled]);
+
+  // 替换回执（N-PROMPT-SECRET-MASK-FU2）：只读 IPC，拿最近被掩码请求的 kind + 占位符
+  // 清单。读不到不阻塞设置页（回执是辅助信息），静默保持空态。
+  const refreshMaskRecords = useCallback(async () => {
+    try {
+      const records = await ipcService.invokeDomain<OutboundMaskRecordEntry[]>(
+        IPC_DOMAINS.SETTINGS,
+        'getOutboundMaskRecords',
+      );
+      setMaskRecords(Array.isArray(records) ? records : []);
+    } catch {
+      // ignore — 回执缺席按「还没有替换记录」呈现
+    }
+  }, []);
+
+  useEffect(() => {
+    if (!outboundMaskEnabled) return;
+    void refreshMaskRecords();
+  }, [outboundMaskEnabled, refreshMaskRecords]);
 
   // 焦点离开才写盘：命令是逐字符输入的，每敲一下都过一次 settings IPC 没必要。
   const handleFeedbackHookCommit = useCallback(async (next: string) => {
@@ -409,12 +543,12 @@ const PrivacySettings: React.FC<PrivacySettingsProps> = ({ onNavigateSettings })
       >
         <p className="mb-3 text-xs text-zinc-400">
           <a
-            href="https://github.com/baochipham942-eng/code-agent/blob/main/docs/NOTICE.md"
+            href="https://github.com/neo-cowork/code-agent/blob/main/docs/NOTICE.md"
             target="_blank"
             rel="noreferrer"
             className="text-badge-info underline underline-offset-2 hover:text-badge-info"
             onClick={(event) => {
-              if (openExternalLink('https://github.com/baochipham942-eng/code-agent/blob/main/docs/NOTICE.md')) {
+              if (openExternalLink('https://github.com/neo-cowork/code-agent/blob/main/docs/NOTICE.md')) {
                 event.preventDefault();
               }
             }}
@@ -615,6 +749,30 @@ const PrivacySettings: React.FC<PrivacySettingsProps> = ({ onNavigateSettings })
             </div>
           </div>
         </div>
+      </SettingsSection>
+
+      <SettingsSection
+        title={privacyText.outboundMask.title}
+        description={privacyText.outboundMask.description}
+      >
+        <PrivacySwitch
+          testId="privacy-outbound-secret-mask-toggle"
+          checked={outboundMaskEnabled}
+          disabled={privacySaving}
+          label={privacyText.outboundMask.label}
+          body={privacyText.outboundMask.body}
+          icon={<KeyRound className="h-4 w-4 text-zinc-400" />}
+          onChange={(next) => { void handleOutboundMaskToggle(next); }}
+        />
+        <OutboundMaskReceiptCard
+          enabled={outboundMaskEnabled}
+          records={maskRecords}
+          expanded={maskRecordsExpanded}
+          onToggleExpand={() => {
+            setMaskRecordsExpanded((prev) => !prev);
+            void refreshMaskRecords();
+          }}
+        />
       </SettingsSection>
 
       {feedbackHookSection}

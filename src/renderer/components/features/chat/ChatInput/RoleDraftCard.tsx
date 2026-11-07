@@ -1,11 +1,12 @@
 // ============================================================================
 // RoleDraftCard - 对话式建角色草稿确认卡（role-creation-flow）
-// propose_role 工具起草后发 role_draft_pending 事件，在输入框上方弹确认卡。
-// 草稿严禁自动入库：只有用户点"确认创建"才会写 agents/<id>.md + 建 roles/<id>/。
+// propose_role 普通起草后发 role_draft_pending；明确直接创建后发 role_created_direct。
+// 两种事件都在输入框上方展示，直接创建卡下面接首次醒来。
 // 镜像 SkillDraftCard 范式。
 // ============================================================================
 
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import type { Message } from '@shared/contract';
 import { useComposerNoticeStore } from '../../../../stores/composerNoticeStore';
 import { UserPlus, Check, X, Loader2, ChevronDown, ChevronRight } from 'lucide-react';
 import ipcService from '../../../../services/ipcService';
@@ -13,7 +14,12 @@ import { IPC_DOMAINS } from '@shared/ipc';
 import { toast } from '../../../../hooks/useToast';
 import { useI18n } from '../../../../hooks/useI18n';
 import { useSessionStore } from '../../../../stores/sessionStore';
+import { getRoleToolCapabilities } from '../../../../utils/roleToolCapabilities';
 import { RoleFirstWakeCard } from '../RoleFirstWakeCard';
+import {
+  RoleCreatedDirectCard,
+  type RoleCreatedDirectSummary,
+} from './RoleCreatedDirectCard';
 
 export interface RoleDraftSummary {
   id: string;
@@ -73,17 +79,72 @@ function forgetCreationFirstWake(sessionId: string): void {
   }
 }
 
+function findPersistedDirectCreation(
+  messages: readonly Message[],
+  sessionId: string | null,
+): RoleCreatedDirectSummary | null {
+  if (!sessionId) return null;
+  for (let messageIndex = messages.length - 1; messageIndex >= 0; messageIndex -= 1) {
+    const results = messages[messageIndex]?.toolResults ?? [];
+    for (let resultIndex = results.length - 1; resultIndex >= 0; resultIndex -= 1) {
+      const meta = results[resultIndex]?.metadata;
+      if (meta?.directCreated !== true) continue;
+      const roleId = typeof meta.roleId === 'string' ? meta.roleId : '';
+      const displayName = typeof meta.displayName === 'string' ? meta.displayName : '';
+      const canDo = typeof meta.canDo === 'string' ? meta.canDo : '';
+      const willNotDo = typeof meta.willNotDo === 'string' ? meta.willNotDo : '';
+      if (!roleId || !displayName || !canDo || !willNotDo) continue;
+      return { sessionId, roleId, displayName, canDo, willNotDo };
+    }
+  }
+  return null;
+}
+
 export const RoleDraftNotifications: React.FC = () => {
   const [drafts, setDrafts] = useState<RoleDraftSummary[]>([]);
+  const [createdDirect, setCreatedDirect] = useState<RoleCreatedDirectSummary | null>(null);
   const currentSessionId = useSessionStore((state) => state.currentSessionId);
+  const messages = useSessionStore((state) => state.messages);
   const [wakeRoleId, setWakeRoleId] = useState<string | null>(null);
+  const persistedCreated = useMemo(
+    () => findPersistedDirectCreation(messages, currentSessionId),
+    [currentSessionId, messages],
+  );
 
   useEffect(() => {
     setWakeRoleId(readCreationFirstWake(currentSessionId));
   }, [currentSessionId]);
 
   useEffect(() => {
+    if (!currentSessionId) {
+      setDrafts([]);
+      return;
+    }
+    let active = true;
+    void Promise.resolve(ipcService.invokeDomain<Array<RoleDraftSummary & { sessionId?: string }>>(
+      IPC_DOMAINS.ROLES,
+      'listDrafts',
+    )).then((listed) => {
+      if (!active || !Array.isArray(listed)) return;
+      setDrafts(listed.filter((draft) => draft.sessionId === currentSessionId));
+    }).catch(() => {
+      // Existing event-driven flow remains available when hydration fails.
+    });
+    return () => { active = false; };
+  }, [currentSessionId]);
+
+  useEffect(() => {
     const unsubscribe = ipcService.on('agent:event', (event: { type: string; data: unknown }) => {
+      if (event.type === 'role_created_direct' && event.data) {
+        const payload = event.data as RoleCreatedDirectSummary;
+        if (!payload.roleId || !payload.sessionId) return;
+        setCreatedDirect(payload);
+        if (payload.sessionId === currentSessionId) {
+          rememberCreationFirstWake(payload.sessionId, payload.roleId);
+          setWakeRoleId(payload.roleId);
+        }
+        return;
+      }
       if (event.type !== 'role_draft_pending' || !event.data) return;
       const payload = event.data as { drafts?: RoleDraftSummary[] };
       if (!Array.isArray(payload.drafts) || payload.drafts.length === 0) return;
@@ -96,7 +157,7 @@ export const RoleDraftNotifications: React.FC = () => {
       });
     });
     return () => { unsubscribe?.(); };
-  }, []);
+  }, [currentSessionId]);
 
   // 确认卡是阻塞性决策，占住输入框上方那一格（成员条会据此收成极窄摘要）
   const handleCreated = useCallback((roleId: string) => {
@@ -111,11 +172,14 @@ export const RoleDraftNotifications: React.FC = () => {
 
   useEffect(() => {
     const setNotice = useComposerNoticeStore.getState().setNotice;
-    setNotice('role-draft', drafts.length > 0 || wakeRoleId !== null);
+    const hasCreatedCard = createdDirect?.sessionId === currentSessionId || persistedCreated !== null;
+    setNotice('role-draft', drafts.length > 0 || wakeRoleId !== null || hasCreatedCard);
     return () => setNotice('role-draft', false);
-  }, [drafts.length, wakeRoleId]);
+  }, [createdDirect, currentSessionId, drafts.length, persistedCreated, wakeRoleId]);
 
-  if (drafts.length === 0 && !wakeRoleId) return null;
+  const visibleCreated = createdDirect?.sessionId === currentSessionId ? createdDirect : persistedCreated;
+  const visibleWakeRoleId = wakeRoleId ?? visibleCreated?.roleId ?? null;
+  if (drafts.length === 0 && !visibleWakeRoleId && !visibleCreated) return null;
 
   return (
     <>
@@ -127,8 +191,9 @@ export const RoleDraftNotifications: React.FC = () => {
           onCreated={handleCreated}
         />
       )}
-      {wakeRoleId && (
-        <RoleFirstWakeCard roleId={wakeRoleId} expectLive onDismissed={handleWakeDismissed} />
+      {visibleCreated && <RoleCreatedDirectCard role={visibleCreated} />}
+      {visibleWakeRoleId && (
+        <RoleFirstWakeCard roleId={visibleWakeRoleId} expectLive onDismissed={handleWakeDismissed} />
       )}
     </>
   );
@@ -211,7 +276,7 @@ export const RoleDraftCard: React.FC<RoleDraftCardProps> = ({ drafts, onResolved
   if (drafts.length === 0) return null;
 
   return (
-    <div className="px-3 py-2 mb-2 bg-emerald-500/10 border border-badge-success/20 rounded-lg animate-fadeIn">
+    <div data-testid="role-draft-card" className="px-3 py-2 mb-2 bg-emerald-500/10 border border-badge-success/20 rounded-lg animate-fadeIn">
       <div className="flex items-center gap-2 mb-1">
         <UserPlus className="w-4 h-4 text-badge-success flex-shrink-0" />
         <span className="text-xs text-badge-success flex-1">
@@ -231,7 +296,14 @@ export const RoleDraftCard: React.FC<RoleDraftCardProps> = ({ drafts, onResolved
 
       {drafts.map((draft) => {
         const expanded = expandedId === draft.id;
-        const toolsLine = draft.tools.length > 0 ? draft.tools.join('、') : r.defaultToolsFallback;
+        const capabilityLabels = getRoleToolCapabilities({
+          toolNames: draft.tools,
+          capabilityLabels: t.receiptPresentation.roleCapabilityLabels,
+          humanToolLabels: t.receiptPresentation.humanToolLabels,
+        });
+        const toolsLine = capabilityLabels.length > 0
+          ? capabilityLabels.join(t.receiptPresentation.roleCapabilityLabels.separator)
+          : r.defaultToolsFallback;
         const isEdit = Boolean(draft.editingRoleId);
         return (
           <div key={draft.id} className="py-1">

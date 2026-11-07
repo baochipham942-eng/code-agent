@@ -581,6 +581,10 @@ export class BrowserService implements Disposable {
     return getBrowserElementBoundingBox(this.getTab(tabId), selector);
   }
 
+  async resolveTargetRef(targetRefInput: unknown, tabId?: string): Promise<{ targetRef: BrowserTargetRef }> {
+    return await this.targetRefs.resolve(targetRefInput, (id) => this.getTab(id), tabId);
+  }
+
   async clickTargetRef(targetRefInput: unknown, tabId?: string): Promise<BrowserTargetRef> {
     return await this.targetRefs.click(targetRefInput, (id) => this.getTab(id), tabId);
   }

@@ -27,5 +27,8 @@ Use this tool when the user gives a meeting subject/creator/note keyword, asks t
   category: 'mcp',
   permissionLevel: 'read',
   readOnly: true,
+  // Searchable fields (subject/creator/note) are meeting-creator text — an
+  // arbitrary external Tencent account, not a workspace member.
+  readsUntrustedContent: 'block',
   allowInPlanMode: true,
 };

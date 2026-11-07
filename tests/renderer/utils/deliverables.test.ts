@@ -283,6 +283,120 @@ describe('deliverable card projection', () => {
     });
   });
 
+  it('collapses relative and absolute spellings of one file when the work directory is known', () => {
+    const cards = buildTurnArtifactDeliverableCards([
+      {
+        kind: 'file',
+        role: 'deliverable',
+        label: 'report.html',
+        ownerKind: 'tool',
+        ownerLabel: 'writer · Write rel',
+        path: './report.html',
+        sourceNodeId: 'node-rel',
+      },
+      {
+        kind: 'file',
+        role: 'deliverable',
+        label: 'report.html',
+        ownerKind: 'tool',
+        ownerLabel: 'writer · Write abs',
+        path: '/demo/work/report.html',
+        sourceNodeId: 'node-abs',
+      },
+    ], '/demo/work');
+
+    expect(cards).toHaveLength(1);
+    // 卡层沿用既有 latest-wins 语义：幸存最后一条，展示路径与打开目标保持原始写法不改写。
+    expect(cards[0]).toMatchObject({
+      title: 'report.html',
+      sourceLabel: 'writer · Write abs',
+      openTarget: { kind: 'file-preview', path: '/demo/work/report.html' },
+    });
+  });
+
+  it('keeps relative spellings apart from absolute ones when no work directory is known', () => {
+    const cards = buildTurnArtifactDeliverableCards([
+      {
+        kind: 'file',
+        role: 'deliverable',
+        label: 'report.html',
+        ownerKind: 'tool',
+        ownerLabel: 'writer · Write rel',
+        path: './report.html',
+        sourceNodeId: 'node-rel',
+      },
+      {
+        kind: 'file',
+        role: 'deliverable',
+        label: 'report.html',
+        ownerKind: 'tool',
+        ownerLabel: 'writer · Write abs',
+        path: '/demo/work/report.html',
+        sourceNodeId: 'node-abs',
+      },
+    ]);
+
+    expect(cards).toHaveLength(2);
+    expect(cards.map((card) => card.openTarget).map((target) => target.kind === 'file-preview' && target.path))
+      .toEqual(['./report.html', '/demo/work/report.html']);
+  });
+
+  it('collapses ./ and bare relative spellings without a work directory', () => {
+    const cards = buildTurnArtifactDeliverableCards([
+      {
+        kind: 'file',
+        role: 'deliverable',
+        label: 'a.html',
+        ownerKind: 'tool',
+        ownerLabel: 'writer · Write dotted',
+        path: './a.html',
+        sourceNodeId: 'node-dotted',
+      },
+      {
+        kind: 'file',
+        role: 'deliverable',
+        label: 'a.html',
+        ownerKind: 'tool',
+        ownerLabel: 'writer · Write bare',
+        path: 'a.html',
+        sourceNodeId: 'node-bare',
+      },
+    ]);
+
+    expect(cards).toHaveLength(1);
+    expect(cards[0]).toMatchObject({
+      sourceLabel: 'writer · Write bare',
+      openTarget: { kind: 'file-preview', path: 'a.html' },
+    });
+  });
+
+  it('keeps same-named files in different folders separate even with a work directory', () => {
+    const cards = buildTurnArtifactDeliverableCards([
+      {
+        kind: 'file',
+        role: 'deliverable',
+        label: 'index.html',
+        ownerKind: 'tool',
+        ownerLabel: 'writer · Write a',
+        path: 'a/index.html',
+        sourceNodeId: 'node-a',
+      },
+      {
+        kind: 'file',
+        role: 'deliverable',
+        label: 'index.html',
+        ownerKind: 'tool',
+        ownerLabel: 'writer · Write b',
+        path: 'b/index.html',
+        sourceNodeId: 'node-b',
+      },
+    ], '/demo/work');
+
+    expect(cards).toHaveLength(2);
+    expect(cards.map((card) => card.openTarget).map((target) => target.kind === 'file-preview' && target.path))
+      .toEqual(['a/index.html', 'b/index.html']);
+  });
+
   it('uses card ids for no-path turn cards', () => {
     const cards = buildTurnArtifactDeliverableCards([
       {

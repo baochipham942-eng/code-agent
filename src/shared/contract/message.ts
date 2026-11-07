@@ -425,6 +425,14 @@ export interface MessageMetadata {
   roleFlowStalled?: {
     skillName: 'create-role' | 'edit-role';
   };
+  /**
+   * 后台任务终态唤醒前台失败时的用户可见说明（`role:'system'`）：任务结果已在会话里，
+   * 只是自动汇报这一步没成；reason 区分 owner lease 缺失与其它失败。
+   */
+  backgroundWakeFailed?: {
+    taskId: string;
+    reason: 'owner_missing' | 'wake_failed';
+  };
   /** User-visible audit note for atomic turn checkout / Redo, including partial outcomes. */
   turnCheckoutNote?: {
     operation: 'checkout' | 'redo';

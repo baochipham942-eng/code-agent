@@ -86,3 +86,48 @@ describe('local replay message presentation', () => {
     expect(read).not.toHaveBeenCalled();
   });
 });
+
+describe('local replay attachment restoration (FB-585)', () => {
+  const sent: Message = {
+    id: 'user-with-image',
+    role: 'user',
+    timestamp: 5,
+    content: '请看我上传的图片',
+    attachments: [
+      { id: 'att-1', type: 'image', category: 'image', name: 't.png', size: 70, mimeType: 'image/png', data: 'data:image/png;base64,AAAA', path: '/tmp/t.png' },
+    ],
+  };
+  const sentEntry = (): ConversationReplayMessage => ({
+    ordinal: 1,
+    entryId: 'entry-user',
+    projectedMessageId: sent.id,
+    sourceSessionId: 'session-story',
+    sourceMessageId: sent.id,
+    aliasKind: 'native',
+    message: sanitizeConversationMessageSnapshot(sent),
+  });
+
+  it('gives a reloaded user message its attachments back while the ledger stays byte-free', () => {
+    const replay = sentEntry();
+    expect(replay.message).not.toHaveProperty('attachments');
+    const restored = restoreLocalMessageContent('session-story', replay, () => sent);
+    expect(restored.attachments?.map((a) => a.name)).toEqual(['t.png']);
+    expect(replay.message).not.toHaveProperty('attachments');
+  });
+
+  it('only restores attachments the ledger recorded', () => {
+    const projection: Message = {
+      ...sent,
+      attachments: [...sent.attachments!, { id: 'att-unrecorded', type: 'file', category: 'text', name: 'x.txt', size: 1, mimeType: 'text/plain' }],
+    };
+    const restored = restoreLocalMessageContent('session-story', sentEntry(), () => projection);
+    expect(restored.attachments?.map((a) => a.id)).toEqual(['att-1']);
+  });
+
+  it('does not restore across lineage boundaries', () => {
+    const replay = { ...sentEntry(), aliasKind: 'fork_copy' as const };
+    const read = vi.fn(() => sent);
+    expect(restoreLocalMessageContent('session-story', replay, read)).toBe(replay.message);
+    expect(read).not.toHaveBeenCalled();
+  });
+});

@@ -11,6 +11,7 @@ import type {
   ChannelConversationListResponse,
 } from '@shared/contract/channel';
 import { IPC_CHANNELS } from '@shared/ipc';
+import { normalizeChannelAccountsPayload } from '../settings/tabs/channelAccountsPayload';
 import ipcService from '../../../services/ipcService';
 import type { EventScheduleDisplayNames } from './types';
 
@@ -42,7 +43,8 @@ export function useChannelCatalog(): {
 
     const removeListener = ipcService.on(
       IPC_CHANNELS.CHANNEL_ACCOUNTS_CHANGED,
-      (items: ChannelAccount[]) => setAccounts(items),
+      // SSE 传输会展开数组参数，单点 cast 回单数组签名
+      ((...args: unknown[]) => setAccounts(normalizeChannelAccountsPayload(...args))) as (items: ChannelAccount[]) => void,
     );
     return () => {
       active = false;

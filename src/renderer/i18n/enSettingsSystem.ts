@@ -71,6 +71,13 @@ export const enSettingsSystem = {
         cacheClearedPrefix: 'Cleared ',
         cacheClearedSuffix: ' local cache records',
       },
+      cacheRetention: {
+        failedPermission: '{count} cache items could not be deleted: no delete permission. Check the data folder permissions in Finder and try again',
+        failedOther: '{count} cache items could not be deleted and this cleanup did not finish. You can retry later',
+        openFolder: 'Open data folder',
+        retry: 'Retry',
+        details: 'Details',
+      },
       persistence: {
         title: 'History persistence is unavailable',
         degradedTitle: 'Storage is degraded',
@@ -283,6 +290,7 @@ export const enSettingsSystem = {
     webModeBanner: {
       desktopOnlyFeature: 'Some features are only available in the desktop app',
       desktopOnlyLabel: '(desktop app)',
+      channelsManageDesktopOnly: 'The web app can only view channel accounts and their status. To add, connect/disconnect, edit or delete them, use the desktop Agent Neo app.',
     },
     nativeDesktop: {
       meetingAppNames: [

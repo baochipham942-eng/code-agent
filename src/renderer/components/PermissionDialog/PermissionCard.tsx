@@ -18,7 +18,7 @@ import { RequestDetails } from './RequestDetails';
 import { OutboundMaskNotice } from './OutboundMaskNotice';
 import type { PermissionRequest, ApprovalLevel, PermissionType } from './types';
 import type { PermissionRequest as ContractPermissionRequest, PermissionResponse } from '@shared/contract';
-import { isEditableTool } from '@shared/contract';
+import { isEditableTool, PermissionRequestReason } from '@shared/contract';
 import { IPC_CHANNELS } from '@shared/ipc';
 import { getPermissionConfig } from './utils';
 import { useI18n } from '../../hooks/useI18n';
@@ -34,6 +34,9 @@ import {
 } from './WritebackFields';
 import { defaultPermissionViewMode, isDangerousRequestShape, isSafeDefaultDeny, permissionSummary } from './permissionPresentation';
 import { isSandboxEscalation, sandboxEscalationDeniedPath, sandboxEscalationQuestion } from './sandboxEscalationPresentation';
+import { SensitiveStepHandbackCard } from './SensitiveStepHandbackCard';
+import { classifyPermissionDelivery } from './permissionDelivery';
+import { logPermissionClickExit } from '../../services/permissionClickLog';
 
 // 将共享类型的 PermissionRequest 转换为本地类型
 function normalizeRequest(
@@ -77,6 +80,7 @@ function normalizeRequest(
       sandbox: request.details.sandbox,
       deniedPath: request.details.deniedPath,
       action: request.details.action,
+      sensitiveStep: request.details.sensitiveStep,
     },
     // 可编辑工具才带原参数（host 默认分支 details = {...params} + 透传字段）；其余不背这份
     rawArgs: isEditableTool(request.tool) ? (request.details as Record<string, unknown>) : undefined,
@@ -101,19 +105,6 @@ function toMemoryRequest(request: PermissionRequest): PermissionRequestForMemory
       toolName: request.details.toolName,
     },
   };
-}
-
-/**
- * 审批应答有没有真的送达宿主。两条投递链的失败形状不同：web → {success:false, error}，
- * Electron 式 → {outcome: 非 delivered}（AGENT_PERMISSION_RESPONSE 的注册类型写的是
- * Promise<void>，与实现不符，所以这里按 unknown 收窄）。最常见现场是手机已先答、
- * island 里这条已不存在——那种点击绝不能记成本机的决定。
- */
-function isUndeliveredResponse(result: unknown): boolean {
-  if (typeof result !== 'object' || result === null) return false;
-  const record = result as { success?: unknown; outcome?: unknown };
-  if (record.success === false) return true;
-  return typeof record.outcome === 'string' && record.outcome !== 'delivered';
 }
 
 interface PermissionCardProps {
@@ -156,6 +147,10 @@ export function PermissionCard({
     ? normalizeRequest(sourceRequest)
     : null;
   const sandboxEscalation = request !== null && isSandboxEscalation(request);
+  // ADR-088 敏感步骤交回卡：reasonCode 与 details.sensitiveStep 双判据（与 host 收口同口径）
+  const sensitiveHandback = request !== null
+    && (request.reasonCode === PermissionRequestReason.SensitiveStepHandback
+      || request.details.sensitiveStep !== undefined);
   const settled = request?.resolved === true && request.decision !== undefined;
   const safeDefaultDeny = request !== null && isSafeDefaultDeny(request);
   const appGrantCard = Boolean(request?.details.targetApp?.name) && request?.forceConfirm !== true;
@@ -219,12 +214,21 @@ export function PermissionCard({
 
   const handleApproval = useCallback(
     async (level: ApprovalLevel, updatedArgs?: Record<string, unknown>) => {
-      if (!request || settled) return;
+      if (!request || settled) {
+        logPermissionClickExit({ requestId: request?.id, stage: 'swallowed:no-request-or-settled', sessionId: request?.sessionId });
+        return;
+      }
 
       const requestSnapshot = requestOverride ?? pendingPermissionRequest;
       const requestSessionId = requestOverride ? sessionIdOverride ?? null : pendingPermissionSessionId;
-      if (processedRequestRef.current === request.id) return;
-      if (!claimApprovalResponse(request.id)) return;
+      if (processedRequestRef.current === request.id) {
+        logPermissionClickExit({ requestId: request.id, stage: 'swallowed:already-processed', sessionId: request.sessionId });
+        return;
+      }
+      if (!claimApprovalResponse(request.id)) {
+        logPermissionClickExit({ requestId: request.id, stage: 'swallowed:claim-rejected', sessionId: request.sessionId });
+        return;
+      }
       processedRequestRef.current = request.id;
 
       try {
@@ -260,7 +264,8 @@ export function PermissionCard({
         );
         // 未送达（手机先答 / 已超时删除 / 台账写不进）：不记成本机决定、不留卡，
         // 明说「已在其他设备处理」——静默吞掉等于让用户对着一张已失效的卡反复点。
-        if (isUndeliveredResponse(outcome)) {
+        if (classifyPermissionDelivery(outcome) !== 'ok') {
+          logPermissionClickExit({ requestId: request.id, stage: 'undelivered', sessionId: request.sessionId, error: outcome });
           releaseApprovalResponse(request.id);
           dismissPermissionRequest(request.id);
           toast.error(t.decisionCard.permission.settledElsewhere);
@@ -277,7 +282,8 @@ export function PermissionCard({
         } else if (!requestOverride) {
           setPendingPermissionRequest(null);
         }
-      } catch {
+      } catch (error) {
+        logPermissionClickExit({ requestId: request.id, stage: 'card-catch', sessionId: request.sessionId, error });
         processedRequestRef.current = null;
         releaseApprovalResponse(request.id);
         if (!requestOverride) {
@@ -318,9 +324,10 @@ export function PermissionCard({
   }, [request, memoryResult, handleApproval, isNewRequest]);
 
   // 字母直发快捷键（点了就执行，不经确认键）— stopPropagation 防止触发 ChatView 的 Esc+Esc。
-  // 数字键 1-N / Enter / Esc 由 DecisionCard 统一处理。
+  // 数字键 1-N / Enter / Esc 由 DecisionCard 统一处理。交回卡不参与字母直发：它的
+  // 「完成后继续」要求用户真的做完这一步，一次误触 y 不该等价于已完成。
   useEffect(() => {
-    if (!request || settled) return;
+    if (!request || settled || sensitiveHandback) return;
 
     const handleKeyDown = (e: KeyboardEvent) => {
       // 含 contentEditable（neo composer）：输入时不吃字母快捷键
@@ -373,7 +380,7 @@ export function PermissionCard({
 
     window.addEventListener('keydown', handleKeyDown, true);
     return () => window.removeEventListener('keydown', handleKeyDown, true);
-  }, [request, settled, handleApproval, hideStandingGrants, draft, editable, appGrantCard, isDangerous]);
+  }, [request, settled, handleApproval, hideStandingGrants, draft, editable, appGrantCard, isDangerous, sensitiveHandback]);
 
   // 如果没有当前会话可见的待处理权限请求，不渲染
   if (!request) return null;
@@ -496,6 +503,18 @@ export function PermissionCard({
 
   // 已决请求不再由 PermissionCard 渲染；结果归属到对应工具步骤旁的一行存证。
   if (settled) return null;
+
+  // ADR-088 敏感步骤交回卡：整卡换成交回状态机（三个按钮、无任何「记住」选项），
+  // 应答仍走下方 handleApproval 既有投递链（once=一次性 allow / deny），无新应答值。
+  if (sensitiveHandback && request) {
+    return (
+      <SensitiveStepHandbackCard
+        request={request}
+        onRespond={(level) => { void handleApproval(level); }}
+        onCollapse={onCollapse}
+      />
+    );
+  }
 
   // 编辑态：选项行让位给表单；主按钮 = 按修改后发送（必填为空时禁用），ghost = 放弃修改
   if (editable && draft !== null && request.rawArgs) {

@@ -80,6 +80,38 @@ describe('shell desktop automation approval boundary', () => {
     expect(resolverState.execute).not.toHaveBeenCalled();
   });
 
+  // N-CUA-SCREEN-GUARDS-SENSITIVE-PROBE-FU2-FU2（item ③）：osascript System Events keystroke
+  // 即使在 Bash 已预授权时仍强制进人工审批（shell_desktop_automation），拒绝即阻断；
+  // 同时验证它走普通命令审批而非 SensitiveStepHandback（shell 无 pid/window_id 可做窗口 join）。
+  it('forces human approval on osascript System Events keystroke even when Bash is pre-approved, and blocks on denial', async () => {
+    const command = `osascript -e 'tell application "System Events" to keystroke "x"'`;
+    const approved = await executor.execute('Bash', { command }, {
+      preApprovedTools: new Set(['Bash']),
+    });
+    expect(approved.success).toBe(true);
+    expect(permissionRequests).toHaveLength(1);
+    expect(JSON.stringify(permissionRequests[0].decisionTrace)).toContain('shell_desktop_automation');
+    expect(JSON.stringify(permissionRequests[0].decisionTrace)).toContain('apple-events-gui-input');
+    expect(permissionRequests[0].reasonCode).not.toBe('sensitive_step_handback');
+    expect(resolverState.execute).toHaveBeenCalledOnce();
+
+    resolverState.execute.mockClear();
+    permissionRequests = [];
+    const denyingExecutor = new ToolExecutor({
+      requestPermission: async (request) => {
+        permissionRequests.push(request as unknown as Record<string, unknown>);
+        return false;
+      },
+      workingDirectory: '/test/workspace',
+    });
+    const denied = await denyingExecutor.execute('Bash', { command }, {
+      preApprovedTools: new Set(['Bash']),
+    });
+    expect(denied.success).toBe(false);
+    expect(permissionRequests).toHaveLength(1);
+    expect(resolverState.execute).not.toHaveBeenCalled();
+  });
+
   it.each([
     'renamed-driver c:120,240',
     'custom-wrapper keyboard press enter',

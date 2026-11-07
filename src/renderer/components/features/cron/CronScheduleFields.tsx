@@ -13,6 +13,7 @@ import { Input } from '../../primitives/Input';
 import { Select } from '../../primitives/Select';
 import { useI18n } from '../../../hooks/useI18n';
 import type { CronJobDraft } from './types';
+import { localCronTimezone } from './localTimezone';
 
 interface CronScheduleFieldsProps {
   draft: Pick<
@@ -111,7 +112,7 @@ export const CronScheduleFields: React.FC<CronScheduleFieldsProps> = ({ draft, s
               <Input
                 value={draft.cronTimezone}
                 onChange={(e) => setField('cronTimezone', e.target.value)}
-                placeholder="Asia/Shanghai"
+                placeholder={localCronTimezone()}
               />
             </FormField>
           </div>

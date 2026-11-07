@@ -127,7 +127,7 @@
     },
     {
       "id": "perf-journey-cold-start",
-      "note": "Shared product paths attach to exactly one journey. ChatInput stays here (cold-start harness hot path). Post-merge swarm-ci perf-journey-ratchet (push to main, no path filter) re-runs all four as the safety net for anything no longer selected at PR time.",
+      "note": "Product paths normally attach to exactly one journey; TurnBasedTraceView is the deliberate entry/scroll exception. ChatInput stays here (cold-start harness hot path). Post-merge swarm-ci perf-journey-ratchet (push to main, no path filter) re-runs all five as the safety net for anything no longer selected at PR time.",
       "paths": [
         "src/renderer/components/features/chat/ChatInput/**",
         "src/renderer/hooks/useI18n.ts",
@@ -172,7 +172,7 @@
     },
     {
       "id": "perf-journey-long-session",
-      "note": "TurnBasedTraceView.tsx attaches here only: long-session harness hot path, 32-turn scroll is the most commit-sensitive probe. MessageBubble is first-token's. Post-merge job is the safety net.",
+      "note": "TurnBasedTraceView.tsx entry probe (mount + wheel signal). Scripted scrolling and window swaps are measured by the sibling perf-journey-long-session-scroll probe (N-PERF-LONG-SESSION-SCROLL-COVERAGE), which shares the hot component and therefore lists it too. MessageBubble is first-token's. Post-merge job is the safety net.",
       "paths": [
         "src/renderer/components/features/chat/TurnBasedTraceView.tsx",
         "src/renderer/components/features/chat/TurnCard.tsx",
@@ -200,8 +200,27 @@
       ]
     },
     {
+      "id": "perf-journey-long-session-scroll",
+      "note": "Scroll + window-swap commit coverage for TurnBasedTraceView (N-PERF-LONG-SESSION-SCROLL-COVERAGE): scripted full-range jumps over fixture-fixed row heights. TurnBasedTraceView.tsx is shared with perf-journey-long-session (entry probe) and is listed in both on purpose: one hot component, two behavior surfaces. useSessionEntryScroll.ts was in no journey rule before. Post-merge job is the safety net.",
+      "paths": [
+        "src/renderer/components/features/chat/TurnBasedTraceView.tsx",
+        "src/renderer/components/features/chat/useSessionEntryScroll.ts",
+        "scripts/perf/journey-long-session-scroll-harness.tsx",
+        "scripts/perf/journey-browser-smoke.ts",
+        "scripts/perf/journey-probe-runtime.ts",
+        "scripts/perf/journey-probe-protocol.ts",
+        "scripts/perf/journey-probe-instrument.tsx",
+        "scripts/perf/journey-probe-test-support.ts",
+        "scripts/perf-journey-ratchet.mjs",
+        "scripts/perf-journey-ratchet-baseline.json"
+      ],
+      "files": [
+        "tests/scripts/perfJourneyLongSessionScroll.test.ts"
+      ]
+    },
+    {
       "id": "perf-journey-session-switch",
-      "note": "EmptySessionArea / SessionSwitchSkeleton stays here. MessageBubble → first-token; TurnBasedTraceView → long-session. Post-merge job is the safety net.",
+      "note": "EmptySessionArea / SessionSwitchSkeleton stays here. MessageBubble → first-token; TurnBasedTraceView → long-session + long-session-scroll. Post-merge job is the safety net.",
       "paths": [
         "src/renderer/components/features/chat/SessionSwitchSkeleton.tsx",
         "src/renderer/components/features/chat/NewSessionWelcome.tsx",
@@ -308,12 +327,14 @@
       "paths": [
         "resources/skills/frontend-slides/**",
         "resources/skill-sources/frontend-slides/**",
+        "scripts/acceptance/frontend-slides-sample-pick-replay.ts",
         "scripts/bundle-frontend-slides-skill.mjs",
         "src-tauri/tauri.conf.json",
         "eslint.config.js"
       ],
       "files": [
-        "tests/scripts/frontendSlidesSkillPackaging.test.ts"
+        "tests/scripts/frontendSlidesSkillPackaging.test.ts",
+        "tests/unit/services/skills/frontendSlidesThemeSamples.test.ts"
       ]
     },
     {
@@ -323,7 +344,10 @@
         "scripts/acceptance/_jev-real-sites-lib.ts",
         "scripts/acceptance/jev-browser-step-real-sites.ts",
         "tests/fixtures/jev-browser-step/real-sites.json",
-        "docs/research/assets/2026-09-30-jev-eval/browser-real-sites.json"
+        "docs/research/assets/2026-11-02-jev-eval-rest2/browser-real-sites.json",
+        "docs/research/assets/2026-11-02-jev-eval-rest2/browser-real-sites-rbs07-fu1.json",
+        "docs/research/assets/2026-11-02-jev-eval-rest2/browser-real-sites-rbs07-fu1-extra.json",
+        "docs/research/assets/2026-11-02-jev-eval-rest2/browser-real-sites-rbs07-fu1-fix2.json"
       ],
       "files": [
         "tests/unit/scripts/acceptance/jevRealSitesLib.test.ts",

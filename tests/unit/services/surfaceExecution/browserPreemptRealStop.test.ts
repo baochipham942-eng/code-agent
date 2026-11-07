@@ -287,4 +287,83 @@ describe('browser preempt really stops the shared browser', () => {
     expect(blockedCalls).toBe(0);
     expect(fake.close).not.toHaveBeenCalled();
   });
+
+  describe('read-only actions wait while the user holds the browser', () => {
+    const setupSession = async (h: ReturnType<typeof createHarness>) => {
+      const r = await h.adapter.execute({
+        identity: h.identity, operationId: 'ro-setup', action: 'navigate',
+        params: { action: 'navigate', url: 'https://example.test/page' },
+        async executeProvider() { return { success: true, output: 'setup' }; },
+      });
+      expect(r.success).toBe(true);
+    };
+    const readOnly = (h: ReturnType<typeof createHarness>, calls: { n: number }, id = 'ro-1') =>
+      h.adapter.execute({
+        identity: h.identity, operationId: id, action: 'get_dom_snapshot',
+        params: { action: 'get_dom_snapshot' },
+        async executeProvider(_s, b) {
+          calls.n += 1;
+          return { success: true, metadata: { domSnapshot: await b.getDomSnapshot() } };
+        },
+      });
+
+    it('(a) stays pending during waiting_human, then returns a fresh snapshot after resume', async () => {
+      const h = createHarness();
+      await setupSession(h);
+      await h.runtime.control(h.subjectFor(), 'takeover');
+      const calls = { n: 0 };
+      let settled = false;
+      const p = readOnly(h, calls).then((r) => { settled = true; return r; });
+      await new Promise((r) => setTimeout(r, 400));
+      expect(settled).toBe(false);
+      expect(calls.n).toBe(0);
+      await h.runtime.control(h.subjectFor(), 'resume');
+      const result = await p;
+      expect(result.success).toBe(true);
+      expect(calls.n).toBe(1);
+    });
+
+    it('(b) cap expiry -> SURFACE_SESSION_BUSY without dispatching', async () => {
+      vi.useFakeTimers();
+      const h = createHarness();
+      await setupSession(h);
+      await h.runtime.control(h.subjectFor(), 'takeover');
+      const calls = { n: 0 };
+      const p = readOnly(h, calls);
+      await vi.advanceTimersByTimeAsync(
+        BROWSER_HUMAN_TAKEOVER_WAIT.CAP_MS + BROWSER_HUMAN_TAKEOVER_WAIT.POLL_INTERVAL_MS,
+      );
+      expect(await p).toMatchObject({
+        success: false,
+        metadata: { surfaceExecutionErrorV1: { code: 'SURFACE_SESSION_BUSY', userActionRequired: true } },
+      });
+      expect(calls.n).toBe(0);
+    });
+
+    it('(c) stop while waiting -> SURFACE_SESSION_BUSY', async () => {
+      const h = createHarness();
+      await setupSession(h);
+      await h.runtime.control(h.subjectFor(), 'takeover');
+      const calls = { n: 0 };
+      const p = readOnly(h, calls);
+      await new Promise((r) => setTimeout(r, 300));
+      await h.runtime.control(h.subjectFor(), 'stop');
+      expect(await p).toMatchObject({
+        success: false,
+        metadata: { surfaceExecutionErrorV1: { code: 'SURFACE_SESSION_BUSY' } },
+      });
+      expect(calls.n).toBe(0);
+    });
+
+    it('(d) running session: read-only action dispatches immediately', async () => {
+      const h = createHarness();
+      await setupSession(h);
+      const calls = { n: 0 };
+      const t0 = Date.now();
+      const result = await readOnly(h, calls);
+      expect(result.success).toBe(true);
+      expect(calls.n).toBe(1);
+      expect(Date.now() - t0).toBeLessThan(200);
+    });
+  });
 });

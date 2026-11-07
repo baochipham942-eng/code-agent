@@ -9,6 +9,7 @@ import { createLogger } from '../../../../utils/logger';
 import { WebModeBanner } from '../WebModeBanner';
 import ipcService from '../../../../services/ipcService';
 import { fetchWebBuildInfo } from '../../../../services/persistenceHealth';
+import { formatBuildInfoDisplay } from '../../../../utils/buildInfoDisplay';
 import type { BuildInfo } from '@shared/contract';
 
 const logger = createLogger('AboutSettings');
@@ -42,12 +43,7 @@ export const AboutSettings: React.FC = () => {
     void loadBuildInfo();
   }, []);
 
-  const buildInfoText = buildInfo
-    ? t.about.buildInfo
-      .replace('{branch}', buildInfo.branch ?? t.about.buildUnknown)
-      .replace('{commitShort}', buildInfo.commitShort ?? t.about.buildUnknown)
-      .replace('{builtAt}', buildInfo.builtAt)
-    : null;
+  const buildInfoText = buildInfo ? formatBuildInfoDisplay(buildInfo, t) : null;
 
   return (
     <div className="space-y-6">

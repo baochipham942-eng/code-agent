@@ -1,5 +1,6 @@
 import { execFileSync } from 'child_process';
 import { mkdtemp, mkdir, readFile, rm, writeFile } from 'fs/promises';
+import { existsSync } from 'fs';
 import { tmpdir } from 'os';
 import path from 'path';
 import { beforeEach, afterEach, describe, expect, it, vi } from 'vitest';
@@ -222,6 +223,24 @@ describe('completionSummaryService', () => {
     } finally {
       await rm(workingDirectory, { recursive: true, force: true });
     }
+  });
+
+  it('records a named reason instead of a spawn error when the work dir is not on disk yet', async () => {
+    // N-CSV-ATTACH-PREVIEW-AND-VISIBILITY-FU2：懒开目录在首个写 cwd 工具前不存在，
+    // 此刻跑 git 会记成 `spawn git ENOENT`（像 git 缺失）；应记可区分的具名原因，
+    // 且不回退到其它目录跑 git（会报出陌生仓库的状态）。
+    const missingDir = path.join(tmpdir(), 'completion-summary-missing-' + Date.now());
+    expect(existsSync(missingDir)).toBe(false);
+    const record = await buildCompletionSummaryRecord({
+      ctx: makeRuntimeContext(missingDir, []),
+      status: 'completed',
+      iterations: 1,
+      userMessage: 'lazy workdir run',
+    });
+
+    expect(record.dirtyState?.error).toBe('working-directory-not-on-disk');
+    expect(record.dirtyState?.gitBranch).toBeUndefined();
+    expect(record.dirtyState?.isDirty).toBeUndefined();
   });
 
   it('reads recent completion records scoped by session', async () => {

@@ -36,14 +36,42 @@ function loosely(name: string): string {
   return name.toLowerCase().replace(/[_-]/g, '');
 }
 
+/** 拆 camelCase / 下划线 / 连字符为小写 token，用于「共享词」近似匹配。 */
+function tokensOf(name: string): Set<string> {
+  return new Set(
+    name
+      .replace(/([a-z0-9])([A-Z])/g, '$1 $2')
+      .toLowerCase()
+      .split(/[^a-z0-9]+/)
+      .filter((token) => token.length >= 3),
+  );
+}
+
+/** 与 declared 共享 token 最多的已知工具，最多 limit 个（至少共享 1 个 token）。 */
+function nearestByTokens(declared: string, known: ReadonlySet<string>, limit: number): string[] {
+  const wanted = tokensOf(declared);
+  if (wanted.size === 0) return [];
+  const scored: Array<{ name: string; score: number }> = [];
+  for (const name of known) {
+    let score = 0;
+    for (const token of tokensOf(name)) if (wanted.has(token)) score += 1;
+    if (score > 0) scored.push({ name, score });
+  }
+  return scored
+    .sort((a, b) => b.score - a.score || a.name.length - b.name.length || a.name.localeCompare(b.name))
+    .slice(0, limit)
+    .map((item) => item.name);
+}
+
 /**
  * 挑出声明里注册表查无此名的工具。
- * 返回 `{ name, suggestion? }`，suggestion 是大小写/下划线写法不同的同名工具。
+ * 返回 `{ name, suggestion?, nearest? }`：suggestion 是大小写/下划线写法不同的同名工具；
+ * nearest 仅在没有 suggestion 时给：按共享词（calendar / meeting 等）挑的最多 3 个真实工具名。
  */
 export function findUnknownToolNames(
   declared: readonly string[],
   known: ReadonlySet<string>,
-): Array<{ name: string; suggestion?: string }> {
+): Array<{ name: string; suggestion?: string; nearest?: string[] }> {
   const looseIndex = new Map<string, string>();
   for (const name of known) {
     if (!looseIndex.has(loosely(name))) looseIndex.set(loosely(name), name);
@@ -52,7 +80,9 @@ export function findUnknownToolNames(
     .filter((name) => !known.has(name))
     .map((name) => {
       const suggestion = looseIndex.get(loosely(name));
-      return suggestion ? { name, suggestion } : { name };
+      if (suggestion) return { name, suggestion };
+      const nearest = nearestByTokens(name, known, 3);
+      return nearest.length > 0 ? { name, nearest } : { name };
     });
 }
 

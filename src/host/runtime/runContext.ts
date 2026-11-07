@@ -7,6 +7,7 @@ import type { WorkspaceScope } from '../../shared/contract/project';
 import type { GoalRecoverySnapshot } from '../agent/goalModeController';
 import { resolveBackgroundWorkspaceAuthority } from './workspaceAuthority';
 import {
+  isNonexistentPathCode,
   isPathWithinRoot,
   resolveWorkspacePath,
 } from './workspaceScope';
@@ -113,7 +114,7 @@ export function resolveCanonicalRunPath(input: string, symlinkDepth = 0): string
       const code = error && typeof error === 'object' && 'code' in error
         ? String(error.code)
         : undefined;
-      if (code !== 'ENOENT' && code !== 'ENOTDIR') {
+      if (!isNonexistentPathCode(code, parts[index])) {
         throw error;
       }
       try {
@@ -124,7 +125,7 @@ export function resolveCanonicalRunPath(input: string, symlinkDepth = 0): string
           && 'code' in realpathError
           ? String(realpathError.code)
           : undefined;
-        if (realpathCode !== 'ENOENT' && realpathCode !== 'ENOTDIR') {
+        if (!isNonexistentPathCode(realpathCode)) {
           throw realpathError;
         }
         return path.resolve(cursor, ...parts.slice(index));

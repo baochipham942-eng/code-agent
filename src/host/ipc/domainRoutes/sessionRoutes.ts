@@ -75,6 +75,7 @@ export type SessionCommandService = Pick<
   | 'createSession'
   | 'findExpertThreadSession'
   | 'getMessages'
+  | 'sessionExists'
   | 'getSessionTasks'
   | 'getForkLineage'
   | 'listForkChildren'
@@ -279,6 +280,14 @@ const SESSION_HANDLERS: DomainRouteHandlers<SessionDomainRequest, SessionCommand
 
   getMessages: async (ctx, payload) =>
     (await ctx.sessions()).getMessages((payload as { sessionId?: string } | undefined)?.sessionId as string),
+
+  // 只读存在性探测（记忆面板来源会话②，rework r4）：绝不借用 load——那会
+  // restoreSession（切宿主 currentSessionId/toolCache、清会话缓存、写审计），
+  // 选中条目这类纯探测不该付这些副作用。
+  sessionExists: async (ctx, payload) =>
+    (await ctx.sessions()).sessionExists(
+      requireTrimmed((payload as { sessionId?: string } | undefined)?.sessionId, 'sessionId is required'),
+    ),
 
   getModelOverride: async (ctx, payload) => {
     const sessionId = (payload as { sessionId?: string } | undefined)?.sessionId;

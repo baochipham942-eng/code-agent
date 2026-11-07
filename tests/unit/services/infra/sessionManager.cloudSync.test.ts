@@ -35,6 +35,7 @@ const dbMock = {
 };
 
 const supabaseLimitMock = vi.fn();
+const supabaseFromMock = vi.fn();
 
 vi.mock('../../../../src/host/platform', () => ({
   AppWindow: {
@@ -61,7 +62,7 @@ vi.mock('../../../../src/host/services/auth/authService', () => ({
 vi.mock('../../../../src/host/services/infra/supabaseService', () => ({
   isSupabaseInitialized: () => true,
   getSupabase: () => ({
-    from: () => ({
+    from: (table: string) => supabaseFromMock(table) ?? ({
       select() { return this; },
       eq() { return this; },
       order() { return this; },
@@ -88,6 +89,7 @@ describe('SessionManager cloud sync notifications', () => {
     dbMock.deleteSession.mockClear();
     dbMock.logAuditEvent.mockClear();
     supabaseLimitMock.mockReset();
+    supabaseFromMock.mockReset();
     ensureProjectForWorkspaceMock.mockReset();
     ensureProjectForWorkspaceMock.mockResolvedValue({ id: UNSORTED_PROJECT_ID });
   });
@@ -144,6 +146,32 @@ describe('SessionManager cloud sync notifications', () => {
     expect(dbMock.createSessionWithId).not.toHaveBeenCalled();
     expect(dbMock.updateSession).not.toHaveBeenCalled();
     expect(sendMock).not.toHaveBeenCalled();
+  });
+
+  it('CODE_AGENT_SKIP_CLOUD_SESSION_LIST=1 skips the cloud pull entirely; unset still pulls', async () => {
+    const cloudRow = {
+      id: 'remote-skip', title: 'Remote', model_provider: 'openai', model_name: 'gpt-5',
+      working_directory: '/repo/cloud', created_at: 10, updated_at: 20, is_deleted: false,
+    };
+    supabaseLimitMock.mockResolvedValue({ data: [cloudRow], error: null });
+    const { SessionManager } = await import('../../../../src/host/services/infra/sessionManager');
+    const manager = new SessionManager();
+
+    vi.stubEnv('CODE_AGENT_SKIP_CLOUD_SESSION_LIST', '1');
+    try {
+      await manager.listSessions();
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      expect(supabaseFromMock).not.toHaveBeenCalled();
+      expect(dbMock.createSessionWithId).not.toHaveBeenCalled();
+    } finally {
+      vi.unstubAllEnvs();
+    }
+
+    await manager.listSessions();
+    await vi.waitFor(() => {
+      expect(supabaseFromMock).toHaveBeenCalledWith('sessions');
+      expect(dbMock.createSessionWithId).toHaveBeenCalled();
+    });
   });
 
   it('resolves a canonical Project before writing a newly discovered cloud session', async () => {

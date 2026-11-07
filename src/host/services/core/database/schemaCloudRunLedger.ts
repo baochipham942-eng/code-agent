@@ -88,11 +88,18 @@ export function applyCloudRunLedgerSchema(db: BetterSqlite3.Database, logger: Lo
   safeAlter(db, 'ALTER TABLE cloud_runs ADD COLUMN client_message_id TEXT', logger);
   safeAlter(db, 'ALTER TABLE cloud_runs ADD COLUMN execution_run_id TEXT', logger);
   safeAlter(db, 'ALTER TABLE cloud_runs ADD COLUMN cancel_requested_at INTEGER', logger);
+  // ADR-087 S4B：通道幂等键 (account_id, channel_delivery_id)——同一通道投递
+  // 重放只算一次准入，不消耗 slot 与 enqueued_seq。
+  safeAlter(db, 'ALTER TABLE cloud_runs ADD COLUMN channel_delivery_id TEXT', logger);
 
   db.exec(`
     CREATE UNIQUE INDEX IF NOT EXISTS idx_cloud_runs_client_message
       ON cloud_runs (account_id, session_id, client_message_id)
       WHERE client_message_id IS NOT NULL;
+
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_cloud_runs_channel_delivery
+      ON cloud_runs (account_id, channel_delivery_id)
+      WHERE channel_delivery_id IS NOT NULL;
 
     CREATE INDEX IF NOT EXISTS idx_cloud_runs_account_queue
       ON cloud_runs (account_id, state, enqueued_seq);

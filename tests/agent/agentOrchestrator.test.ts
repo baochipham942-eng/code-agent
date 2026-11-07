@@ -346,17 +346,25 @@ vi.mock('../../src/host/services/cloud/cloudConfigService', () => ({
 import { AgentOrchestrator } from '../../src/host/agent/agentOrchestrator';
 import { getPermissionModeManager } from '../../src/host/permissions/modes';
 import { setCustomAgentMapForTest } from '../../src/host/agent/agentRegistry';
+// 存草稿门测试开/关 mail 连接器用：configService 走本文件顶部 vi.mock 的替身（settings
+// 可变），connector registry 用真实单例（darwin 上 configure 注册，行为同
+// sessionCommandCenterBrain.test.ts 的 darwin-only 桥）。
+import { getConfigService } from '../../src/host/services/core/configService';
+import { getConnectorRegistry } from '../../src/host/connectors/registry';
 import { approvalParkEvents } from '../../src/host/agent/approvalParkEvents';
 import type { PendingApprovalRepository } from '../../src/host/services/core/repositories/PendingApprovalRepository';
 import { SteerRejectedError } from '../../src/host/agent/runtime/conversationRuntime';
 import type { ConfigService } from '../../src/host/services/core/configService';
 import type { AgentEvent, Message, MessageAttachment, PermissionAskResult, PermissionRequest } from '../../src/shared/contract';
+import { PARKED_APPROVAL_CLOSURE_SENTENCES } from '../../src/shared/parkedApprovalClosure';
 import type { AgentRunOptions } from '../../src/host/research/types';
 import { getAllToolDefinitions } from '../../src/host/tools/dispatch/toolDefinitions';
 import { getToolSearchService } from '../../src/host/services/toolSearch/toolSearchService';
 import { createWorkspaceScope } from '../../src/host/runtime/workspaceScope';
 import { resolveToolPermissionClassification } from '../../src/host/tools/toolPermissionClassification';
 import { TaskManager } from '../../src/host/task/TaskManager';
+import { applyTurnSystemContext } from '../../src/host/agent/orchestratorTurnContext';
+import { extractUserRequest } from '../../src/shared/utils/turnScaffold';
 import {
   beginVoiceDispatch,
   dispatchVoiceIntent,
@@ -519,6 +527,72 @@ describe('AgentOrchestrator', () => {
       await expect(AgentOrchestrator.prototype.sendMessage.call(ingress as unknown as AgentOrchestrator,
         'I am back', undefined, options)).rejects.toThrow('after user ingress');
       expect(cancelTimeWakesOnUserReturn).toHaveBeenCalledWith('return-session', options);
+    });
+
+    it('每个入站 turn 开头重置短档会话的累计 no-wait 预算', async () => {
+      const { grantShortTierWait, settleShortTierWait } = await import('../../src/host/tools/shell/foregroundTier');
+      const ingress = {
+        permissions: { drainPendingPermissions: vi.fn() },
+        configService: { getSettings: () => ({}) },
+        resolveSessionId: async () => 'budget-session',
+        generateId: () => 'user-message',
+        applyHistoryVisibility: () => { throw new Error('after user ingress'); },
+        executeMessage: (AgentOrchestrator.prototype as unknown as {
+          executeMessage: (...args: unknown[]) => Promise<void>;
+        }).executeMessage,
+      };
+      settleShortTierWait('budget-session', 10_000);
+      expect(grantShortTierWait('budget-session', 5_000).refusal).toBeTruthy();
+      await expect(AgentOrchestrator.prototype.sendMessage.call(ingress as unknown as AgentOrchestrator,
+        'turn 2', undefined, { mode: 'normal' as const })).rejects.toThrow('after user ingress');
+      expect(grantShortTierWait('budget-session', 5_000)).toEqual({ timeout: 5_000 });
+    });
+
+    // N-CHANNEL-REPLY-BREVITY ①：IM 回复纪律只在推理期进模型面请求——channel 来源
+    // （messageMetadata.channel）把指令块并进 turnSystemContext（applyTurnSystemContext
+    // → <user_request> 包裹 + AgentLoop 的 modelFacingUserMessage 投影），落库/展示的
+    // 用户消息仍是原话；桌面 turn（无 metadata.channel）完全不注入。
+    it('injects the IM reply-style instruction for channel turns only, never into the stored user message', async () => {
+      vi.stubEnv('EVAL_DISABLED', 'true');
+      try {
+        const drive = async (messageMetadata?: { channel: Record<string, unknown> }) => {
+          const stored: Message[] = [];
+          const captured: { options?: AgentRunOptions } = {};
+          const ingress = {
+            permissions: { drainPendingPermissions: vi.fn() },
+            configService: { getSettings: () => ({}), getApiKey: vi.fn(() => 'test-key') },
+            resolveSessionId: async () => null,
+            generateId: () => `crb-${stored.length}`,
+            applyHistoryVisibility: (m: Message) => m,
+            addMessage: (m: Message) => { stored.push(m); },
+            runNormalMode: async (_content: string, _onEvent: unknown, _modelConfig: unknown, _sessionId: unknown, runOptions: AgentRunOptions) => {
+              captured.options = runOptions;
+            },
+          };
+          await (AgentOrchestrator.prototype as unknown as {
+            executeMessage: (this: unknown, ...args: unknown[]) => Promise<void>;
+          }).executeMessage.call(ingress, 'do it', undefined, { mode: 'normal', disableAutoAgent: true }, messageMetadata, undefined, true);
+          return { stored, captured };
+        };
+
+        const channel = await drive({ channel: { platform: 'feishu', chatId: 'c1' } });
+        expect(channel.stored[0].content).toBe('do it');
+        expect(channel.stored[0].content).not.toContain('[IM 回复纪律]');
+        const channelBlocks = channel.captured.options?.turnSystemContext ?? [];
+        expect(channelBlocks.some((block) => block.includes('[IM 回复纪律]'))).toBe(true);
+        // 模型面请求：指令块在 <user_request> 包裹之外，用户原话可无损拆回
+        const modelFacing = applyTurnSystemContext('do it', channel.captured.options, null, () => null);
+        expect(modelFacing).toContain('[IM 回复纪律]');
+        expect(modelFacing).toContain('<user_request>');
+        expect(extractUserRequest(modelFacing)).toBe('do it');
+
+        const desktop = await drive(undefined);
+        expect(desktop.stored[0].content).toBe('do it');
+        expect(desktop.captured.options?.turnSystemContext).toBeUndefined();
+        expect(applyTurnSystemContext('do it', desktop.captured.options, null, () => null)).toBe('do it');
+      } finally {
+        vi.unstubAllEnvs();
+      }
     });
 
     it('releases deferred-tool holds when a normal run ends', async () => {
@@ -1964,7 +2038,7 @@ describe('AgentOrchestrator', () => {
         const promise = parkRequest(unattendedSid);
         const requestId = fake.insert.mock.calls[0][0].id as string;
         vi.advanceTimersByTime(86_400_000);
-        expect(await promise).toEqual({ approved: false, denialSource: 'timeout', message: 'parked approval expired' });
+        expect(await promise).toEqual({ approved: false, denialSource: 'timeout', message: PARKED_APPROVAL_CLOSURE_SENTENCES.expiredAfterRestart24h });
         expect(fake.rows.get(requestId)?.status).toBe('rejected');
       } finally {
         vi.useRealTimers();
@@ -2085,6 +2159,9 @@ describe('AgentOrchestrator', () => {
 
   describe('morning brief save-draft role mail tool gate', () => {
     const ROLE = 'save-draft-role';
+    // FB-726：无邮件角色的存草稿轮必须整批撤下的工具名——mail 三件套 + delegate_task + Bash。
+    // 组成核对见 src/host/app/morningBriefSaveDraftTools.ts 的 SAVE_DRAFT_NO_MAIL_REMOVE。
+    const NO_MAIL_ROLE_ABSENT = ['mail', 'mail_send', 'mail_draft', 'delegate_task', 'Bash'] as const;
 
     function registerRole(tools: string[]): void {
       setCustomAgentMapForTest(new Map([[
@@ -2103,9 +2180,20 @@ describe('AgentOrchestrator', () => {
       ]]));
     }
 
-    async function runSaveDraft(roleId?: string): Promise<string[] | undefined> {
+    // 连接器意图扩展是真组成的一部分（FB-726 预载表里有 mail/mail_send/mail_draft）：
+    // 经被 mock 的 configService 开 enabledNative，registry 用真实单例。用完必须关回去——
+    // 文件里后面断言精确名单的用例（named role standing boundary）经同一 configService
+    // 组装，连接器开着会被污染。
+    function setMailConnectorEnabled(enabled: boolean): void {
+      (getConfigService() as unknown as {
+        getSettings(): { connectors: { enabledNative: string[] } };
+      }).getSettings().connectors.enabledNative = enabled ? ['mail'] : [];
+      getConnectorRegistry().configure(enabled ? ['mail'] : []);
+    }
+
+    async function runSaveDraft(roleId?: string, prompt = '存草稿 1'): Promise<string[] | undefined> {
       const { withSessionCommandCenterBrain } = await import('../../src/host/app/sessionCommandCenterBrain');
-      const options = withSessionCommandCenterBrain(roleId ? { agentOverrideId: roleId } : undefined, '存草稿 1');
+      const options = withSessionCommandCenterBrain(roleId ? { agentOverrideId: roleId } : undefined, prompt);
       await (orchestrator as unknown as {
         runStandardAgentLoop(
           content: string,
@@ -2118,18 +2206,20 @@ describe('AgentOrchestrator', () => {
           options?: AgentRunOptions,
         ): Promise<void>;
       }).runStandardAgentLoop(
-        '存草稿 1', mockOnEvent, { provider: 'deepseek', model: 'deepseek-chat' },
+        prompt, mockOnEvent, { provider: 'deepseek', model: 'deepseek-chat' },
         'save-draft-role-session', undefined, undefined, undefined, options as AgentRunOptions,
       );
       return lastAgentLoopConfig()?.allowedToolNames;
     }
 
     afterEach(() => {
+      setMailConnectorEnabled(false);
       setCustomAgentMapForTest(new Map());
     });
 
-    it.each(['off', 'on'] as const)('removes mail_draft for a no-mail role with the standing boundary %s', async (boundary) => {
+    it.each(['off', 'on'] as const)('removes every mail tool, delegate_task and Bash for a no-mail role with the standing boundary %s', async (boundary) => {
       registerRole(['Read']);
+      setMailConnectorEnabled(true);
       if (boundary === 'on') {
         roleBoundaryProbe.mockReturnValue({
           boundaryText: '不允许对外发送',
@@ -2138,7 +2228,12 @@ describe('AgentOrchestrator', () => {
         });
       }
 
-      expect(await runSaveDraft(ROLE)).not.toContain('mail_draft');
+      const tools = await runSaveDraft(ROLE);
+      for (const absent of NO_MAIL_ROLE_ABSENT) {
+        expect(tools).not.toContain(absent);
+      }
+      // 撤单不是清场：角色自己声明的读写面还在，轮次照常能跑。
+      expect(tools).toContain('Read');
     });
 
     it.each([['mail_draft'], ['mail']])('keeps exactly one mail_draft for a role declaring %s', async (mailTool) => {
@@ -2147,8 +2242,31 @@ describe('AgentOrchestrator', () => {
       expect((await runSaveDraft(ROLE))?.filter((tool) => tool === 'mail_draft')).toHaveLength(1);
     });
 
+    // 记录在案的取舍：真有邮件面的角色（声明 mail/mail_draft）不撤 mail_send——
+    // 存草稿轮的收窄只针对没开邮件的角色。mail 工具进面依赖 darwin 上的连接器注册表
+    // （sessionCommandCenterBrain.test.ts 同款桥），非 darwin 整组不出工具名。
+    it.skipIf(process.platform !== 'darwin')('keeps mail_send for a role that really declares mail with the connector enabled', async () => {
+      registerRole(['Read', 'mail']);
+      setMailConnectorEnabled(true);
+
+      const tools = await runSaveDraft(ROLE);
+      expect(tools).toContain('mail_send');
+      expect(tools?.filter((tool) => tool === 'mail_draft')).toHaveLength(1);
+    });
+
     it('keeps exactly one mail_draft when no role is resolved', async () => {
       expect((await runSaveDraft())?.filter((tool) => tool === 'mail_draft')).toHaveLength(1);
+    });
+
+    it.skipIf(process.platform !== 'darwin')('leaves a non-save-draft mail prompt for a no-mail role untouched', async () => {
+      registerRole(['Read']);
+      setMailConnectorEnabled(true);
+
+      const tools = await runSaveDraft(ROLE, '帮我发邮件给 a@b.c，说明会议改期');
+      // 非存草稿轮不归本门管：连接器意图命中带进来的 mail 三件套与 delegate_task 原样在列。
+      for (const present of ['mail', 'mail_send', 'mail_draft', 'delegate_task']) {
+        expect(tools).toContain(present);
+      }
     });
   });
 

@@ -49,6 +49,8 @@ const SAMPLE_PAYLOADS: { [K in UserVisibleSystemEventKey]: NonNullable<MessageMe
   voiceWorkFailure: { workItemId: WORK_ITEM_ID, title: '买菜' },
   voiceWorkSettled: { workItemId: WORK_ITEM_ID, title: '买菜', outcome: 'done' },
   agentRecoveryNotice: { kind: 'vision_tool_unsupported' },
+  roleFlowStalled: { skillName: 'create-role' },
+  backgroundWakeFailed: { taskId: 'session-work-1', reason: 'wake_failed' },
   turnCheckoutNote: {
     operation: 'checkout',
     state: 'success',
@@ -199,6 +201,12 @@ describe('用户可见 system 事件登记制（P0-2）', () => {
       expect(turns.flatMap((turn) => turn.nodes).some((node) => node.id === `settlement-${outcome}`)).toBe(false);
     },
   );
+
+  it('同一条登记事件消息（同 id）被送达两次 → 只投一个节点', () => {
+    const sys = systemEventMessage('roleFlowStalled');
+    const nodes = project([...plainTurn(), sys, { ...sys }]).flatMap((turn) => turn.nodes);
+    expect(nodes.filter((node) => node.id === 'sys-roleFlowStalled')).toHaveLength(1);
+  });
 
   it('底线：裸 role:system（无 metadata）仍被总闸跳过——内部指令不外泄', () => {
     const turns = project([

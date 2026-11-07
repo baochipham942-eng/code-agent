@@ -665,6 +665,15 @@ export function normalizeUserMessagePayload(data: unknown): UserMessagePayload |
   };
 }
 
+/** 宿主广播的 role:'system' 落库消息（有 id 有正文）；其余形状返回 null。 */
+export function normalizeSystemMessagePayload(data: unknown): Message | null {
+  if (!isRecord(data) || data.role !== 'system') return null;
+  const id = getStringField(data, 'id');
+  const content = getStringField(data, 'content');
+  if (!id || content === undefined) return null;
+  return data as unknown as Message;
+}
+
 export function normalizeMessageDeltaPayload(data: unknown): MessageDeltaPayload | null {
   if (!isRecord(data) || data.role !== 'assistant') return null;
   const text = getStringField(data, 'text');

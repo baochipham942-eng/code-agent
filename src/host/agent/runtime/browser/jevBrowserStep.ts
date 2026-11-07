@@ -16,6 +16,7 @@ import {
   type JevSystemOneCall,
 } from '../../../../shared/constants/jevQuestions';
 import { resolveJevRoute } from '../../../model/providers/typesafeProvider';
+import { detectBrowserChallenge } from '../../../../shared/utils/browserChallengeDetection';
 import { classifyBrowserComputerManualTakeover } from '../../../../shared/utils/browserComputerRedaction';
 import { isBrowserLoginWall } from '../../../../shared/utils/browserLoginWall';
 import type { BrowserService } from '../../../services/infra/browserService';
@@ -27,6 +28,7 @@ import {
   type PreparedJevSnapshot,
 } from '../../../services/infra/browser/jevBrowserSnapshotPrep';
 import type { ToolContext, ToolExecutionResult } from '../../../tools/types';
+import { BROWSER_RISK_KEYWORD, markBrowserJevHandback } from './jevBrowserRisk';
 import {
   evaluateJevAssertions,
   extractJevAssertions,
@@ -45,7 +47,6 @@ const BROWSER_JEV_HARD_STEP_LIMIT = 60;
 const BROWSER_JEV_TIME_LIMIT_MS = 100_000;
 const BROWSER_JEV_DEFAULT_BUDGET_USD = 0.03;
 const NO_PROGRESS_LIMIT = 3;
-const RISK_KEYWORD = /pay|payment|checkout|购买|支付|delete|删除|authorize|oauth|授权|grant access|confirm purchase|unsubscribe/i;
 const UPLOAD_TASK = /upload|上传|file|文件|传上/i;
 const TASK_URL_RE = /https?:\/\/[^\s<>"'`)]+/i;
 const MANUAL_TAKEOVER_COPY = /manual takeover|user takeover|take over manually|requires manual|人工接管|用户接管/i;
@@ -437,7 +438,14 @@ async function runJevBrowserStepLoop(
       ...captured.snapshot.headings.map((heading) => heading.text),
       visibleText,
     ].join('\n');
-    const takeover = classifyBrowserComputerManualTakeover(visible);
+    const takeover = detectBrowserChallenge({
+      title: captured.snapshot.title,
+      headings: captured.snapshot.headings.map((heading) => heading.text),
+      bodyText: visibleText,
+      frameUrls: (captured.snapshot.frameDocuments ?? []).map((frame) => frame.url),
+    })
+      ? 'captcha_or_risk_control'
+      : classifyBrowserComputerManualTakeover(visible, { skipCaptcha: true });
     if (takeover === 'captcha_or_risk_control' || takeover === 'mfa_required') {
       return finish('needs_review', takeover, { captchaClass: takeover });
     }
@@ -562,8 +570,8 @@ async function runJevBrowserStepLoop(
       : null;
     const targetName = target?.name || '';
     const riskHit = applied.riskNoul >= BROWSER_STEP_THRESHOLDS.riskUpgrade
-      || RISK_KEYWORD.test(targetName)
-      || RISK_KEYWORD.test(target?.text || '')
+      || BROWSER_RISK_KEYWORD.test(targetName)
+      || BROWSER_RISK_KEYWORD.test(target?.text || '')
       || (guarded.injectionFlag && (applied.operation === 'click' || applied.operation === 'type'));
     // ponytail: 与基线同档：injection_flag 升级不覆盖 press_enter，是已知天花板
     if (riskHit && (applied.operation === 'click' || applied.operation === 'type' || applied.operation === 'press_enter')) {
@@ -697,6 +705,7 @@ function createJevBrowserStepDriver(call: JevSystemOneCall, extra?: JevBrowserSt
           : defaultQuickType,
         now: extra?.now,
       });
+      if (result.status !== 'done_verified') markBrowserJevHandback(context.sessionId);
       return toToolResult(result);
     },
   };

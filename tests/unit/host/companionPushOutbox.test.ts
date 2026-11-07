@@ -6,6 +6,7 @@ import type BetterSqlite3 from 'better-sqlite3';
 import { CompanionGateway } from '../../../src/host/services/companion/CompanionGateway';
 import { CompanionPushOutbox } from '../../../src/host/services/companion/CompanionPushOutbox';
 import { unwrapPushToken, wrapPushToken } from '../../../src/host/services/companion/companionPushProviders';
+import { desktopPresence } from '../../../src/host/services/companion/desktopPresence';
 import { COMPANION_LIMITS as L } from '../../../src/shared/constants/companion';
 
 const wrapKey = Buffer.alloc(32, 7);
@@ -233,5 +234,112 @@ describe('CompanionPushOutbox', () => {
     await sending.flush();
     expect(sent).toEqual([1_000, 6_000]);
     expect(sending.rowsFor('phone-1')[0].attempts).toBe(2);
+  });
+
+  // ============================================================================
+  // 桌面在场抑制（N-NOTIFY-PRESENCE-HEARTBEAT ②③）：真 desktopPresence 单例接线，
+  // 独立 gateway 保证 enqueue 走的是带 presence 的 outbox（共享 db 的既有先例：
+  // 「registration rotated while in flight」同款第二网关法）。
+  // ============================================================================
+  describe('desktop presence suppression', () => {
+    function buildPresenceOutbox(scope: string[]) {
+      const box: { push?: CompanionPushOutbox } = {};
+      const presenceGateway = new CompanionGateway(db, {
+        now: () => now,
+        onPublish: event => box.push?.enqueue(event),
+        onRevoke: deviceId => box.push?.forgetDevice(deviceId),
+      });
+      presenceGateway.registerDevice({ deviceId: 'phone-1', credentialHash: 'hash', scopeEpoch: 1, scope, revokedAt: null });
+      const outbox = new CompanionPushOutbox(db, presenceGateway, {
+        now: () => now,
+        wrapKey,
+        apnsKeyPath: '/tmp/not-a-real-key.p8',
+        send: async request => { sent.push(request.payload.titleKey); return { accepted: true }; },
+        presence: desktopPresence,
+      });
+      box.push = outbox;
+      return outbox;
+    }
+
+    it('② agent_complete 在场时不入队，窗口过期后恢复入队', () => {
+      const outbox = buildPresenceOutbox(['session-1']);
+      desktopPresence.report({ visible: true, focused: true, lastInputAt: now }, now);
+      outbox.enqueue({ eventId: 'evt-active-1', epoch: 1, seq: 1, sessionId: 'session-1', kind: 'agent_complete', payload: {}, createdAt: now });
+      expect(outbox.rowsFor('phone-1')).toEqual([]);
+      now += L.desktopPresenceFreshMs + 1;
+      outbox.enqueue({ eventId: 'evt-active-2', epoch: 1, seq: 2, sessionId: 'session-1', kind: 'agent_complete', payload: {}, createdAt: now });
+      expect(outbox.rowsFor('phone-1')).toHaveLength(1);
+      expect(outbox.rowsFor('phone-1')[0]).toMatchObject({ event_id: 'evt-active-2', state: 'pending' });
+    });
+
+    it('② 紧急类不看在场：approval(pending) 与 error 在场时照样入队', () => {
+      const outbox = buildPresenceOutbox(['session-1']);
+      desktopPresence.report({ visible: true, focused: true, lastInputAt: now }, now);
+      expect(desktopPresence.isActive(now)).toBe(true);
+      outbox.enqueue({ eventId: 'evt-approval-1', epoch: 1, seq: 1, sessionId: 'session-1', kind: 'approval', payload: { status: 'pending' }, createdAt: now });
+      outbox.enqueue({ eventId: 'evt-error-1', epoch: 1, seq: 2, sessionId: 'session-1', kind: 'error', payload: {}, createdAt: now });
+      expect(outbox.rowsFor('phone-1').map(row => row.kind)).toEqual(['approval', 'error']);
+      expect(outbox.rowsFor('phone-1').every(row => row.state === 'pending')).toBe(true);
+    });
+
+    it('③ 单向已读：入队后桌面看过该会话 → pending 行 skipped；另一会话的行照发', async () => {
+      const outbox = buildPresenceOutbox(['presence-read-a', 'presence-read-b']);
+      outbox.register('phone-1', { provider: 'apns', token: 'device-token-aaaaaaaa', environment: 'production' });
+      // 入队时刻必须不在场（否则 enqueue 就压掉了，测不到 pending→skipped 路径）
+      desktopPresence.report({ visible: false, focused: false, lastInputAt: now }, now);
+      outbox.enqueue({ eventId: 'evt-read-a', epoch: 1, seq: 1, sessionId: 'presence-read-a', kind: 'agent_complete', payload: {}, createdAt: now });
+      outbox.enqueue({ eventId: 'evt-read-b', epoch: 1, seq: 2, sessionId: 'presence-read-b', kind: 'agent_complete', payload: {}, createdAt: now });
+      // 桌面在事件落队之后打开了会话 presence-read-a（单向已读）
+      now += 4_000;
+      desktopPresence.report({ visible: true, focused: true, lastInputAt: now, viewingSessionId: 'presence-read-a' }, now);
+      await outbox.flush();
+      const states = db.prepare('SELECT session_id, state FROM companion_push_outbox ORDER BY session_id').all() as Array<{ session_id: string; state: string }>;
+      expect(states).toEqual([
+        { session_id: 'presence-read-a', state: 'skipped' },
+        { session_id: 'presence-read-b', state: 'sent' },
+      ]);
+      expect(sent).toEqual(['task_complete']);
+    });
+
+    // r1 返修（评审 Important）：首推 PROVIDER_RETRY 进重试等待；等待期间用户切走
+    // （失焦），隐藏窗口的心跳仍带 viewingSessionId —— 不得盖章已读把 pending 行盖成
+    // skipped（手机没收到、桌面也没人看，通知双丢）。行必须在重试后照常 sent。
+    it('r1 重试等待期的失焦心跳不得把 pending 完成推送盖成 skipped', async () => {
+      const box: { push?: CompanionPushOutbox } = {};
+      const blindGateway = new CompanionGateway(db, {
+        now: () => now,
+        onPublish: event => box.push?.enqueue(event),
+        onRevoke: deviceId => box.push?.forgetDevice(deviceId),
+      });
+      blindGateway.registerDevice({ deviceId: 'phone-1', credentialHash: 'hash', scopeEpoch: 1, scope: ['presence-blind-x'], revokedAt: null });
+      let attempts = 0;
+      const outbox = new CompanionPushOutbox(db, blindGateway, {
+        now: () => now,
+        wrapKey,
+        apnsKeyPath: '/tmp/not-a-real-key.p8',
+        presence: desktopPresence,
+        send: async request => {
+          attempts += 1;
+          sent.push(request.payload.titleKey);
+          return attempts === 1
+            ? { accepted: false, code: 'PROVIDER_RETRY', retryAfterMs: 5_000 }
+            : { accepted: true };
+        },
+      });
+      box.push = outbox;
+      outbox.register('phone-1', { provider: 'apns', token: 'device-token-aaaaaaaa', environment: 'production' });
+      // 用户已切走（失焦但 currentSessionId 未变）：完成事件照常入队
+      desktopPresence.report({ visible: true, focused: false, lastInputAt: now }, now);
+      outbox.enqueue({ eventId: 'evt-blind-1', epoch: 1, seq: 1, sessionId: 'presence-blind-x', kind: 'agent_complete', payload: {}, createdAt: now });
+      // 首推 PROVIDER_RETRY → pending 等重试
+      await outbox.flush();
+      expect(outbox.rowsFor('phone-1')[0]).toMatchObject({ state: 'pending', attempts: 1 });
+      // 重试等待期内隐藏窗口的心跳（viewingSessionId 仍是被看的那个会话，时间 ≥ created_at）
+      now += 6_000;
+      desktopPresence.report({ visible: true, focused: false, lastInputAt: now, viewingSessionId: 'presence-blind-x' }, now);
+      await outbox.flush();
+      expect(outbox.rowsFor('phone-1')[0]).toMatchObject({ state: 'sent', attempts: 2 });
+      expect(sent).toEqual(['task_complete', 'task_complete']);
+    });
   });
 });

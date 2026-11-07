@@ -3,7 +3,10 @@
 // ============================================================================
 
 import type { DecisionStep, DecisionTrace } from '../../shared/contract/decisionTrace';
+import { HostReasonCode, createHostReason, type HostReasonPayload } from '../../shared/contract/permission';
 import { getGuardFabric, type ExecutionTopology } from '../permissions';
+import { resolveGuardLevel } from '../permissions/guardFabric';
+import type { PermissionLevel } from '../../shared/contract/tool';
 import { getPolicyEngine } from '../permissions/policyEngine';
 import { resolveEffectivePolicyRules } from '../permissions/runPolicySnapshot';
 import { createLogger } from '../services/infra/logger';
@@ -18,12 +21,16 @@ export interface GuardFabricGateInput {
   topology: ExecutionTopology;
   sessionId?: string;
   agentId?: string;
+  /** 按 toolDef.permissionLevel 传入；缺省按 execute 评估（fail-safe，维持旧行为）。 */
+  permissionLevel?: PermissionLevel;
 }
 
 export interface GuardFabricGateResult {
   deny?: {
     error: string;
     reason: string;
+    /** 结构化原因（稳定 code + toolName 元数据），renderer 登记表直查，不落英文原句。 */
+    hostReason?: HostReasonPayload;
     trace?: DecisionTrace;
   };
   forceApproval?: boolean;
@@ -34,27 +41,62 @@ export interface GuardFabricGateResult {
  * 用户在设置里写的拒绝规则（如 Bash(rm *)）对所有拓扑都是硬拒，在审批之前生效（N-PERM-USER-DENY-MAIN）。
  * 此前主拓扑直接放行、非主拓扑也只消费 topology 裁决，命令类用户 deny 没有任何消费方——
  * rm 照样落到审批分类器，点允许就执行。
- * 只认命中规则本身是 user-deny：PolicyEngine 在 plan/dontAsk 等严格模式下会把命中的 user-allow
- * 改写成 action=deny，那是模式的事、由主链按真实 level 判，不能在这里当成「你的拒绝规则」硬拒。
+ * 只认规则本身是 user-deny（matchUserDenyRule 独立扫描）：Plan/dontAsk 等严格模式下
+ * PolicyEngine 会把命中的 user-allow 改写成 action=deny，那是模式的事、由主链按真实
+ * level 判，不能在这里当成「你的拒绝规则」硬拒。FU1 r1：level 修正后内置不可覆盖 deny
+ * （block-root-write/block-ssh-keys）会在 evaluate 的 Pass1 抢先成为 matchedRule，若拿它的
+ * 前缀当答案，用户 deny 被遮蔽成「无规则命中」，硬拒降级成可批的 ask——所以命中判定
+ * 不看 evaluate 的 matchedRule，走独立扫描。
  */
-function evaluateUserDeny(input: GuardFabricGateInput): GuardFabricGateResult['deny'] | undefined {
-  const { matchedRule } = getPolicyEngine().evaluate({
+function buildPolicyRequest(input: GuardFabricGateInput) {
+  return {
     tool: input.policyToolName,
-    level: 'execute',
+    level: resolveGuardLevel(input.permissionLevel),
     description: `tool: ${input.policyToolName}`,
     command: input.params.command as string,
     filePath: (input.params.filePath as string) || (input.params.file_path as string),
     sessionId: input.sessionId,
-  }, resolveEffectivePolicyRules(input.sessionId));
-  if (matchedRule?.action !== 'deny' || !matchedRule.id.startsWith('user-deny-')) return undefined;
+  };
+}
+
+function evaluateUserDeny(input: GuardFabricGateInput): GuardFabricGateResult['deny'] | undefined {
+  const request = buildPolicyRequest(input);
+  const rules = resolveEffectivePolicyRules(input.sessionId);
+  // 完整评估保留：审计按真实 level 记账（FU1 验收⑥），模式联动语义不变。
+  getPolicyEngine().evaluate(request, rules);
+  const matchedRule = getPolicyEngine().matchUserDenyRule(request, rules);
+  if (!matchedRule) return undefined;
   const reason = `user-config: ${matchedRule.name}`;
   logger.warn('Denied by user permission rule', { toolName: input.executionToolName, rule: matchedRule.id });
   const trace = createTraceBuilder(input.executionToolName)
     .addStep('policy_enforcer', matchedRule.id, 'deny', reason)
     .build('deny');
+  const error = `Blocked by your permission deny rule (${matchedRule.name}). This tool call is denied by the user's settings; do not retry it or try to achieve the same effect another way.`;
   return {
-    error: `Blocked by your permission deny rule (${matchedRule.name}). This tool call is denied by the user's settings; do not retry it or try to achieve the same effect another way.`,
+    error,
     reason,
+    hostReason: createHostReason(HostReasonCode.PermissionDeniedUserRule, error, { toolName: input.executionToolName }),
+    trace,
+  };
+}
+
+/**
+ * 内置不可覆盖 deny（block-root-write / block-ssh-keys / block-rm-rf-root）对所有拓扑硬拒，
+ * 在审批之前生效；此前只进审计，主链上 Write /usr/bin/x 仍会弹审批卡、点允许就执行。
+ */
+function evaluateBuiltinHardDeny(input: GuardFabricGateInput): GuardFabricGateResult['deny'] | undefined {
+  const rule = getPolicyEngine().matchHardDenyRule(buildPolicyRequest(input), resolveEffectivePolicyRules(input.sessionId));
+  if (!rule) return undefined;
+  const reason = `built-in: ${rule.name}`;
+  logger.warn('Denied by built-in safety rule', { toolName: input.executionToolName, rule: rule.id });
+  const trace = createTraceBuilder(input.executionToolName)
+    .addStep('policy_enforcer', rule.id, 'deny', reason)
+    .build('deny');
+  const error = `Blocked by built-in safety rule (${rule.name}): ${rule.reason}. Do not retry. Write inside the workspace/project directory instead, or ask the user to make this change themselves.`;
+  return {
+    error,
+    reason,
+    hostReason: createHostReason(HostReasonCode.PermissionDeniedSafetyRule, error, { toolName: input.executionToolName }),
     trace,
   };
 }
@@ -62,6 +104,9 @@ function evaluateUserDeny(input: GuardFabricGateInput): GuardFabricGateResult['d
 export function evaluateGuardFabricGate(input: GuardFabricGateInput): GuardFabricGateResult {
   const userDeny = evaluateUserDeny(input);
   if (userDeny) return { deny: userDeny };
+
+  const builtinDeny = evaluateBuiltinHardDeny(input);
+  if (builtinDeny) return { deny: builtinDeny };
 
   if (input.topology === 'main') {
     return {};
@@ -74,6 +119,7 @@ export function evaluateGuardFabricGate(input: GuardFabricGateInput): GuardFabri
       topology: input.topology,
       sessionId: input.sessionId,
       agentId: input.agentId,
+      level: input.permissionLevel,
     });
 
     // 只消费 topology 规则的裁决（2026-07-13 激活批收窄）：其余 sources（policyEngine/

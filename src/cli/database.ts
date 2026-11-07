@@ -441,12 +441,13 @@ export class CLIDatabaseService {
     if (!this.db) throw new Error('Database not initialized');
 
     const stmt = this.db.prepare(`
-      INSERT INTO sessions (id, title, model_provider, model_name, working_directory, created_at, updated_at, workspace, status, last_token_usage)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      INSERT INTO sessions (id, user_id, title, model_provider, model_name, working_directory, created_at, updated_at, workspace, status, last_token_usage)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `);
 
     stmt.run(
       session.id,
+      session.userId ?? null,
       session.title,
       session.modelConfig.provider,
       session.modelConfig.model,

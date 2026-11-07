@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "reason": "2026-09-25 N-PERF-JOURNEY-RATCHET 初值：四条 Neo 用户旅程各钉一枚 React Profiler commitCount，只降不升。cold-start=2（InputArea 可输入）、first-token=3（MessageContent 首 token）、long-session=18（TurnBasedTraceView 32 轮滚动）、session-switch=4（EmptySessionArea 骨架 + 两会话正文）。同 commit 连跑 5 次计数逐字节相同；wallClockMs / longTaskCount 只记录、不进门。",
+  "reason": "2026-09-25 N-PERF-JOURNEY-RATCHET 初值：Neo 用户旅程各钉一枚 React Profiler commitCount，只降不升。cold-start=2（InputArea 可输入）、first-token=3（MessageContent 首 token）、long-session=18（TurnBasedTraceView 32 轮滚动；2026-11-06 起改为 13，口径改成进入 + wheel 信号、不再测滚动，见 journeys.long-session.reason）、session-switch=4（EmptySessionArea 骨架 + 两会话正文）。同 commit 连跑 5 次计数逐字节相同；wallClockMs / longTaskCount 只记录、不进门。2026-11-05 N-PERF-LONG-SESSION-SCROLL-COVERAGE 增补第五条 long-session-scroll（见 journeys.long-session-scroll.reason）。",
   "journeys": {
     "cold-start": {
       "commitCount": 2,
@@ -11,8 +11,12 @@
       "reason": "新会话首个流式 token 落到 MessageContent。热组件 MessageContent。初值 3。"
     },
     "long-session": {
-      "commitCount": 18,
-      "reason": "长会话 TurnBasedTraceView 32 轮一次滚动。热组件 TurnBasedTraceView。初值 18。"
+      "commitCount": 13,
+      "reason": "长会话 TurnBasedTraceView 32 轮进入 + 滚动开始信号（wheel）。热组件 TurnBasedTraceView。初值 18（2026-09-25，固定帧发布、含两次脚本滚动）。N-PERF-LONG-SESSION-RATCHET-FLAKE（2026-11-05）改口径：① 固定帧发布读在异步级联中途（Virtuoso 经 ResizeObserver→rAF 落 commit），18/19 翻转根因，改为等 commit 静默再发布；② 78c674839（#2705）加的 useSessionEntryScroll 进入结算（跳底 + 60 帧重发循环）不可测：等它跑完读 130/131/132（循环与渐进测量重叠成 2 commit/帧×60 帧自持振荡，尾帧合并 ±1），而 wheel 在首个 turn 挂载后立即发出会走产品自身的用户交互守卫把结算在跳底前中止——这是确定路径；③ 脚本 scrollTop 跳变（换窗滚动）挂载行高仍是估计值，估计→实测修正尾 ~300ms 后多数 run 落地、少数不落（18/19/20 混读），任何换窗滚动都带这个不可判定的尾巴，故去掉脚本滚动、只保留 wheel。终版级联 = 挂载 + 初始测距 + wheel 中止，同 commit 连跑全 13（负载 3-8）。基线 18→13：18 是截断伪影且含不可确定尾差，13 是这条旅程可复现确定的完整级联。"
+    },
+    "long-session-scroll": {
+      "commitCount": 11,
+      "reason": "长会话 TurnBasedTraceView 脚本滚动 + 双向换窗（N-PERF-LONG-SESSION-SCROLL-COVERAGE，2026-11-05）：把 #2831 从口径里去掉的脚本滚动重新纳入 commit-count 棘轮。先用 long-session 同款 wheel 中止 useSessionEntryScroll 进入结算并等静默，然后把该点记为第二阶段起点；commitCount 只计 scrollTop 跳 scrollHeight（首部窗→尾部窗）与 scrollTop 跳 0（尾部窗→首部窗）的增量，进入级联仍由原 long-session=13 单独钉住。每步等 commit 静默且每行 known-size==实测高后才继续。行高确定性靠 harness 注入的固定高 fixture（[data-trace-turn-id] 钉 80px = TurnBasedTraceView 的 defaultItemHeight，产品代码零改动）：挂载行的估计高即实测高，#2831 记录的估计→实测修正尾在滚动阶段不存在。只关 fixture 的同协议 10 连跑为 14/14/14/14/14/14/13/14/14/13；开启后正常与 CPU 负载均为单一值。scrollTop 写入只等浏览器原生 scroll 事件，不手工重复派发。初值 11 = 下跳 6 + 回顶 5。"
     },
     "session-switch": {
       "commitCount": 4,

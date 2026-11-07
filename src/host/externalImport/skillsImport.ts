@@ -12,10 +12,13 @@ import * as path from 'path';
 import { getHomeDir, getSkillsDir } from '../config';
 import { hasSkillMd } from '../services/skills/skillParser';
 import { createLogger } from '../services/infra/logger';
+import { recordSkillsImportHistory } from './importHistory';
+import { digestSkillDir } from './skillDirDigest';
 import {
   readClaudeLegacySkillsPreference,
   writeClaudeLegacySkillsPreference,
 } from '../services/skills/claudeLegacySkillsPreference';
+import type { ImportHistoryTrigger } from '../../shared/contract/importHistory';
 import type {
   ExternalImportSetClaudeLegacySkillsResult,
   ExternalSkillCopySourceId,
@@ -113,11 +116,20 @@ export async function previewExternalSkillsImport(
   return { items, summary: summarize(items) };
 }
 
+export interface ApplyExternalSkillsOptions {
+  /** 导入历史的触发方；缺省 manual。 */
+  trigger?: ImportHistoryTrigger;
+  /** 按来源排除已处理过的技能名（保持同步的台账）；被排除的不进结果、不记历史。 */
+  excludeNames?: Partial<Record<ExternalSkillCopySourceId, string[]>>;
+}
+
 export async function applyExternalSkillsImport(
   payload?: ExternalSkillsApplyRequest,
+  options: ApplyExternalSkillsOptions = {},
 ): Promise<ExternalSkillsApplyResult> {
   const targetDir = getSkillsDir().user.new;
-  const plan = await buildPlan(resolveSourceIds(payload?.sourceIds), getHomeDir(), targetDir);
+  const plan = (await buildPlan(resolveSourceIds(payload?.sourceIds), getHomeDir(), targetDir))
+    .filter((item) => !options.excludeNames?.[item.sourceId]?.includes(item.name));
   const results: ExternalSkillsApplyResultItem[] = [];
   let copied = 0;
   for (const item of plan) {
@@ -136,7 +148,12 @@ export async function applyExternalSkillsImport(
       await fs.mkdir(path.dirname(targetPath), { recursive: true });
       await fs.cp(item.sourcePath, targetPath, { recursive: true });
       copied += 1;
-      results.push({ sourceId: item.sourceId, name: item.name, action: 'copied' });
+      results.push({
+        sourceId: item.sourceId,
+        name: item.name,
+        action: 'copied',
+        digest: await digestSkillDir(targetPath).catch(() => undefined),
+      });
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       // 裸报错只进日志（UI 只显 i18n 标签），带技能名/来源便于判因。
@@ -162,6 +179,8 @@ export async function applyExternalSkillsImport(
       });
     }
   }
+  if (options.trigger === 'auto') await recordSkillsImportHistory(results, { trigger: 'auto' });
+  else await recordSkillsImportHistory(results);
   return {
     targetDir,
     copied,

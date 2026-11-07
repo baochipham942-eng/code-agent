@@ -348,4 +348,60 @@ describe('SessionForkService', () => {
     })).rejects.toMatchObject({ code: 'CONTEXT_HANDOFF_REJECTED' });
     expect(db.createSessionFork).not.toHaveBeenCalled();
   });
+
+  // N-EXTHISTORY-IMPORT-CHATS-RESUME：导入的 Claude Code / Codex CLI 历史是只读记录，
+  // 分支必须产出 Neo 原生子会话（neo_native_prefix + 应用默认模型），不继承外部引擎
+  // 身份与 claude-history 占位模型。
+  it('forks an imported external-history source into a native child on the app default model', async () => {
+    const db = database();
+    const importedSession: Session = {
+      ...sourceSession,
+      title: 'Claude Code history',
+      modelConfig: { provider: 'claude', model: 'claude-history' },
+      engine: { kind: 'claude_code', model: 'claude-history', origin: 'import', permissionProfile: 'read_only' },
+    };
+    vi.mocked(db.getSession).mockImplementation((id, options) => {
+      const session = id === importedSession.id ? importedSession : id === childSession.id ? childSession : null;
+      if (!session || options?.userId === undefined) return session;
+      return session.userId === options.userId ? session : null;
+    });
+    const service = new SessionForkService(db, {
+      ownerUserId: 'user-1',
+      resolveDefaultModelConfig: async () => ({ provider: 'longcat', model: 'LongCat-2.0' }),
+    });
+
+    const result = await service.createFork({
+      sourceSessionId: 'source',
+      anchorAssistantMessageId: 'a2',
+      idempotencyKey: 'import-fork-1',
+      workspaceMode: 'shared_current',
+    });
+
+    expect(result.lineage.contextDeliveryMode).toBe('neo_native_prefix');
+    expect(db.createSessionFork).toHaveBeenCalledWith(expect.objectContaining({
+      contextDeliveryMode: 'neo_native_prefix',
+      nativeChildModel: { provider: 'longcat', model: 'LongCat-2.0' },
+    }));
+  });
+
+  it('keeps the regular fork path for a native engine that merely carries import origin', async () => {
+    const db = database();
+    vi.mocked(db.getSession).mockReturnValue({
+      ...sourceSession,
+      engine: { kind: 'native', origin: 'import' },
+    });
+    const service = new SessionForkService(db);
+
+    await service.createFork({
+      sourceSessionId: 'source',
+      anchorAssistantMessageId: 'a2',
+      idempotencyKey: 'native-import-1',
+      workspaceMode: 'shared_current',
+    });
+
+    expect(db.createSessionFork).toHaveBeenCalledWith(expect.objectContaining({
+      contextDeliveryMode: 'neo_native_prefix',
+    }));
+    expect(vi.mocked(db.createSessionFork).mock.calls[0][0].nativeChildModel).toBeUndefined();
+  });
 });

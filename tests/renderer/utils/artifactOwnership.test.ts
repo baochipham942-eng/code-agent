@@ -440,4 +440,224 @@ describe('buildArtifactOwnershipItems', () => {
     expect(items[11]?.label).toBe('Artifact 11');
     expect(items[11]?.path).toBe('/repo/app/artifact-11.md');
   });
+
+  it('相对与绝对路径写同一文件，工作目录已知时折叠为一条（先写法保留）', () => {
+    const items = buildArtifactOwnershipItems({
+      turnNumber: 5,
+      turnId: 'turn-relabs',
+      status: 'completed',
+      startTime: 500,
+      endTime: 560,
+      nodes: [
+        {
+          id: 'tool-rel',
+          type: 'tool_call',
+          content: '',
+          timestamp: 510,
+          toolCall: {
+            id: 'tool-rel',
+            name: 'Write',
+            args: { file_path: './report.html' },
+            result: 'ok',
+            success: true,
+            outputPath: './report.html',
+          },
+        },
+        {
+          id: 'tool-abs',
+          type: 'tool_call',
+          content: '',
+          timestamp: 520,
+          toolCall: {
+            id: 'tool-abs',
+            name: 'Write',
+            args: { file_path: '/demo/work/report.html' },
+            result: 'ok',
+            success: true,
+            outputPath: '/demo/work/report.html',
+          },
+        },
+      ],
+    } satisfies TraceTurn, undefined, '/demo/work');
+
+    expect(items).toHaveLength(1);
+    // 键折叠的是「同一文件」；条目本身的 path 保持第一次出现的写法（展示不变）。
+    expect(items[0]).toMatchObject({
+      path: './report.html',
+      sourceNodeId: 'tool-rel',
+      ownerLabel: 'Write',
+    });
+  });
+
+  it('无工作目录时相对与绝对写法不合并（不猜基准）', () => {
+    const items = buildArtifactOwnershipItems({
+      turnNumber: 5,
+      turnId: 'turn-relabs-nowd',
+      status: 'completed',
+      startTime: 500,
+      endTime: 560,
+      nodes: [
+        {
+          id: 'tool-rel',
+          type: 'tool_call',
+          content: '',
+          timestamp: 510,
+          toolCall: {
+            id: 'tool-rel',
+            name: 'Write',
+            args: { file_path: './report.html' },
+            result: 'ok',
+            success: true,
+            outputPath: './report.html',
+          },
+        },
+        {
+          id: 'tool-abs',
+          type: 'tool_call',
+          content: '',
+          timestamp: 520,
+          toolCall: {
+            id: 'tool-abs',
+            name: 'Write',
+            args: { file_path: '/demo/work/report.html' },
+            result: 'ok',
+            success: true,
+            outputPath: '/demo/work/report.html',
+          },
+        },
+      ],
+    } satisfies TraceTurn);
+
+    expect(items).toHaveLength(2);
+    expect(items.map((item) => item.path)).toEqual(['./report.html', '/demo/work/report.html']);
+  });
+
+  it('无工作目录时 ./ 与裸相对写法仍折叠（词法清理不依赖基准）', () => {
+    const items = buildArtifactOwnershipItems({
+      turnNumber: 6,
+      turnId: 'turn-dotted',
+      status: 'completed',
+      startTime: 600,
+      endTime: 660,
+      nodes: [
+        {
+          id: 'tool-dotted',
+          type: 'tool_call',
+          content: '',
+          timestamp: 610,
+          toolCall: {
+            id: 'tool-dotted',
+            name: 'Write',
+            args: { file_path: './a.html' },
+            result: 'ok',
+            success: true,
+            outputPath: './a.html',
+          },
+        },
+        {
+          id: 'tool-bare',
+          type: 'tool_call',
+          content: '',
+          timestamp: 620,
+          toolCall: {
+            id: 'tool-bare',
+            name: 'Write',
+            args: { file_path: 'a.html' },
+            result: 'ok',
+            success: true,
+            outputPath: 'a.html',
+          },
+        },
+      ],
+    } satisfies TraceTurn);
+
+    expect(items).toHaveLength(1);
+    expect(items[0]).toMatchObject({ path: './a.html', sourceNodeId: 'tool-dotted' });
+  });
+
+  it('../ 相对写法经词法清理后与同一文件的绝对路径折叠', () => {
+    const items = buildArtifactOwnershipItems({
+      turnNumber: 7,
+      turnId: 'turn-dotdot',
+      status: 'completed',
+      startTime: 700,
+      endTime: 760,
+      nodes: [
+        {
+          id: 'tool-dotdot',
+          type: 'tool_call',
+          content: '',
+          timestamp: 710,
+          toolCall: {
+            id: 'tool-dotdot',
+            name: 'Write',
+            args: { file_path: '../out/report.html' },
+            result: 'ok',
+            success: true,
+            outputPath: '../out/report.html',
+          },
+        },
+        {
+          id: 'tool-abs',
+          type: 'tool_call',
+          content: '',
+          timestamp: 720,
+          toolCall: {
+            id: 'tool-abs',
+            name: 'Write',
+            args: { file_path: '/demo/out/report.html' },
+            result: 'ok',
+            success: true,
+            outputPath: '/demo/out/report.html',
+          },
+        },
+      ],
+    } satisfies TraceTurn, undefined, '/demo/work');
+
+    expect(items).toHaveLength(1);
+    expect(items[0]).toMatchObject({ path: '../out/report.html', sourceNodeId: 'tool-dotdot' });
+  });
+
+  it('同名文件在不同目录，工作目录已知时仍保持两条', () => {
+    const items = buildArtifactOwnershipItems({
+      turnNumber: 8,
+      turnId: 'turn-samebase',
+      status: 'completed',
+      startTime: 800,
+      endTime: 860,
+      nodes: [
+        {
+          id: 'tool-a',
+          type: 'tool_call',
+          content: '',
+          timestamp: 810,
+          toolCall: {
+            id: 'tool-a',
+            name: 'Write',
+            args: { file_path: 'a/index.html' },
+            result: 'ok',
+            success: true,
+            outputPath: 'a/index.html',
+          },
+        },
+        {
+          id: 'tool-b',
+          type: 'tool_call',
+          content: '',
+          timestamp: 820,
+          toolCall: {
+            id: 'tool-b',
+            name: 'Write',
+            args: { file_path: 'b/index.html' },
+            result: 'ok',
+            success: true,
+            outputPath: 'b/index.html',
+          },
+        },
+      ],
+    } satisfies TraceTurn, undefined, '/demo/work');
+
+    expect(items).toHaveLength(2);
+    expect(items.map((item) => item.path)).toEqual(['a/index.html', 'b/index.html']);
+  });
 });

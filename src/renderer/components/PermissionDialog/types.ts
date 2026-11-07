@@ -76,6 +76,12 @@ export interface PermissionRequestDetails {
   deniedPath?: string;
   /** 沙盒写放宽动作：sandbox_escalate_once 或 sandbox_escalate_dir_once。 */
   action?: string;
+  /** ADR-088 敏感步骤交回（来源 @shared/contract）；有值时渲染交回卡。 */
+  sensitiveStep?: {
+    kind: 'password' | 'verification_code' | 'payment';
+    elementLabel?: string;
+    appName?: string;
+  };
 }
 
 // 权限请求

@@ -1,7 +1,12 @@
 import type { AgentTreeNode } from '@shared/contract/agentTree';
 import type { LastToolFailure, LastToolStep, Task, TaskOutputRef } from '@shared/contract/backgroundTask';
 import type { ToolCall } from '@shared/contract';
-import { isLastToolFailureVisible } from '../../../../../utils/agentActivity';
+import {
+  isAgentNodeTerminalStatus,
+  isLastToolFailureVisible,
+  isTaskTerminalStatus,
+  taskActivityIds,
+} from '../../../../../utils/agentActivity';
 
 type DelegationReceiptState = 'working' | 'completed' | 'failed';
 
@@ -21,10 +26,11 @@ export interface DelegationPresentation {
   failure?: string;
   /** 终态任务的结构化工具失败（N-MEDIA-GEN-MUSIC-FALLBACK-FU1）：回执行人话出路用。 */
   toolFailure?: LastToolFailure;
+  /** 审批关联键（agentRows.applyMemberHolds 同口径）：task.id / runId / childRunId 或节点 id。 */
+  activityIds: readonly string[];
+  /** 任务归属会话；agentTree 节点路径没有，审批作用域由 resolveAgentActivityStepStatus 兜底。 */
+  sessionId?: string;
 }
-
-const TASK_TERMINAL = new Set(['completed', 'failed', 'cancelled', 'expired', 'orphaned']);
-const AGENT_FAILED = new Set(['failed', 'cancelled', 'killed', 'blocked', 'dead-log-only']);
 
 function basename(value: string): string {
   const normalized = value.split(/[?#]/, 1)[0] || value;
@@ -49,7 +55,7 @@ function completedStepCount(step: LastToolStep | undefined, current: number | un
 }
 
 function fromTask(task: Task): DelegationPresentation {
-  const terminal = TASK_TERMINAL.has(task.status);
+  const terminal = isTaskTerminalStatus(task.status);
   const state: DelegationReceiptState = !terminal
     ? 'working'
     : task.status === 'completed'
@@ -59,6 +65,8 @@ function fromTask(task: Task): DelegationPresentation {
     state,
     title: task.title,
     lastToolStep: task.progress?.lastToolStep,
+    activityIds: taskActivityIds(task),
+    sessionId: task.sessionId,
     stepCount: terminal
       ? completedStepCount(task.progress?.lastToolStep, task.progress?.current)
       : undefined,
@@ -81,7 +89,7 @@ function extractSpawnAgentId(toolCall: ToolCall): string | undefined {
 function fromAgent(node: AgentTreeNode): DelegationPresentation {
   const state: DelegationReceiptState = node.status === 'completed'
     ? 'completed'
-    : AGENT_FAILED.has(node.status)
+    : isAgentNodeTerminalStatus(node.status)
       ? 'failed'
       : 'working';
   const terminal = state !== 'working';
@@ -89,6 +97,7 @@ function fromAgent(node: AgentTreeNode): DelegationPresentation {
     state,
     title: node.task?.trim() || node.role,
     lastToolStep: node.lastToolStep,
+    activityIds: [node.id],
     stepCount: terminal ? completedStepCount(node.lastToolStep, undefined) : undefined,
     outputs: node.evidenceRefs.flatMap((ref) => {
       if (ref.kind !== 'file' && ref.kind !== 'artifact') return [];

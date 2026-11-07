@@ -91,6 +91,7 @@ function markRuntimeSessionCancelled(sessionId: string): void {
 function markLatestUserTurnCancelled(
   draftMessageId: string | null | undefined,
   cancelledAt: number,
+  reason: 'user_cancelled' | 'idle_reaped' = 'user_cancelled',
 ): void {
   const store = useSessionStore.getState();
   const messages = store.messages;
@@ -117,7 +118,7 @@ function markLatestUserTurnCancelled(
           runCancellation: {
             status: 'cancelled' as const,
             cancelledAt,
-            reason: 'user_cancelled',
+            reason,
           },
         },
       },
@@ -234,7 +235,11 @@ export const useSessionLifecycleEffects = ({
             setActiveToolProgress(null);
             setToolTimeoutWarning(null);
             if (event.type === 'agent_cancelled') {
-              markLatestUserTurnCancelled(currentTurnMessageIdRef.current, Date.now());
+              markLatestUserTurnCancelled(
+                currentTurnMessageIdRef.current,
+                Date.now(),
+                event.data?.reason === 'idle_reaped' ? 'idle_reaped' : 'user_cancelled',
+              );
               currentTurnMessageIdRef.current = null;
             }
           }

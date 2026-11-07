@@ -1,5 +1,6 @@
 import type { UntrustedContentToolSchema } from '../../../protocol/tools';
 import { isCuaJevStepEnabled } from '../../../../shared/constants/jevQuestions';
+import { CUA_SCREEN_LADDER_TOOL_SUFFIX } from '../../../mcp/cuaLadderGuidance';
 
 export const cuaStatefulComputerUseSchema: UntrustedContentToolSchema = {
   name: 'computer_use',
@@ -10,7 +11,7 @@ Use one operation at a time:
 2. observe with targetApp from list_roots appName to obtain an immutable stateId, opaque element refs, and screenshotId.
 3. act with the same targetApp and that stateId and exactly one mutation. The state is single-use.
 
-Element mutations must use elementRef from the state. Pixel mutations must use a point whose screenshotId exactly matches the state. Never reuse a state after act, a new observe, expiry, or provider restart. An act result reports delivery and verification separately and returns a full successor state when available. A satisfied postcondition never upgrades rejected or unknown delivery to confirmed. Treat overall=ambiguous as non-retriable until you inspect the successor state; never replay click/type/drag automatically.`,
+Element mutations must use elementRef from the state. Pixel mutations must use a point whose screenshotId exactly matches the state. Never reuse a state after act, a new observe, expiry, or provider restart. An act result reports delivery and verification separately and returns a full successor state when available. A satisfied postcondition never upgrades rejected or unknown delivery to confirmed. Treat overall=ambiguous as non-retriable until you inspect the successor state; never replay click/type/drag automatically. ${CUA_SCREEN_LADDER_TOOL_SUFFIX}`,
   outputSchema: { type: 'string' },
   inputSchema: {
     type: 'object',

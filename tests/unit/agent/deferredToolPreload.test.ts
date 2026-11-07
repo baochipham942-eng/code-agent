@@ -522,4 +522,20 @@ describe('deferred tool preload', () => {
     expect(loaded).toEqual(['propose_role']);
     expect(getToolSearchService().isToolLoaded('propose_role')).toBe(true);
   });
+
+  // FB-327 同面补登记：exit_role_flow 在两个 strict skill 的 allowedTools 里都被声明，
+  // 漏登记 DEFERRED_TOOLS_META 时 selectTool 查不到 → 永不进工具表 → 收窄说明里
+  // 「调用 exit_role_flow 退出流程」是一句模型做不到的话。
+  it('actually loads exit_role_flow through the skill boundary path', () => {
+    registerProtocolToolForPreload('exit_role_flow' as never);
+    resetToolSearchService();
+    const loaded = preloadDeferredToolsForTurn({
+      enableToolDeferredLoading: true,
+      executionIntent: undefined,
+      messages: [{ id: 'm1', role: 'user', content: '/create-role 研究员', timestamp: 1 }],
+      turn: TurnState.forTest({ skillToolBoundary: { skillName: 'create-role', allowedTools: ['exit_role_flow', 'read_file'] } }),
+    } as never);
+    expect(loaded).toContain('exit_role_flow');
+    expect(getToolSearchService().isToolLoaded('exit_role_flow')).toBe(true);
+  });
 });

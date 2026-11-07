@@ -13,9 +13,10 @@ import { MANAGED_BROWSER_ARTIFACT_DIR } from '../../host/services/infra/browser/
 import { resolveNativeDesktopCandidateRoots } from '../../host/services/desktop/nativeDesktopService';
 import { PRESENTATION_PREVIEW_CACHE_DIRNAME } from '../../host/tools/media/ppt/constants';
 import { PREVIEW_FORMAT_CACHE_DIRNAME } from '../../host/ipc/previewFormatCacheName';
+import { CHAT_UPLOAD_DIR_NAME } from '../../shared/constants/chatUploads';
 
 export const MAX_UPLOAD_SIZE = 50 * 1024 * 1024;
-export const UPLOAD_ROOT_DIR = path.join(os.tmpdir(), 'code-agent-uploads');
+export const UPLOAD_ROOT_DIR = path.join(os.tmpdir(), CHAT_UPLOAD_DIR_NAME);
 
 export function ensureUploadRootDir(): void {
   fs.mkdirSync(UPLOAD_ROOT_DIR, { recursive: true });

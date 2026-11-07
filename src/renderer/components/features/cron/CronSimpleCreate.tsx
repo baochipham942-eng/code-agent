@@ -10,9 +10,11 @@ import type { RolePanelEntry } from '@shared/contract/roleAssets';
 import { isRoleBoundCronJob } from '@shared/cronRoleBinding';
 import type { Project } from '@shared/contract/project';
 import { suggestCronStaggerMinute } from '@shared/cronStagger';
+import { CRON_URGENCY_CRITERIA } from '@shared/constants';
 import { Button } from '../../primitives/Button';
 import { FormField } from '../../composites/FormField';
 import { Input } from '../../primitives/Input';
+import { TimeInput24 } from '../../primitives';
 import { Select } from '../../primitives/Select';
 import { Textarea } from '../../primitives/Textarea';
 import { useCronStore } from '../../../stores/cronStore';
@@ -68,6 +70,7 @@ export function buildSimpleDraft(
   libraryProjectId?: string,
   runsOn: CronJobDraft['runsOn'] = 'local',
   resultChannel = '',
+  urgencyCriteria = '',
 ): CronJobDraft {
   return {
     ...createDefaultCronJobDraft(),
@@ -79,6 +82,7 @@ export function buildSimpleDraft(
     agentRoleId: roleId || '',
     agentLibraryProjectId: libraryProjectId || '',
     resultChannel,
+    agentUrgencyCriteria: urgencyCriteria,
     ...schedule,
   };
 }
@@ -102,6 +106,7 @@ export const CronSimpleCreate: React.FC<CronSimpleCreateProps> = ({ onDone }) =>
   const [libraryProjectId, setLibraryProjectId] = useState('');
   const [runsOn, setRunsOn] = useState<CronJobDraft['runsOn']>('local');
   const [resultChannel, setResultChannel] = useState('');
+  const [urgencyCriteria, setUrgencyCriteria] = useState('');
   const [roles, setRoles] = useState<RolePanelEntry[]>([]);
   const [projects, setProjects] = useState<Project[]>([]);
   const [submitting, setSubmitting] = useState(false);
@@ -130,6 +135,7 @@ export const CronSimpleCreate: React.FC<CronSimpleCreateProps> = ({ onDone }) =>
         libraryProjectId,
         runsOn,
         resultChannel,
+        runsOn === 'local' ? urgencyCriteria : '',
       );
       const created = await createJob(buildCronJobInput(draft));
       showCronLoginWallWarning(created, { warning: cc.loginWallWarning, openSite: cc.loginWallOpenSite });
@@ -174,6 +180,18 @@ export const CronSimpleCreate: React.FC<CronSimpleCreateProps> = ({ onDone }) =>
           minRows={3}
         />
       </FormField>
+
+      {runsOn === 'local' && (
+        <FormField label={cc.urgencyCriteriaLabel} hint={cc.urgencyCriteriaHint}>
+          <Input
+            value={urgencyCriteria}
+            onChange={(e) => setUrgencyCriteria(e.target.value)}
+            maxLength={CRON_URGENCY_CRITERIA.MAX_CHARS}
+            placeholder={cc.urgencyCriteriaPlaceholder}
+            data-testid="cron-simple-urgency-criteria"
+          />
+        </FormField>
+      )}
 
       <FormField label={cc.simpleNameLabel}>
         <Input
@@ -227,7 +245,13 @@ export const CronSimpleCreate: React.FC<CronSimpleCreateProps> = ({ onDone }) =>
 
         {needTime && (
           <FormField label={cc.simpleTimeLabel}>
-            <Input type="time" value={time} onChange={(e) => setTime(e.target.value)} />
+            <TimeInput24
+              testId="cron-simple-time"
+              value={time}
+              onChange={setTime}
+              hourLabel={cc.simpleHourLabel}
+              minuteLabel={cc.simpleMinuteLabel}
+            />
           </FormField>
         )}
         {needTime && time.endsWith(':00') && (

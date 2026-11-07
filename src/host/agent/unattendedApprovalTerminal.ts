@@ -19,3 +19,29 @@ export function takeUnattendedApprovalTimeout(sessionId: string): string | undef
   if (code) pending.delete(sessionId);
   return code;
 }
+
+/** 降级拒绝（30 分钟无人批准）的执行留痕：run 照常完成，只记下哪一步没被批准。 */
+export interface UnattendedApprovalDenial {
+  tool: string;
+  argsPreview?: string;
+  requestedAt: number;
+  code: string;
+}
+
+const denials = new Map<string, UnattendedApprovalDenial[]>();
+
+export function noteUnattendedApprovalDenial(sessionId: string, denial: UnattendedApprovalDenial): void {
+  denials.set(sessionId, [...(denials.get(sessionId) ?? []), denial]);
+}
+
+export function takeUnattendedApprovalDenials(sessionId: string): UnattendedApprovalDenial[] {
+  const list = denials.get(sessionId) ?? [];
+  denials.delete(sessionId);
+  return list;
+}
+
+/** 给模型看的降级拒绝说明：不重试、继续其他来源、最终报告点名。 */
+export function buildUnattendedDegradeFeedback(tool: string, waitedMs: number): string {
+  return `${UNATTENDED_APPROVAL_TIMEOUT}: 工具 ${tool} 的审批等了 ${Math.round(waitedMs / 60_000)} 分钟仍无人批准（当前无人在场），已自动拒绝。`
+    + '不要重试这一步；继续处理其他来源，并在最终报告里写明「未读取：<来源>（需要你批准）」。';
+}

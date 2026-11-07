@@ -32,6 +32,7 @@ import { groupRunsByTask, type CronRunGroups } from '@shared/cronRunDigest';
 import { recoveryLoadLightsTurn, runtimeStatusCountsAsRunning } from './parkedContinueTurn';
 import { hostStampPredatesTerminal } from './terminalRunGuardStore';
 import { bindInitializedSessionBroadcasts } from './sessionStoreBroadcasts';
+import { openInitialSession } from './sessionBootDraft';
 
 const logger = createLogger('SessionStore');
 
@@ -1085,11 +1086,16 @@ export async function reloadSessionsForAuthChange(options?: { principalChanged?:
   if (currentSessionId) {
     return;
   }
-  if (sessions.length > 0) {
-    await store.switchSession(sessions[0].id);
-  } else {
-    await store.createSession('新对话', { workingDirectory: null });
-  }
+  await openBootSession(store, sessions);
+}
+
+function openBootSession(store: SessionStore, sessions: SessionWithMeta[]): Promise<void> {
+  return openInitialSession({
+    sessions,
+    isBlank: isBlankNewSession,
+    switchSession: store.switchSession,
+    createSession: () => store.createSession('新对话', { workingDirectory: null }),
+  });
 }
 
 export async function initializeSessionStore(): Promise<void> {
@@ -1107,10 +1113,8 @@ export async function initializeSessionStore(): Promise<void> {
     if (currentSessionId) {
       // A user action may create/select a session while the initial list request is
       // still in flight. Keep that newer session and only finish wiring listeners.
-    } else if (sessions.length > 0) {
-      await store.switchSession(sessions[0].id);
     } else {
-      await store.createSession('新对话', { workingDirectory: null });
+      await openBootSession(store, sessions);
     }
   } finally {
     performance.mark('boot:session-settled');

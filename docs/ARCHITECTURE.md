@@ -754,3 +754,6 @@ Context Health 的 bySource 是当前消息、system prompt 与已挂载技能�
 | 083 | 桌面常驻宿主：执行进程与 Tauri 壳解耦（关窗/Quit 不杀任务；daemon 主、壳/CLI/手机从；`owner_epoch` 定主；合盖仍 OS-owned） | 已接受（10-06，方案 A） | [ADR-083](./architecture/decisions/ADR-083-resident-host.md) |
 | 084 | 人审一次性支付凭据原语（Stripe Link 官方 CLI；审批卡与 secureref 托管填表；US/CA；不含 PAN） | 挂起（爸 10-14） | [ADR-084](./architecture/decisions/ADR-084-one-shot-payment-card.md) |
 | 087 | 云端 run 账本（账户、runId、四条触发、终态、同步取消、持久 FIFO 与配额、队列位置；定时由账本排程） | 已接受（方案 B，爸 10-29） | [ADR-087](./architecture/decisions/ADR-087-cloud-run-ledger.md) |
+| 088 | Jev 浏览器步骤（`execute_goal`）默认开启（保留 `CODE_AGENT_BROWSER_JEV_STEP=0` 关闭开关；敏感操作确认不放宽；无可用 Jev 路由时行为不变） | 已接受（方案 A，11-03） | [ADR-088](./architecture/decisions/ADR-088-jev-browser-step-default-on.md) |
+| 088 | 屏幕控制敏感步骤交回用户（密码/验证码/支付 Neo 不代做；forceConfirm 交回卡承载，任何按钮都不执行、永不铸授权） | 已拍板（方案 B，11-03） | `./architecture/sensitive-step-handback.md` |
+| 089 | Web 版通道账号管理保持仅桌面版（Web 只读查看账号与状态；添加/连接断开/编辑/删除在桌面版；开放 Web 管理需另开单做鉴权与远程凭据写入安全评估） | 已接受（方案 A，11-04） | [ADR-089](./architecture/decisions/ADR-089-web-channels-desktop-only.md) |

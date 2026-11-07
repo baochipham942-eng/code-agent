@@ -94,6 +94,10 @@ export const SERVICE_TIMEOUTS = {
   BOOTSTRAP: 30_000,
 } as const;
 
+export const NOTIFICATION_BUDGET = {
+  WINDOW_MS: 15 * 60_000,
+} as const;
+
 /** 用户交互超时 */
 export const INTERACTION_TIMEOUTS = {
   /** 无交互 renderer 时的用户问题等待超时 */
@@ -109,6 +113,8 @@ export const INTERACTION_TIMEOUTS = {
    * 等待用户，等待期间由 beginHumanWait/endHumanWait 暂停该会话的工具计时。
    */
   PARKED_APPROVAL: 86_400_000,
+  /** cron/heartbeat 停车审批无人应答的降级期限（30 分钟）；channel/voice 仍走上面的 24h 兜底。 */
+  UNATTENDED_PARKED_APPROVAL_DEGRADE: 1_800_000,
   /** MCP Elicitation 用户输入超时 */
   MCP_ELICITATION: 60_000,
   /**
@@ -622,6 +628,11 @@ export const CRON_GUARDRAILS = {
    * 存量值视为未设置，走指数退避；新代码显式写下的其它值不受影响。
    */
   LEGACY_DEFAULT_RETRY_DELAY_MS: 5_000,
+  /**
+   * timeout 的旧版默认值：旧保存路径把未设置写成 `|| 60000`，存量 agent 任务读回都是 60000。
+   * agent 分支把它与未设置同等对待（不限时），否则存量任务会在 60s 被误杀；shell 分支不受影响。
+   */
+  LEGACY_DEFAULT_TIMEOUT_MS: 60_000,
 } as const;
 
 /**
@@ -660,6 +671,16 @@ export const WEB_SERVER_SHUTDOWN_TIMEOUTS = {
 } as const;
 
 /**
+ * connector_required 连接卡判读前的 CLI 状态探测等待（N-CONNECTOR-POLISH-AUDIT-FU1-FU2）。
+ * 轮级缓存冷（开机后首张卡）时，发卡点先等在途/新起一次 CLI 状态探测这么多毫秒；
+ * 到点或失败保持 fail-open（不发卡）但 warn 出可区分原因。只有本轮声明了 CLI
+ * 连接器且缓存缺它的条目才会等——没有 CLI 声明或缓存已暖时零额外探测。
+ */
+export const CONNECTOR_CARD_TIMEOUTS = {
+  CLI_STATUS_PROBE_WAIT_MS: 3_000,
+} as const;
+
+/**
  * CLI durable run 终态落库重试（N-CLI-DURABLE-TERMINAL-LOST）：夜巡 8 进程共库时
  * terminalCLIDurableRun 两次零退避重试全灭、run 永远停在非终态（exit 0 会话遗留 78 条）。
  * 仓储层已有 IMMEDIATE+busy 重试；这组是 CLI 退出前的最后一道：busy 类错误带退避重试，
@@ -670,4 +691,22 @@ export const CLI_DURABLE_TERMINAL = {
   RETRY_ATTEMPTS: 5,
   /** 退避基数（毫秒）：第 n 次重试前等待 BASE << (n-1) */
   RETRY_BACKOFF_BASE_MS: 200,
+} as const;
+
+/** Neo 托管判官（N-JEV-NEO-KEY）客户端退避时长 */
+export const JEV_HOSTED_TIMEOUTS = {
+  /** 持续性服务故障（401/404/5xx/网络/超时）后短退避：避免每次判官调用都先付一次云端往返再降级 */
+  SERVICE_FAILURE_BACKOFF: 5 * 60_000,
+} as const;
+
+/** 自动化页「待过目」收件箱的后台刷新（N-CRON-REVIEW-COUNT-LIVE） */
+export const CRON_REVIEW_INBOX_TIMEOUTS = {
+  /** 页面可见时的轮询间隔：定时任务在页面停着时跑完，数字无需切页就更新 */
+  POLL_INTERVAL: 10_000,
+} as const;
+
+/** 渲染端系统通知投递超时 */
+export const OS_NOTIFICATION_TIMEOUTS = {
+  /** 读取系统通知权限（聚合 native 探测）的上限，超时按 unknown 继续发送 */
+  PERMISSION_READ_MS: 3_000,
 } as const;

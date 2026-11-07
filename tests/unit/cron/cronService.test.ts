@@ -1174,6 +1174,38 @@ describe('N-TRIGGER-CHANNEL-EVENT event-triggered jobs', () => {
     };
   }
 
+  // N-TRIGGER-OBSERVE-MODE ①④：新建 event 自动化缺省仅观察；普通 create/update 都改不到 auto，
+  // 只有 setEventActionMode（确认弹窗动作）能切，且先写自动化变更事件。
+  it('creates event jobs in observe mode; only setEventActionMode reaches auto and records a change event', async () => {
+    const service = new CronService();
+    const job = await service.createJob(eventJobDefinition({ actionMode: 'auto' }));
+    expect(job.actionMode).toBe('observe');
+
+    const updated = await service.updateJob(job.id, { actionMode: 'auto', name: 'renamed' });
+    expect(updated?.actionMode).toBe('observe');
+    expect(automationState.recordEvent).not.toHaveBeenCalledWith(expect.objectContaining({ event: 'action_mode_changed' }));
+
+    automationState.recordEvent.mockResolvedValueOnce({ id: `external_event:${job.id}` } as never);
+    const switched = await service.setEventActionMode(job.id, 'auto');
+    expect(switched?.actionMode).toBe('auto');
+    expect(service.getJob(job.id)?.actionMode).toBe('auto');
+    expect(automationState.recordEvent).toHaveBeenCalledWith(expect.objectContaining({
+      sourceRefId: job.id,
+      event: 'action_mode_changed',
+      configPatch: expect.objectContaining({ actionMode: 'auto' }),
+    }));
+
+    // 变更事件记不下来 → 切换不生效（auto 必须留在变更历史里）。
+    automationState.recordEvent.mockRejectedValueOnce(new Error('db locked'));
+    await expect(service.setEventActionMode(job.id, 'observe')).rejects.toThrow('db locked');
+    expect(service.getJob(job.id)?.actionMode).toBe('auto');
+
+    const timeJob = await service.createJob(shellJob('minutes'));
+    expect(timeJob.actionMode).toBeUndefined();
+    await expect(service.setEventActionMode(timeJob.id, 'auto')).rejects.toThrow('event-triggered automations only');
+    await service.shutdown();
+  });
+
   // 验收①：非法 event 配置在 createJob 就被拒（英文错误、信息可定位）。
   it('rejects event jobs violating creation rules at createJob', async () => {
     const service = new CronService();

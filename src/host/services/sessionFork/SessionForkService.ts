@@ -33,6 +33,28 @@ export interface SessionForkServiceOptions {
   now?: () => number;
   getRuntimeStatus?: (sessionId: string) => string | undefined;
   ownerUserId?: string | null;
+  /**
+   * 新建会话默认模型解析（imported 源分支出 native 子会话时用）。缺省懒加载
+   * resolveSessionDefaultModelConfig —— 与 SessionLifecycleAppService.createSession
+   * 同一真源，不读全局单例，测试可注入。
+   */
+  resolveDefaultModelConfig?: () => Promise<{ provider: string; model: string }>;
+}
+
+async function defaultResolveDefaultModelConfig(): Promise<{ provider: string; model: string }> {
+  const { resolveSessionDefaultModelConfig } = await import('../core/sessionDefaults');
+  return resolveSessionDefaultModelConfig();
+}
+
+/**
+ * Imported external-history sessions (engine.origin 'import', kind claude_code/codex_cli)
+ * must fork into a Neo-native child: the imported engine identity and its placeholder
+ * history model never carry into the child. Native-kind engines (e.g. a portable Neo
+ * export import) keep the regular native fork path.
+ */
+function isImportedExternalHistorySource(session: Session): boolean {
+  const engine = session.engine;
+  return engine?.origin === 'import' && engine.kind !== 'native';
 }
 
 function defaultCreateId(kind: 'fork' | 'child'): string {
@@ -56,6 +78,7 @@ export class SessionForkService {
   private readonly now: NonNullable<SessionForkServiceOptions['now']>;
   private readonly getRuntimeStatus?: SessionForkServiceOptions['getRuntimeStatus'];
   private readonly ownerUserId: string | null | undefined;
+  private readonly resolveDefaultModelConfig: NonNullable<SessionForkServiceOptions['resolveDefaultModelConfig']>;
 
   constructor(
     private readonly database: SessionForkServiceDatabase,
@@ -65,6 +88,7 @@ export class SessionForkService {
     this.now = options.now ?? Date.now;
     this.getRuntimeStatus = options.getRuntimeStatus;
     this.ownerUserId = options.ownerUserId;
+    this.resolveDefaultModelConfig = options.resolveDefaultModelConfig ?? defaultResolveDefaultModelConfig;
   }
 
   async createFork(request: CreateSessionForkRequest): Promise<CreateSessionForkResult> {
@@ -79,8 +103,9 @@ export class SessionForkService {
     }
 
     const engineKind = sourceSession.engine?.kind ?? 'native';
+    const importedSource = isImportedExternalHistorySource(sourceSession);
     let contextDeliveryMode: CreateForkRepositoryInput['contextDeliveryMode'] = 'neo_native_prefix';
-    if (engineKind !== 'native') {
+    if (engineKind !== 'native' && !importedSource) {
       const capability = getExternalForkContextCapability(engineKind);
       if (capability.deliveryMode !== 'validated_context_handoff') {
         throw new SessionForkError(
@@ -90,6 +115,12 @@ export class SessionForkService {
       }
       contextDeliveryMode = 'validated_context_handoff';
     }
+    // Imported external history forks as a native child on the app default model —
+    // the placeholder `claude-history`/`codex-history` model and the external engine
+    // identity must not leak into the continuation session.
+    const nativeChildModel = importedSource
+      ? await this.resolveDefaultModelConfig()
+      : undefined;
 
     const repositoryInput: CreateForkRepositoryInput = {
       sourceSessionId: sourceSession.id,
@@ -101,6 +132,7 @@ export class SessionForkService {
       childTitle: forkTitle(sourceSession.title),
       workspaceMode: request.workspaceMode,
       contextDeliveryMode,
+      ...(nativeChildModel ? { nativeChildModel } : {}),
       childWorkingDirectory: sourceSession.workingDirectory,
       now: this.now(),
     };

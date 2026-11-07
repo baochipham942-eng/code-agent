@@ -110,7 +110,14 @@ describe('browser secretRef guard', () => {
     expect(hop.success).toBe(false);
     expect(hop.metadata).toMatchObject({ code: 'SECRET_REF_ORIGIN_MISMATCH', userActionRequired: true });
     expect(hop.error).toContain('This step needs you');
+    expect(hop.error).toContain('Nothing was typed');
     expect(hop.error).toContain(ORIGINS);
+    // Neutral wording only: whether the browser is really handed to the user is the
+    // managed adapter's call (takeover), never this guard's claim. The legacy
+    // browserAction path returns this text verbatim, so it must not promise a
+    // handover that never happens there.
+    expect(hop.error).not.toContain('belongs to the user');
+    expect(hop.error).not.toContain('Continue');
 
     mocks.state.url = 'https://github.com/login';
     delete process.env[ORIGINS];

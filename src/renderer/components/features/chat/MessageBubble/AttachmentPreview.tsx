@@ -483,6 +483,14 @@ const AttachmentItem: React.FC<{
     return <SpreadsheetBlock spec={displayAttachment.sheetsJson} filePath={localFilePath} />;
   }
 
+  // csv 附件：renderer 侧从已读文本构建的 sheetsJson（category 保持 data，模型侧
+  // converter 不变）。不传 filePath——DocEdit 定点反馈锚的是 xlsx 工作表坐标系，
+  // csv 没有那套语义，列选中 + 操作栏（可视化等）不依赖 filePath。
+  if (category === 'data' && displayAttachment.sheetsJson
+    && displayAttachment.name.toLowerCase().endsWith('.csv')) {
+    return <SpreadsheetBlock spec={displayAttachment.sheetsJson} />;
+  }
+
   if (category === 'document' && displayAttachment.docxJson) {
     return <DocumentBlock spec={displayAttachment.docxJson} filePath={localFilePath} />;
   }

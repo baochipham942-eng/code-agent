@@ -10,11 +10,14 @@ import ipcService from '../../../services/ipcService';
 import { cronClient } from '../../../services/cronClient';
 import { useI18n } from '../../../hooks/useI18n';
 import { useAppStore } from '../../../stores/appStore';
+import { formatDateTime } from '../cron/types';
+import { isCronExecutionPermissionDenialError } from '../chat/cronRunSessionStatus';
 import { Button } from '../../primitives/Button';
 import { SettingsSection } from '../settings/SettingsLayout';
 
 type RoleDetailText = ReturnType<typeof useI18n>['t']['expert']['roleDetail'];
 type CronStatusText = ReturnType<typeof useI18n>['t']['cronCenter']['status'];
+type CronRunRecordText = ReturnType<typeof useI18n>['t']['cronRunRecord'];
 
 const EMPTY_JOBS: RoleBoundCronJob[] = [];
 
@@ -24,7 +27,7 @@ function formatAutomationSchedule(schedule: CronScheduleConfig, text: RoleDetail
   }
   if (schedule.type === 'at') {
     const timestamp = typeof schedule.datetime === 'number' ? schedule.datetime : Date.parse(schedule.datetime);
-    const time = Number.isFinite(timestamp) ? new Date(timestamp).toLocaleString() : String(schedule.datetime);
+    const time = Number.isFinite(timestamp) ? formatDateTime(timestamp, lang) : String(schedule.datetime);
     return text.automationAt.replace('{time}', time);
   }
   if (schedule.type === 'event') {
@@ -44,13 +47,21 @@ function statusLabel(status: RoleBoundCronJob['lastStatus'], words: CronStatusTe
   return words[status] ?? words.none;
 }
 
-function lastRunLine(job: RoleBoundCronJob, text: RoleDetailText, words: CronStatusText): string {
-  if (job.lastRunAt === undefined) return text.automationLastNever;
-  const time = new Date(job.lastRunAt).toLocaleString();
-  const status = statusLabel(job.lastStatus, words);
-  if (job.lastStatus === 'failed' && job.lastError) {
-    return text.automationLastFailed.replace('{time}', time).replace('{status}', status).replace('{reason}', job.lastError);
+// 与运行记录状态行同一口径（N-UI-CRON-RUN-RECORD-CLEAR-FU1）：失败细分「命令被拒/没跑成」，
+// 取消、中断也用运行记录文案；host 原始执行错误（如 ECONNRESET socket hang up）绝不进专家页。
+function cronRunRecordStatus(job: RoleBoundCronJob, record: CronRunRecordText): string | null {
+  if (job.lastStatus === 'failed') {
+    return isCronExecutionPermissionDenialError(job.lastError) ? record.failedDenied : record.failedGeneric;
   }
+  if (job.lastStatus === 'cancelled') return record.cancelled;
+  if (job.lastStatus === 'interrupted') return record.interrupted;
+  return null;
+}
+
+function lastRunLine(job: RoleBoundCronJob, text: RoleDetailText, words: CronStatusText, record: CronRunRecordText, lang: CronHumanLang): string {
+  if (job.lastRunAt === undefined) return text.automationLastNever;
+  const time = formatDateTime(job.lastRunAt, lang);
+  const status = cronRunRecordStatus(job, record) ?? statusLabel(job.lastStatus, words);
   return text.automationLastRun.replace('{time}', time).replace('{status}', status);
 }
 
@@ -75,6 +86,7 @@ export const RoleRoutinesSection: React.FC<RoleRoutinesSectionProps> = ({
   const { t, language } = useI18n();
   const text = t.expert.roleDetail;
   const statusWords = t.cronCenter.status;
+  const recordWords = t.cronRunRecord;
   const setShowCronCenter = useAppStore((state) => state.setShowCronCenter);
   const [rows, setRows] = useState(jobs);
   const [busy, setBusy] = useState<{ id: string; action: 'toggle' | 'run' } | null>(null);
@@ -113,7 +125,7 @@ export const RoleRoutinesSection: React.FC<RoleRoutinesSectionProps> = ({
       ) : (
         <div className="space-y-2" data-testid="role-bound-automations-list">
           {rows.map((job) => {
-            const nextRun = job.nextRunAt ? text.automationNextRun.replace('{time}', new Date(job.nextRunAt).toLocaleString()) : text.automationNoNextRun;
+            const nextRun = job.nextRunAt ? text.automationNextRun.replace('{time}', formatDateTime(job.nextRunAt, language)) : text.automationNoNextRun;
             const toggling = busy?.id === job.id && busy.action === 'toggle';
             const running = busy?.id === job.id && busy.action === 'run';
             const failed = job.lastStatus === 'failed';
@@ -123,7 +135,7 @@ export const RoleRoutinesSection: React.FC<RoleRoutinesSectionProps> = ({
                   <div className="min-w-0">
                     <div className="truncate text-sm text-zinc-200">{job.name}</div>
                     <div className="mt-1 text-xs text-zinc-500">{formatAutomationSchedule(job.schedule, text, language)} · {nextRun}</div>
-                    <div data-testid={`role-bound-automation-last-${job.id}`} className={`mt-1 text-xs ${failed ? 'text-badge-danger' : 'text-zinc-500'}`}>{lastRunLine(job, text, statusWords)}</div>
+                    <div data-testid={`role-bound-automation-last-${job.id}`} className={`mt-1 text-xs ${failed ? 'text-badge-danger' : 'text-zinc-500'}`}>{lastRunLine(job, text, statusWords, recordWords, language)}</div>
                   </div>
                   <div className="flex flex-wrap items-center gap-1.5 text-[11px]">
                     <span className={`rounded px-1.5 py-0.5 ${job.enabled ? 'bg-emerald-500/10 text-badge-success' : 'bg-zinc-700/60 text-zinc-400'}`}>{job.enabled ? text.automationStatusEnabled : text.automationStatusDisabled}</span>

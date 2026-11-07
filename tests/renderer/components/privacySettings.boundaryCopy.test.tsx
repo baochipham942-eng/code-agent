@@ -61,7 +61,7 @@ describe('PrivacySettings boundary copy', () => {
     const link = screen.getByRole('link', { name: '查看数据流与能力边界说明' });
     fireEvent.click(link);
     expect(openExternalLink).toHaveBeenCalledWith(
-      'https://github.com/baochipham942-eng/code-agent/blob/main/docs/NOTICE.md',
+      'https://github.com/neo-cowork/code-agent/blob/main/docs/NOTICE.md',
     );
   });
 });

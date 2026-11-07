@@ -12,7 +12,8 @@ import type {
   WebhookAction,
 } from '@shared/contract';
 import { validateEventScheduleConstraints } from '@shared/cronEventValidation';
-import { CRON_EVENT_TRIGGER } from '@shared/constants';
+import { isCronPermissionDeniedMarker } from '@shared/cronPermissionDenied';
+import { CRON_AGENT_TYPES, CRON_EVENT_TRIGGER } from '@shared/constants';
 import { formatCronExpressionLabel, humanizeEverySchedule, type CronHumanLang } from '@shared/cronHumanize';
 
 export interface CronJobDraft {
@@ -407,6 +408,9 @@ export function buildCronJobInput(draft: CronJobDraft): Omit<CronJobDefinition, 
     if (!draft.agentType.trim()) {
       throw new Error('Agent 类型不能为空');
     }
+    if (!(CRON_AGENT_TYPES as readonly string[]).includes(draft.agentType.trim())) {
+      throw new Error(`Agent 类型“${draft.agentType.trim()}”不存在，可选值：${CRON_AGENT_TYPES.join('、')}。`);
+    }
     if (!draft.agentPrompt.trim()) {
       throw new Error('Prompt 不能为空');
     }
@@ -465,11 +469,27 @@ export function buildCronJobInput(draft: CronJobDraft): Omit<CronJobDefinition, 
   };
 }
 
-export function formatDateTime(value?: string | number): string {
+/**
+ * 详情页时间（FB-567/FB-570）：zh 固定 24 小时制 `YYYY/MM/DD HH:mm`（手工拼，跟
+ * formatRunListTime 同一来源，绝不裸 toLocaleString() 跟机器 locale 走）；en 维持
+ * en-US 原样。运行列表仍用 formatRunListTime（月/日短格式，避免撑出容器）。
+ */
+export function formatDateTime(value?: string | number, lang: CronHumanLang = 'zh'): string {
   if (value == null) return '未设置';
-  const date = typeof value === 'number' ? new Date(value) : new Date(value);
+  const date = new Date(value);
   if (Number.isNaN(date.getTime())) return '无效时间';
-  return date.toLocaleString();
+  if (lang === 'en') return date.toLocaleString('en-US');
+  const pad = (part: number) => String(part).padStart(2, '0');
+  return `${date.getFullYear()}/${pad(date.getMonth() + 1)}/${pad(date.getDate())} ${pad(date.getHours())}:${pad(date.getMinutes())}`;
+}
+
+/** 运行记录表的时间：月/日 + 时/分。详情仍用完整本地时间，避免两列日期把表撑出容器。 */
+export function formatRunListTime(value?: string | number): string {
+  if (value == null) return '—';
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return '—';
+  const pad = (part: number) => String(part).padStart(2, '0');
+  return `${pad(date.getMonth() + 1)}/${pad(date.getDate())} ${pad(date.getHours())}:${pad(date.getMinutes())}`;
 }
 
 export function formatDuration(ms?: number): string {
@@ -477,6 +497,12 @@ export function formatDuration(ms?: number): string {
   if (ms < 1000) return `${ms}ms`;
   if (ms < 60_000) return `${(ms / 1000).toFixed(1)}s`;
   return `${(ms / 60_000).toFixed(1)}m`;
+}
+
+/** 单次运行/每日小计的美元显示（保留 4 位小数）。无模型调用与云端运行都是 dash。 */
+export function formatRunCostUsd(value?: number, runsOn?: 'local' | 'cloud'): string {
+  if (runsOn === 'cloud' || value == null || !Number.isFinite(value)) return '—';
+  return `$${value.toFixed(4)}`;
 }
 
 /** event 摘要的显示名（来自通道目录）：有名字用名字，缺了回落 id。 */
@@ -492,7 +518,7 @@ export function formatScheduleSummary(
 ): string {
   switch (job.schedule.type) {
     case 'at':
-      return `一次性 · ${formatDateTime(job.schedule.datetime)}`;
+      return `一次性 · ${formatDateTime(job.schedule.datetime, lang)}`;
     case 'every': {
       if ((job.schedule.unit as string) === 'weeks') {
         return `不支持的周间隔 · ${job.schedule.interval} weeks`;
@@ -564,6 +590,20 @@ export function getExecutionStatusMeta(status: CronJobStatus): { label: string; 
     default:
       return { label: '待执行', className: 'text-zinc-300 bg-zinc-500/10' };
   }
+}
+
+/**
+ * 完成态运行是否要按「需处理」呈现（N-CRON-RUN-COMPLETED-BUT-DENIED）：结果带
+ * permissionDenied 标记 = 有命令没获批准且没有产出。状态仍是 completed——调用方
+ * 只换徽章文案与配色，不改任何状态语义。旧结果无标记恒 false（绿色成功不变）。
+ */
+export function isPermissionDeniedExecution(
+  execution: Pick<CronJobExecution, 'status' | 'result'>,
+): boolean {
+  const result = execution.result;
+  return execution.status === 'completed'
+    && typeof result === 'object' && result !== null
+    && isCronPermissionDeniedMarker((result as { permissionDenied?: unknown }).permissionDenied);
 }
 
 export function prettyJson(value: unknown): string {

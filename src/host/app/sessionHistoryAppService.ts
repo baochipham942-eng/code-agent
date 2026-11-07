@@ -62,6 +62,7 @@ import { getSessionManager } from '../services/infra/sessionManager';
 import { createLogger } from '../services/infra/logger';
 import { getProjectService } from '../services/project/projectService';
 import { SessionForkService } from '../services/sessionFork/SessionForkService';
+import { currentSessionForkOwnerScopeId } from '../services/sessionFork/ownerScope';
 import { planSessionForkImport } from '../services/sessionFork/portability';
 import type {
   TrustedSingleRootGitProjectWorkspace,
@@ -153,8 +154,9 @@ export class SessionHistoryAppService {
 
   async importSessionFork(params: ImportSessionForkRequest): Promise<ImportSessionForkResponse> {
     const database = getDatabase();
-    const ownerUserId = getAuthService().getCurrentUser()?.id ?? null;
-    const ownerScopeId = ownerUserId ?? LOCAL_SESSION_FORK_OWNER_SCOPE_ID;
+    const ownerScopeId = this.currentSessionForkOwnerScope();
+    // 台账 ownerScopeId 与可空 user id 的既有映射口径（同 SessionForkPortabilityRepository）
+    const ownerUserId = ownerScopeId === LOCAL_SESSION_FORK_OWNER_SCOPE_ID ? null : ownerScopeId;
     const targetProjectId = this.requireSessionForkProject(params.targetProjectId);
     const plan = planSessionForkImport({
       envelope: params.envelope,
@@ -733,7 +735,9 @@ export class SessionHistoryAppService {
   }
 
   private currentSessionForkOwnerScope(): string {
-    return getAuthService().getCurrentUser()?.id ?? LOCAL_SESSION_FORK_OWNER_SCOPE_ID;
+    // 口径单一真源在 services/sessionFork/ownerScope：importSessionFork 台账与
+    // importRecentChats 预检（agentEngine 域）共用，别在本类再写一份表达式。
+    return currentSessionForkOwnerScopeId();
   }
 
   private requireSessionForkProject(projectId: string): string {

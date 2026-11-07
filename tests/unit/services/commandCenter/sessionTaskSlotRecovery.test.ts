@@ -205,7 +205,7 @@ describe('session task slot crash recovery', () => {
     ]);
     expect(wakeForegroundBrain).toHaveBeenCalledTimes(1);
     expect(manager.cancelBackgroundTask).toHaveBeenCalledTimes(1);
-    expect(manager.cancelBackgroundTask).toHaveBeenCalledWith(first.task.id);
+    expect(manager.cancelBackgroundTask).toHaveBeenCalledWith(first.task.id, 'idle-reaped');
     expect(projectTerminalResult).toHaveBeenCalledWith(
       expect.objectContaining({ id: first.task.id, status: 'failed' }),
       'failed',
@@ -247,7 +247,7 @@ describe('session task slot crash recovery', () => {
       'failed',
     );
     expect(manager.cancelBackgroundTask).toHaveBeenCalledTimes(1);
-    expect(manager.cancelBackgroundTask).toHaveBeenCalledWith(first.task.id);
+    expect(manager.cancelBackgroundTask).toHaveBeenCalledWith(first.task.id, 'idle-reaped');
     center.dispose();
   });
 

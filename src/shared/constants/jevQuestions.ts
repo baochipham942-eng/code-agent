@@ -26,6 +26,13 @@ const JEV_INPUT_USD_PER_MTOK = 0.042;
 /** 单次 systemOne 调用的默认超时（ms）。 */
 export const JEV_TIMEOUT_MS = 5000;
 
+/**
+ * Neo 托管判官全局熔断（jev_global_fuse）后的客户端退避时长（ms，N-JEV-NEO-KEY）：
+ * 到点前不再发起托管调用，避免持续打 503。用户日限（jev_user_daily_limit）不退避
+ * 固定时长，而是直接退避到下一个 UTC 日界（见 host/model/jevHostedQuota.ts）。
+ */
+export const JEV_HOSTED_FUSE_RETRY_AFTER_MS = 30 * 60 * 1000;
+
 /** systemOne 问题规格：noul 出 0-1 概率；choice 出选项 + 校准 confidence；score 出有序 rubric 插值 + confidence。 */
 export interface JevQuestionSpec {
   type: 'noul' | 'choice' | 'score';

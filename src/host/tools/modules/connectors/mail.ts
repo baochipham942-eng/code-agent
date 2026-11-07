@@ -19,6 +19,11 @@ import type {
   ToolResult,
 } from '../../../protocol/tools';
 import { getConnectorRegistry } from '../../../connectors';
+import {
+  appleScriptFailureLogDetail,
+  describeAppleScriptFailure,
+  isAppleScriptFailure,
+} from '../../../connectors/native/osascript';
 import { createVirtualArtifact } from '../../artifacts/artifactMeta';
 import { mailSchema as schema } from './mail.schema';
 
@@ -33,7 +38,7 @@ function formatMessage(item: {
   receivedAtMs: number | null;
   read: boolean;
 }): string {
-  const received = item.receivedAtMs ? new Date(item.receivedAtMs).toLocaleString('zh-CN') : '未知时间';
+  const received = item.receivedAtMs ? new Date(item.receivedAtMs).toLocaleString('zh-CN') : '收信时间无法解析';
   const scope = [item.account, item.mailbox].filter(Boolean).join(' / ');
   return `- #${item.id} ${item.subject}\n  ${scope || 'Mail'} | ${item.sender} | ${received}${item.read ? ' | 已读' : ' | 未读'}`;
 }
@@ -163,7 +168,11 @@ async function executeMail(
       return {
         ok: true,
         output,
-        meta: buildMailMeta(ctx, action, output, { count: messages.length, messages }),
+        meta: buildMailMeta(ctx, action, output, {
+          count: messages.length,
+          messages,
+          receivedTimeParsed: messages.every((m) => Boolean(m.receivedAtMs)),
+        }),
       };
     }
 
@@ -180,7 +189,7 @@ async function executeMail(
       attachments?: string[];
       attachmentCount?: number;
     };
-    const received = message.receivedAtMs ? new Date(message.receivedAtMs).toLocaleString('zh-CN') : '未知时间';
+    const received = message.receivedAtMs ? new Date(message.receivedAtMs).toLocaleString('zh-CN') : '收信时间无法解析';
     const attachmentCount = typeof message.attachmentCount === 'number'
       ? message.attachmentCount
       : (message.attachments?.length || 0);
@@ -195,15 +204,25 @@ async function executeMail(
         account: message.account,
         mailbox: message.mailbox,
         receivedAtMs: message.receivedAtMs,
+        receivedTimeParsed: Boolean(message.receivedAtMs),
         read: message.read,
         attachmentCount,
         attachments: message.attachments,
       }),
     };
   } catch (error) {
+    const osascriptFailure = isAppleScriptFailure(error);
+    const failure = describeAppleScriptFailure('Mail', error);
+    ctx.logger.warn('mail connector failed', {
+      connector: 'mail',
+      code: osascriptFailure ? failure.code : 'connector_error',
+      detail: appleScriptFailureLogDetail(error),
+    });
     return {
       ok: false,
-      error: `Mail connector failed: ${error instanceof Error ? error.message : String(error)}`,
+      error: osascriptFailure
+        ? failure.message
+        : `Mail connector failed: ${error instanceof Error ? error.message : String(error)}`,
     };
   }
 }

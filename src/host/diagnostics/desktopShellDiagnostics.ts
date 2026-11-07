@@ -27,20 +27,13 @@ import {
   PROD_WEB_PORT,
 } from '../../shared/devSlot';
 import { app } from '../platform';
+import { readNativeDepManifestAt } from '../runtime/nativeDepManifest';
 import { getRuntimeAssetsStatus } from '../runtime/runtimeAssetStatus';
 import { readRendererBundleStatus, resolveRendererServeDecision } from '../services/renderer/rendererBundleCache';
 
 const BOOT_DIAGNOSTICS_FILE = 'desktop-shell-boot-latest.json';
 const BOOT_DIAGNOSTICS_PATH_ENV = 'AGENT_NEO_TAURI_BOOT_DIAGNOSTICS_FILE';
 const DEFAULT_WEB_PORT = PROD_WEB_PORT;
-
-function betterSqlite3PrebuildName(): string {
-  const report = process.report.getReport() as { header?: { glibcVersionRuntime?: string } };
-  const isMusl = process.platform === 'linux'
-    && !report.header?.glibcVersionRuntime;
-  const platform = isMusl ? 'linuxmusl' : process.platform;
-  return `${platform}-${process.arch}.node`;
-}
 
 /** 与 src-tauri/src/main.rs 的 SHELL_EVENTS_FILE 常量同名，两者写同一个 `<app_data_dir>/logs` 目录。 */
 export const DESKTOP_SHELL_EVENTS_FILE = 'desktop-shell-events.ndjson';
@@ -63,6 +56,8 @@ type ResourceDefinition = {
   relativePath?: readonly string[];
   candidates?: readonly (readonly string[])[];
   executable?: boolean;
+  /** 路径取自 dist/native/manifest.json 中该模块声明的 native 文件(ADR-086),不在此处硬编码。 */
+  manifestNativeModule?: string;
 };
 
 const RESOURCE_DEFINITIONS: ResourceDefinition[] = [
@@ -100,7 +95,7 @@ const RESOURCE_DEFINITIONS: ResourceDefinition[] = [
     label: 'better-sqlite3 native module',
     kind: 'native-module',
     required: true,
-    relativePath: ['dist', 'native', 'better-sqlite3', 'prebuilds', betterSqlite3PrebuildName()],
+    manifestNativeModule: 'better-sqlite3',
   },
 ];
 
@@ -222,7 +217,45 @@ function fileStatus(filePath: string, executable: boolean | undefined): DesktopS
   }
 }
 
+function checkManifestNativeResource(root: string, definition: ResourceDefinition): DesktopShellResourceCheck {
+  const moduleId = definition.manifestNativeModule ?? '';
+  const base = {
+    id: definition.id,
+    label: definition.label,
+    kind: definition.kind,
+    required: definition.required,
+  };
+  const manifestPath = path.join(root, 'dist', 'native', 'manifest.json');
+  const loaded = readNativeDepManifestAt(root);
+  if ('reason' in loaded) {
+    return {
+      ...base,
+      path: manifestPath,
+      status: 'missing',
+      message: `native manifest dist/native/manifest.json unusable: ${loaded.reason}`,
+    };
+  }
+  const native = loaded.manifest.modules[moduleId]?.native;
+  if (typeof native !== 'string' || !native) {
+    return {
+      ...base,
+      path: manifestPath,
+      status: 'missing',
+      message: `native manifest dist/native/manifest.json declares no native file for '${moduleId}'`,
+    };
+  }
+  const targetPath = path.join(root, native);
+  const status = fileStatus(targetPath, definition.executable);
+  return {
+    ...base,
+    path: targetPath,
+    status,
+    ...(status === 'missing' ? { message: 'resource missing from packaged bundle' } : {}),
+  };
+}
+
 function checkResource(root: string, definition: ResourceDefinition): DesktopShellResourceCheck {
+  if (definition.manifestNativeModule) return checkManifestNativeResource(root, definition);
   const candidates = definition.candidates ?? (definition.relativePath ? [definition.relativePath] : []);
   const candidatePaths = candidates.map((segments) => path.join(root, ...segments));
   const presentCandidate = candidatePaths.find((candidate) => fs.existsSync(candidate));

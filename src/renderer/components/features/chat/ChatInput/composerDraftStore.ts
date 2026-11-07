@@ -7,6 +7,9 @@ export const COMPOSER_DRAFT_SEND_TIMEOUT_MS = 15_000;
 const COMPOSER_DRAFT_KEY_PREFIX = 'neo.composerDraft.v1:';
 const COMPOSER_DRAFT_HOME_KEY = `${COMPOSER_DRAFT_KEY_PREFIX}home`;
 
+/** Fired after a draft is written from outside the composer (boot adopting the home draft). */
+export const COMPOSER_DRAFT_ADOPTED_EVENT = 'neo:composer-draft-adopted';
+
 export type ComposerDraftSendOutcome = 'success' | 'failure' | 'timeout';
 
 interface ComposerDraftStorage {
@@ -62,11 +65,14 @@ function hasDraftText(text: string): boolean {
 
 export function readComposerDraft(
   key: string | null,
-  storage: Pick<ComposerDraftStorage, 'getItem'> = localStorage,
+  storage?: Pick<ComposerDraftStorage, 'getItem'>,
 ): string | null {
   if (!key) return null;
+  // Boot code also runs where localStorage does not exist (node tests, SSR): no storage = no draft.
+  const source = storage ?? (typeof localStorage === 'undefined' ? null : localStorage);
+  if (!source) return null;
   try {
-    const raw = storage.getItem(key);
+    const raw = source.getItem(key);
     if (!raw) return null;
     const parsed = JSON.parse(raw) as Partial<StoredComposerDraft>;
     if (parsed.v !== 1 || typeof parsed.text !== 'string' || !hasDraftText(parsed.text)) return null;
@@ -90,6 +96,12 @@ function writeComposerDraft(
   } catch {
     return false;
   }
+}
+
+/** Write only when the key holds no draft yet. Returns true when the key ends up holding this text. */
+export function writeComposerDraftIfAbsent(key: string | null, text: string): boolean {
+  if (readComposerDraft(key) !== null) return false;
+  return writeComposerDraft(key, text);
 }
 
 export function removeComposerDraft(

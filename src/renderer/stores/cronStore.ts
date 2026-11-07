@@ -1,4 +1,5 @@
 import { create } from 'zustand';
+import type { CronEventActionMode } from '@shared/contract/cron';
 import type {
   CronJobDefinition,
   CronJobExecution,
@@ -44,11 +45,15 @@ interface CronState {
   loadStats: () => Promise<void>;
   loadExecutions: (jobId: string, limit?: number) => Promise<void>;
   loadRecentExecutions: (limit?: number) => Promise<void>;
+  /** 有 running 执行时由面板轮询调用：一次请求同时校正「运行记录」流与各任务最近一次执行。 */
+  syncRunningExecutions: () => Promise<void>;
   refresh: () => Promise<void>;
   createJob: (input: CreateCronJobInput) => Promise<CronJobDefinition>;
   updateJob: (jobId: string, updates: UpdateCronJobInput) => Promise<CronJobDefinition | null>;
   deleteJob: (jobId: string) => Promise<boolean>;
   triggerJob: (jobId: string) => Promise<CronJobExecution | null>;
+  /** 事件自动化执行档切换（调用方负责先弹确认框）；成功后刷新任务表。 */
+  setEventActionMode: (jobId: string, mode: CronEventActionMode) => Promise<CronJobDefinition | null>;
 }
 
 async function loadLatestExecution(jobId: string): Promise<CronJobExecution | null> {
@@ -134,14 +139,18 @@ export const useCronStore = create<CronState>()((set, get) => ({
   loadExecutions: async (jobId, limit = 20) => {
     try {
       const executions = await cronClient.getExecutions(jobId, limit);
+      // host 契约返回旧→新（cronPersistence LIMIT+reverse），store 统一归一成新→旧（FB-591）。
+      const sorted = [...executions].sort(
+        (a, b) => b.scheduledAt - a.scheduledAt || (b.startedAt ?? 0) - (a.startedAt ?? 0)
+      );
       set((state) => ({
         executionsByJobId: {
           ...state.executionsByJobId,
-          [jobId]: executions,
+          [jobId]: sorted,
         },
         latestExecutions: {
           ...state.latestExecutions,
-          [jobId]: executions[0] || executions[executions.length - 1] || null,
+          [jobId]: sorted[0] ?? null,
         },
       }));
     } catch (error) {
@@ -161,6 +170,35 @@ export const useCronStore = create<CronState>()((set, get) => ({
       set({
         error: error instanceof Error ? error.message : 'Failed to load recent cron executions',
       });
+    }
+  },
+
+  syncRunningExecutions: async () => {
+    try {
+      const recent = await cronClient.getRecentExecutions(50);
+      const byId = new Map(recent.map((execution) => [execution.id, execution]));
+      let changed = false;
+      set((state) => {
+        const latestExecutions = { ...state.latestExecutions };
+        let latestChanged = false;
+        for (const [jobId, known] of Object.entries(latestExecutions)) {
+          const fresh = known ? byId.get(known.id) : undefined;
+          if (fresh && fresh.status !== known?.status) {
+            latestExecutions[jobId] = fresh;
+            latestChanged = true;
+          }
+        }
+        const recentChanged = JSON.stringify(recent) !== JSON.stringify(state.recentExecutions);
+        changed = recentChanged || latestChanged;
+        if (!changed) return state;
+        return {
+          ...(recentChanged ? { recentExecutions: recent } : {}),
+          ...(latestChanged ? { latestExecutions } : {}),
+        };
+      });
+      if (changed) await get().loadStats();
+    } catch (error) {
+      logger.warn('Failed to sync running cron executions', { error });
     }
   },
 
@@ -221,5 +259,13 @@ export const useCronStore = create<CronState>()((set, get) => ({
     const execution = await cronClient.triggerJob(jobId);
     await Promise.all([get().loadExecutions(jobId), get().loadStats()]);
     return execution;
+  },
+
+  setEventActionMode: async (jobId, mode) => {
+    const updated = await cronClient.setEventActionMode(jobId, mode);
+    if (updated) {
+      set((state) => ({ jobs: state.jobs.map((job) => (job.id === jobId ? updated : job)) }));
+    }
+    return updated;
   },
 }));

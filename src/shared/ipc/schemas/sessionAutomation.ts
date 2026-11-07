@@ -13,7 +13,9 @@ const SessionAutomationDomainRequestSchema = z.object({
   action: z.enum([
     'countPendingReview',
     'getSessionSummary',
+    'getVoidedApprovalReason',
     'listBySession',
+    'listAwaitingApprovalRuns',
     'listParkedApprovals',
     'listPendingReview',
     'markReviewed',

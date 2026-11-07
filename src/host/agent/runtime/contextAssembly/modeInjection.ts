@@ -118,6 +118,10 @@ export function generateThinkingPrompt(
   toolCalls: ToolCall[],
   toolResults: ToolResult[]
 ): string {
+  // N-CSV-ATTACH-PREVIEW-AND-VISIBILITY-FU2：这三问是自检引导，不是回复格式。
+  // 不声明「内部完成 + 自然语言作答」时，模型会把三问的结构化答案
+  // （executionStatus/gapAnalysis/nextAction 形状的裸 JSON）当成最终回复直接发给用户，
+  // 所以两段变体都要带上「内部自检 + 自然语言回复」的框定。
   const hasErrors = toolResults.some(r => !r.success);
   const toolNames = toolCalls.map(tc => tc.name).join(', ');
 
@@ -130,10 +134,11 @@ export function generateThinkingPrompt(
       `<thinking>\n` +
       `刚执行了 ${toolNames}，其中有工具失败。\n` +
       `错误信息：\n${errors}\n\n` +
-      `请分析：\n` +
+      `先在内部自检（结论只用来校准下一步行动，不进入面向用户的回复）：\n` +
       `1. 错误的根本原因是什么？\n` +
       `2. 是否需要更换策略？\n` +
       `3. 下一步应该怎么做？\n` +
+      `对用户的回复用自然语言直接回答用户的原始问题。\n` +
       `</thinking>`
     );
   }
@@ -141,10 +146,11 @@ export function generateThinkingPrompt(
   return (
     `<thinking>\n` +
     `刚执行了 ${toolNames}。\n` +
-    `请简要分析：\n` +
+    `先在内部自检（结论只用来校准下一步行动，不进入面向用户的回复）：\n` +
     `1. 执行结果是否符合预期？\n` +
     `2. 离最终目标还有多远？\n` +
     `3. 下一步的最优行动是什么？\n` +
+    `对用户的回复用自然语言直接回答用户的原始问题。\n` +
     `</thinking>`
   );
 }

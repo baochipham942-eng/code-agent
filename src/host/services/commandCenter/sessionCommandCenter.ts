@@ -23,11 +23,13 @@ import {
 import {
   SESSION_COMMAND_TASK_IDLE_TIMEOUT_MS,
   SESSION_COMMAND_TASK_APPROVAL_WAIT_CAP_MS,
+  composeSessionCommandTaskResultText,
   resolveSessionCommandTaskIdleTimeoutMs,
   resolveSessionCommandTaskApprovalWaitCapMs,
 } from '../../../shared/constants/sessionCommandCenter';
 import type { RuntimeInputMode } from '../../../shared/contract/conversationEnvelope';
 import { RUNTIME_INPUT_REDIRECT_LINE, RUNTIME_INPUT_SUPPLEMENT_LINE } from '../../../shared/constants/runtimeInput';
+import { commandMayAwaitSystemPrompt } from '../../task/macosAutomationPrompt';
 
 const logger = createLogger('SessionCommandCenter');
 
@@ -53,6 +55,8 @@ export interface SessionCommandTask {
   updatedAt: number;
   detail?: string;
   summary?: string;
+  /** 模型侧结果文本：detail 规范化后按 SESSION_COMMAND_TASK_RESULT_MODEL_MAX_CHARS 封顶（超限带截断标记）；UI/账本仍读 240 字 summary。 */
+  resultText?: string;
   attachments?: MessageAttachment[];
   options?: AgentRunOptions;
   parentRunId?: string;
@@ -140,6 +144,8 @@ export class SessionCommandCenter {
   private readonly ledgers = new Map<string, SessionTaskSlotLedger>();
   /** 在途工具调用的名字（`${taskId}:${toolCallId}` → 工具名）；tool_call_end 即删，只活在途调用。 */
   private readonly toolNamesByCallId = new Map<string, string>();
+  /** 在途 shell 调用的命令文本（key 同 toolNamesByCallId），只供回收时判断是否可能卡在系统授权框。 */
+  private readonly shellCommandsByCallId = new Map<string, string>();
   /** permission_request ids still unresolved on the agent event stream, per task. */
   private readonly pendingApprovalIdsByTask = new Map<string, Set<string>>();
   /** 本轮审批等待的起点（首张未答审批时刻）；审批清空即删，下一张重新计时。 */
@@ -374,6 +380,7 @@ export class SessionCommandCenter {
     for (const ledger of this.ledgers.values()) ledger.dispose();
     this.stopAgentEventObservation?.();
     this.toolNamesByCallId.clear();
+    this.shellCommandsByCallId.clear();
     this.pendingApprovalIdsByTask.clear();
     this.approvalWaitStartedAtByTask.clear();
   }
@@ -420,9 +427,13 @@ export class SessionCommandCenter {
         // 回收此刻审批还挂着 = 这轮到期是「等审批等到上限」造成的（豁免期内审批在，
         // 就不会被静默空闲回收），说审批句；否则按静默空闲句。
         const waitMs = this.approvalWaitMs(task.id, Date.now());
+        // 结论：macOS 没有公开 API 能关掉系统自己弹出的 TCC 自动化授权框（Apple 论坛
+        // thread/666528 里授权调用本身还能无限阻塞）；靠辅助功能替用户点系统框既要多一项
+        // 权限、又可能误点「允许」，已否决。所以回收后只能如实告诉用户框可能还在，不假装关掉。
+        const mayAwaitSystemPrompt = this.mayAwaitSystemPrompt(task.id);
         const detail = waitMs !== undefined
-          ? formatSessionTaskApprovalWaitFailure({ waitMs, locale })
-          : formatSessionCommandTaskIdleFailure({ idleMs: occupiedMs, locale });
+          ? formatSessionTaskApprovalWaitFailure({ waitMs, locale, mayAwaitSystemPrompt })
+          : formatSessionCommandTaskIdleFailure({ idleMs: occupiedMs, locale, mayAwaitSystemPrompt });
         void this.settle(task, 'failed', detail);
         this.cancelIdleRun(task.id);
       }
@@ -432,6 +443,14 @@ export class SessionCommandCenter {
         if (next) this.launch(next);
       }
     }
+  }
+
+  private mayAwaitSystemPrompt(taskId: string): boolean {
+    const prefix = `${taskId}:`;
+    for (const [key, command] of this.shellCommandsByCallId) {
+      if (key.startsWith(prefix) && commandMayAwaitSystemPrompt(command)) return true;
+    }
+    return false;
   }
 
   private launch(task: SessionCommandTask): void {
@@ -522,9 +541,13 @@ export class SessionCommandCenter {
     // tool_call_start 只记「这个 call id 是哪个工具」，供 tool_call_end 落
     // lastToolFailure.tool / 对比同名工具的后续成功；end 时即删，map 只活在途调用。
     if (event.type === 'tool_call_start') {
-      const call = event.data as { id?: unknown; name?: unknown } | undefined;
+      const call = event.data as { id?: unknown; name?: unknown; arguments?: unknown } | undefined;
       if (typeof call?.id === 'string' && typeof call.name === 'string') {
         this.toolNamesByCallId.set(`${taskId}:${call.id}`, call.name);
+        const command = (call.arguments as { command?: unknown } | undefined)?.command;
+        if (/bash|shell/i.test(call.name) && typeof command === 'string') {
+          this.shellCommandsByCallId.set(`${taskId}:${call.id}`, command);
+        }
       }
       return;
     }
@@ -567,6 +590,7 @@ export class SessionCommandCenter {
     const mapKey = `${task.id}:${result.toolCallId}`;
     const tool = this.toolNamesByCallId.get(mapKey) ?? task.progress?.lastToolStep?.tool;
     this.toolNamesByCallId.delete(mapKey);
+    this.shellCommandsByCallId.delete(mapKey);
 
     if (result.success) {
       const failure = task.progress?.lastToolFailure;
@@ -672,7 +696,7 @@ export class SessionCommandCenter {
 
   private cancelIdleRun(taskId: string): void {
     try {
-      const cancel = this.manager.cancelBackgroundTask(taskId);
+      const cancel = this.manager.cancelBackgroundTask(taskId, 'idle-reaped');
       void Promise.resolve(cancel).catch((error: unknown) => {
         logger.warn('Failed to cancel a background task after it stopped responding', {
           taskId,
@@ -703,6 +727,9 @@ export class SessionCommandCenter {
       detail,
       status === 'completed' ? '任务已完成。' : status === 'cancelled' ? '任务已取消。' : '任务执行失败。',
     );
+    // 模型侧文本与 UI/账本 summary 分家：240 字硬切会截断 SSRF 拒绝提示里的
+    // 「改走 Bash curl 审批」整句，前台拿不到可执行的下一步（FB-577）。
+    task.resultText = composeSessionCommandTaskResultText(detail);
     task.updatedAt = Date.now();
     this.projectTask(task);
     if (status === 'completed' && artifacts?.length) {
@@ -818,10 +845,13 @@ async function projectTerminalResult(
   task: SessionCommandTask,
   status: TerminalTaskStatus,
 ): Promise<void> {
+  // 模型读的是 resultText（1500 封顶带截断标记），不是 240 字 summary；
+  // backgroundTaskResult.metadata 的 reader 只取 taskId/artifacts，不拿它当 UI 文案。
+  const resultText = task.resultText ?? task.summary;
   await getSessionManager().addMessageToSession(task.sessionId, {
     id: `session-task-result-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
     role: 'system',
-    content: `[任务结果] ${task.shortName}｜${status}｜${task.summary}`,
+    content: `[任务结果] ${task.shortName}｜${status}｜${resultText}`,
     timestamp: Date.now(),
     metadata: {
       backgroundTaskResult: {
@@ -829,7 +859,7 @@ async function projectTerminalResult(
         taskId: task.id,
         shortName: task.shortName,
         status,
-        summary: task.summary ?? '',
+        summary: resultText ?? '',
       },
     },
   });

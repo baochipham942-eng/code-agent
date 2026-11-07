@@ -53,7 +53,17 @@ export const WAKE_NOOP_TOOL_NAME = 'wake_noop';
 // 本回合已声明 targetApp 后，省略 targetApp 的 type/key（含 computer_batch 子动作）会被拒绝。
 // 整合合并：本单 sys-v90 × main 已合入的 sys-v90 撞号，合并后的 prompt 输入哈希面
 // 未在任何一侧记录过，按惯例升版。
-export const PROMPT_VERSION = 'sys-v92' as const;
+// sys-v95：N-FIX-BROWSER-SECRETREF-HARDEN-FU1-FU2-FU2——Browser 工具（BrowserTool.ts 与
+// browser.schema.ts 两份逐字孪生）inputSchema 与 ## Parameters: 列表补列 secretRef，
+// 描述与 browser_action 的 secretRef 逐字一致；模型才能把密码引用作为 secretRef
+// 参数传入而非把引用文本打进 text（FB-552/FB-544）。
+// sys-v97：N-ROLE-CREATE-DIRECT-CORE——propose_role 工具说明明确 host 会从
+// 用户原话判定直接创建或确认卡，模型不得提供直接创建参数。
+// sys-v99：N-CONNECTOR-READ-UNTRUSTED——mail/calendar/reminders/tmeetMeetingList/
+// tmeetMeetingSearch 五个连接器读 schema 加 readsUntrustedContent 元数据（同 sys-v89
+// 的 touchesWorkDirectory 口径：不进请求体，wire 序列化不含它，模型文本门要求 bump）。
+// 整合合并：本单与 main 已合入的 sys-v98 撞号，合并后的 prompt 输入哈希面未被记录过，按惯例升版。
+export const PROMPT_VERSION = 'sys-v99' as const;
 
 /** Explore 角色在正常目录、静态工具描述和动态 fallback 中共享的单一描述。 */
 export const EXPLORE_AGENT_DESCRIPTION =

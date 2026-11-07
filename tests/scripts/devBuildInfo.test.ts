@@ -37,12 +37,24 @@ function functionBody(script: string, name: string): string {
 const KEYTAR_NATIVE = 'node_modules/keytar/build/Release/keytar.node';
 const NODE_PTY_DARWIN_NATIVE = `node_modules/node-pty/prebuilds/darwin-${process.arch}/pty.node`;
 
-function writeStartupFixture(root: string): void {
-  const relativePaths = [
-    'dist/renderer/index.html',
-    `dist/native/better-sqlite3/prebuilds/${process.platform}-${process.arch}.node`,
-    KEYTAR_NATIVE,
-  ];
+const SQLITE_NATIVE = `dist/native/better-sqlite3/prebuilds/${process.platform}-${process.arch}.node`;
+
+function writeNativeManifest(root: string, modules: Record<string, unknown>): void {
+  const manifestPath = join(root, 'dist/native/manifest.json');
+  mkdirSync(resolve(manifestPath, '..'), { recursive: true });
+  writeFileSync(manifestPath, JSON.stringify({
+    kind: 'agent_neo_native_dep_manifest',
+    schemaVersion: 1,
+    platform: `${process.platform}-${process.arch}`,
+    modules,
+  }));
+}
+
+function writeStartupFixture(root: string, nativePath: string = SQLITE_NATIVE): void {
+  writeNativeManifest(root, {
+    'better-sqlite3': { kind: 'node-module', entry: 'node_modules/better-sqlite3', native: nativePath },
+  });
+  const relativePaths = ['dist/renderer/index.html', nativePath, KEYTAR_NATIVE];
   if (process.platform === 'darwin') relativePaths.push(NODE_PTY_DARWIN_NATIVE);
   for (const relativePath of relativePaths) {
     const filePath = join(root, relativePath);
@@ -132,6 +144,46 @@ describe('dev build-info install gate', () => {
     expect(red.status).not.toBe(0);
     expect(red.stderr).toContain('dist/renderer/index.html');
     expect(red.stderr).toContain('Missing startup resources under');
+  });
+
+  it('requires the native file the manifest declares, not a recomputed platform-arch name', () => {
+    const tempDir = mkdtempSync(join(tmpdir(), 'agent-neo-dev-resources-'));
+    tempDirs.push(tempDir);
+    const custom = 'dist/native/better-sqlite3/prebuilds/custom-layout-v2.node';
+    writeStartupFixture(tempDir, custom);
+
+    expect(runInventory(tempDir).status).toBe(0);
+
+    rmSync(join(tempDir, custom));
+    const red = runInventory(tempDir);
+    expect(red.status).not.toBe(0);
+    expect(red.stderr).toContain(custom);
+  });
+
+  it('fails the shared inventory naming the manifest when it is absent', () => {
+    const tempDir = mkdtempSync(join(tmpdir(), 'agent-neo-dev-resources-'));
+    tempDirs.push(tempDir);
+    writeStartupFixture(tempDir);
+
+    rmSync(join(tempDir, 'dist/native/manifest.json'));
+    const red = runInventory(tempDir);
+    expect(red.status).not.toBe(0);
+    expect(red.stderr).toContain('dist/native/manifest.json');
+  });
+
+  it('fails the shared inventory naming an extra declared module whose file is absent', () => {
+    const tempDir = mkdtempSync(join(tmpdir(), 'agent-neo-dev-resources-'));
+    tempDirs.push(tempDir);
+    writeStartupFixture(tempDir);
+    writeNativeManifest(tempDir, {
+      'better-sqlite3': { kind: 'node-module', entry: 'node_modules/better-sqlite3', native: SQLITE_NATIVE },
+      'extra-mod': { kind: 'node-module', entry: 'node_modules/extra-mod', native: 'dist/native/extra-mod/extra.node' },
+    });
+
+    const red = runInventory(tempDir);
+    expect(red.status).not.toBe(0);
+    expect(red.stderr).toContain('Missing startup resources under');
+    expect(red.stderr).toContain('dist/native/extra-mod/extra.node');
   });
 
   it('fails the shared inventory when keytar.node is missing', () => {

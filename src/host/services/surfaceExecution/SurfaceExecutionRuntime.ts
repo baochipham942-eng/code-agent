@@ -60,7 +60,7 @@ import {
   recordComputerInputLockLifecycleEvent,
 } from './surfaceComputerRuntimeHelpers';
 import { publishSurfaceContinuationEvent } from './surfaceContinuationRuntime';
-import { waitForBrowserHumanTakeoverRelease } from './browserHumanTakeoverWait';
+import { WAITING_HUMAN_MODEL_GUIDANCE, waitForBrowserHumanTakeoverRelease } from './browserHumanTakeoverWait';
 import { assertSurfaceRunOwner } from './surfaceRunOwnership';
 import {
   assertSurfaceSessionOwnershipForLog,
@@ -943,7 +943,7 @@ export class SurfaceExecutionRuntime {
     if (session.state === 'running') return;
     throw new SurfaceExecutionRuntimeError({
       code: 'SURFACE_SESSION_BUSY',
-      message: `Browser Surface session cannot start an operation while ${session.state}.`,
+      message: `Browser Surface session cannot start an operation while ${session.state}.` + (session.state === 'waiting_human' ? ` ${WAITING_HUMAN_MODEL_GUIDANCE}` : ''),
       phase: 'prepare',
       retryable: session.state === 'paused' || session.state === 'waiting_human',
       userActionRequired: session.state === 'waiting_human',

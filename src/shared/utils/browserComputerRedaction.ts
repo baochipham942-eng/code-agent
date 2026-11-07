@@ -124,10 +124,11 @@ export interface BuildBrowserComputerProofInput {
 
 export function classifyBrowserComputerManualTakeover(
   text: string | null | undefined,
+  options?: { skipCaptcha?: boolean },
 ): BrowserComputerManualTakeoverStatus | null {
   const normalized = (text || "").toLowerCase();
   if (!normalized.trim()) return null;
-  if (/captcha|risk control|risk-control|unusual traffic|checking your browser|verify you are human|cloudflare|安全验证|风控|验证码/.test(normalized)) {
+  if (!options?.skipCaptcha && /captcha|risk control|risk-control|unusual traffic|checking your browser|verify you are human|cloudflare|安全验证|风控|验证码/.test(normalized)) {
     return "captcha_or_risk_control";
   }
   if (/\bmfa\b|two[- ]?factor|2fa|one[- ]time password|\botp\b|verification code|multi[- ]factor|双重验证|二次验证|动态码/.test(normalized)) {

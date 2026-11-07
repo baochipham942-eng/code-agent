@@ -21,6 +21,7 @@ const OUTCOME_KEYS = [
   'failed-unknown',
   'failed-approval-denied',
   'failed-timeout',
+  'failed-idle-reaped',
   'failed-budget',
   'failed-dependency',
   'failed-unavailable',
@@ -130,6 +131,7 @@ describe('outcomeWords contract', () => {
       'interrupted-by-parent',
       'interrupted-unknown',
       'failed-timeout',
+      'failed-idle-reaped',
     ] as const) {
       expect(outcomeWordsZh.outcomeWords[outcome].timeline.label, `zh ${outcome}`).toBe('已中断');
       expect(outcomeWordsEn.outcomeWords[outcome].timeline.label, `en ${outcome}`).toBe('Interrupted');

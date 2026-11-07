@@ -49,6 +49,8 @@ export interface TurnOutcomeStamp {
   evidenceCount: number;
   evidenceProblems: readonly string[];
   source: string | null;
+  /** 系统回收（长时间无进展）而非用户停止；仅 terminal='cancelled' 时出现 */
+  cancelReason?: 'idle_reaped';
 }
 
 export function readTurnOutcome(event: TraceLedgerEvent): TurnOutcomeStamp | null {
@@ -63,6 +65,7 @@ export function readTurnOutcome(event: TraceLedgerEvent): TurnOutcomeStamp | nul
     evidenceCount: invalidated ? 0 : Array.isArray(data.evidenceRefs) ? data.evidenceRefs.length : 0,
     evidenceProblems: strArray(data.evidenceProblems),
     source: str(data.source),
+    ...(data.cancelReason === 'idle_reaped' ? { cancelReason: 'idle_reaped' as const } : {}),
   };
 }
 

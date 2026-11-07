@@ -53,6 +53,22 @@ export const WEB_DAEMON = {
   WINDOWS_LOCK_ENABLED: false,
 } as const;
 
+/**
+ * N-WEBSERVER-DEATH-SUPERVISE-BANNER：renderer 侧后台服务连接监视器的全部节奏参数。
+ * 壳侧自动重启（webserver_supervise.rs）已经兜住「拉起来」，这里是用户可感知层：
+ * 服务死亡期间出「重连中」横幅、恢复后自动刷新一次；节奏只在这里定义，别处禁字面量。
+ */
+export const WEB_SERVER_CONNECTION_MONITOR = {
+  /** /api/health 探测间隔（ms）。首次上报立即探测，之后按此间隔轮询。 */
+  PROBE_INTERVAL_MS: 2_000,
+  /** 单次探测 fetch 的 abort 超时（ms），超时按失败计。 */
+  PROBE_TIMEOUT_MS: 2_000,
+  /** 连续探测失败达到此次数才进 recovering（出横幅）——短抖动不出横幅、不刷新。 */
+  FAILURES_BEFORE_BANNER: 2,
+  /** 出事后经过该时长（ms）仍不可达，横幅升级为 unavailable（带「重试」按钮）。 */
+  UNAVAILABLE_AFTER_MS: 30_000,
+} as const;
+
 /** Tauri boot handshake: a fresh 256-bit lowercase hex nonce per health probe. */
 export const WEB_BOOT_CHALLENGE = {
   QUERY_PARAM: 'bootChallenge',

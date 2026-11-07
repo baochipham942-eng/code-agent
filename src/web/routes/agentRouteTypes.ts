@@ -4,6 +4,8 @@ export interface AgentSessionManagerLike {
   getMessages?(sessionId: string, limit?: number): Promise<Message[]>;
   updateSession?(sessionId: string, updates: Partial<Session>): Promise<void> | void;
   getSession?(sessionId: string, limit?: number): Promise<Session | null>;
+  /** key 级 metadata 补丁（infra SessionManager 提供）；false = 会话不存在。 */
+  patchSessionMetadata?(sessionId: string, patch: Record<string, unknown>): Promise<boolean>;
   addMessageToSession?(sessionId: string, message: Message): Promise<void>;
   invalidateSessionCache?(sessionId: string): void;
 }

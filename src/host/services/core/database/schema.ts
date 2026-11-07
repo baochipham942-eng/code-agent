@@ -6,6 +6,7 @@ import { applyAppGrantsSchema } from './schemaAppGrants';
 import { applySessionDelegationsSchema } from './schemaSessionDelegations';
 import { applyCloudRunLedgerSchema } from './schemaCloudRunLedger';
 import { applyCloudCronSchedulesSchema } from './schemaCloudCronSchedules';
+import { applyCronEventDecisionsSchema } from './schemaCronEventDecisions';
 import { safeAlter, type Logger } from './schemaHelpers';
 import { applyTranscriptFtsSchema } from '../../../../shared/transcriptFts.sql';
 import { applyMemoriesFtsSchema } from '../../../../shared/memoriesFts.sql';
@@ -639,6 +640,27 @@ export function applySchema(db: BetterSqlite3.Database, logger: Logger): void {
     }
   }
 
+  // Memory Change Journal（N-MEM-JOURNAL-SOURCEJUMP · 记忆变更日志，append-only）——
+  // memories 表每次 create/update/delete/evict 一行：谁改的（actor）、改前/改后快照、
+  // 关联 sessionId。后台写入的记忆要看得见、可回溯到源会话。只 INSERT/SELECT，永不
+  // UPDATE/DELETE（与 swarm_run_ledger/usage_ledger 同款账本纪律）；日志写失败不拦
+  // 记忆写入本身（MemoryRepository.appendJournal 内 fail-safe）。
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS memory_change_journal (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      timestamp INTEGER NOT NULL,
+      operation TEXT NOT NULL CHECK (operation IN ('create', 'update', 'delete', 'evict')),
+      memory_id TEXT NOT NULL,
+      entry_id TEXT,
+      actor TEXT NOT NULL CHECK (actor IN ('user_manual', 'auto_review', 'role_wake', 'dream', 'eviction', 'import', 'unknown')),
+      before_content TEXT,
+      after_content TEXT,
+      session_id TEXT
+    )
+  `);
+  db.exec(`CREATE INDEX IF NOT EXISTS idx_memory_change_journal_memory ON memory_change_journal (memory_id, id)`);
+  db.exec(`CREATE INDEX IF NOT EXISTS idx_memory_change_journal_entry ON memory_change_journal (entry_id, id)`);
+
   // Memories FTS5 — BM25 检索通道（roadmap 2.5，searchMemories 召回底层）
   // DDL 在 src/shared/memoriesFts.sql.ts（与 CLI / 单测共用）
   applyMemoriesFtsSchema(db);
@@ -705,6 +727,11 @@ export function applySchema(db: BetterSqlite3.Database, logger: Logger): void {
   // N-TRIGGER-CHANNEL-EVENT：执行记录带 trigger 溯源（event 运行的来源账号/事件数/丢弃数）。
   // 列名避开 SQL 关键字 TRIGGER，落 JSON 文本；调度触发的行保持 NULL。
   safeAlter(db, 'ALTER TABLE cron_executions ADD COLUMN trigger_json TEXT', logger);
+  // N-CRON-RUN-LEDGER-VISIBLE：本地运行实测成本（USD，scoped 计量器读数）。
+  // 无模型调用与云端运行为 NULL（UI 显示 dash）。
+  safeAlter(db, 'ALTER TABLE cron_executions ADD COLUMN cost_usd REAL CHECK (cost_usd IS NULL OR cost_usd >= 0)', logger);
+  // N-TRIGGER-OBSERVE-MODE：事件自动化执行档（带一次性迁移戳）+ 逐事件决策台账。
+  applyCronEventDecisionsSchema(db, logger);
 
   // Session Automations 表：把 cron / heartbeat / loop / role wake 按 source session 串回原会话
   db.exec(`

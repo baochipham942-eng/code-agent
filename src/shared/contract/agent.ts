@@ -181,6 +181,15 @@ export interface RoleDraftPendingData {
   }>;
 }
 
+/** 用户明确要求直接创建后，host 已安装角色并让聊天展示可撤销的完成卡。 */
+export interface RoleCreatedDirectData {
+  sessionId: string;
+  roleId: string;
+  displayName: string;
+  canDo: string;
+  willNotDo: string;
+}
+
 /** 对话式建团队配方草稿待确认（propose_team_recipe 工具发射，聊天弹确认卡） */
 export interface TeamRecipeDraftPendingData {
   sessionId: string;
@@ -381,6 +390,18 @@ export interface RoutingResolvedEventData {
   fallbackToDefault?: boolean;
   requestedAgentId?: string;
   timestamp?: number;
+}
+
+/** connector_required 事件里的一个未就绪连接器。reason 目前恒为 'not_connected'，留给后续（过期/重新登录）扩展。 */
+export interface ConnectorRequiredItem {
+  id: string;
+  source: 'selected' | 'expert';
+  reason: string;
+}
+
+/** 用户选中 / 专家声明的连接器未就绪：每轮在首个模型输出前至多发一次，renderer 据此在聊天里展示连接卡。 */
+export interface ConnectorRequiredEventData {
+  connectors: ConnectorRequiredItem[];
 }
 
 /** ADR-040 D2：locator 写前对账的隐私安全遥测，只允许记录分类与原因。 */

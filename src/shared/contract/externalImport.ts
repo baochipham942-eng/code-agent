@@ -81,6 +81,8 @@ export interface ExternalSkillsApplyResultItem {
   action: 'copied' | 'skipped';
   reason?: 'target-name-exists' | 'copy-failed';
   error?: string;
+  /** copied 时目录内容摘要（导入历史撤销用） */
+  digest?: string;
 }
 
 export interface ExternalSkillsApplyResult {

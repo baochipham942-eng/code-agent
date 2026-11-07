@@ -15,8 +15,22 @@ export function useIsCronRunSession(sessionId: string | undefined): boolean {
   return useSessionStore((state) => {
     const id = sessionId || state.currentSessionId;
     if (!id) return false;
-    const kind = state.sessions?.find((session) => session.id === id)?.origin?.kind;
-    return kind === 'cron' || kind === 'heartbeat';
+    const sessions = state.sessions ?? [];
+    // Follow fork lineage up to the root session (bounded) so branched follow-up
+    // sessions ("接着问这次运行") share the same cron message framing as the
+    // original run record.
+    let current = sessions.find((session) => session.id === id);
+    let hops = 0;
+    while (current && hops < 8) {
+      const kind = current.origin?.kind;
+      if (kind === 'cron' || kind === 'heartbeat') return true;
+      const lineage = current.metadata?.forkLineage as { rootSessionId?: string; parentSessionId?: string } | undefined;
+      const nextId = lineage?.rootSessionId || current.parentSessionId || lineage?.parentSessionId;
+      if (!nextId || nextId === current.id) break;
+      current = sessions.find((session) => session.id === nextId);
+      hops += 1;
+    }
+    return false;
   });
 }
 

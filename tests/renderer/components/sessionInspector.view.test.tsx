@@ -71,6 +71,29 @@ beforeEach(() => {
   traceApi.tailCalls = 0;
 });
 
+describe('层1 终态用词：空闲回收 vs 用户停止', () => {
+  async function renderTerminal(data: Record<string, unknown>): Promise<string> {
+    traceApi.read = readWith([event('turn_outcome', { verdict: 'n_a', evidenceRefs: [], source: 'generic', ...data }, 1, 2000)]);
+    const { container } = render(<SessionInspector />);
+    await waitFor(() => expect(container.textContent).toMatch(/已取消|已中断/));
+    return container.textContent ?? '';
+  }
+
+  it('reaped turn shows 已中断 + 长时间没有进展, not 已取消', async () => {
+    const text = await renderTerminal({ terminal: 'cancelled', cancelReason: 'idle_reaped' });
+    expect(text).toContain(zh.outcomeWords['failed-idle-reaped'].badge.label);
+    expect(text).toContain(zh.outcomeWords['failed-idle-reaped'].badge.reason);
+    expect(text).not.toContain('你停止了这次执行');
+  });
+
+  it('user-stopped turn still shows the cancelled-by-user badge', async () => {
+    const text = await renderTerminal({ terminal: 'cancelled' });
+    expect(text).toContain(zh.outcomeWords['cancelled-by-user'].badge.label);
+    expect(text).toContain('你停止了这次执行');
+    expect(text).not.toContain('长时间没有进展');
+  });
+});
+
 describe('层1 人话时间线', () => {
   it('按任务步骤指定的轮次定位并高亮目标行', async () => {
     traceApi.read = readWith([

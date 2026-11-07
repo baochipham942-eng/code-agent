@@ -57,16 +57,58 @@ export function describeSessionTaskSlotRecovery(locale: SessionTaskSlotLocale): 
   return messages[locale];
 }
 
+/** 回收时在途命令可能在等 macOS 系统授权框：框由系统持有、Neo 关不掉，只能提示用户手动处理。 */
+const systemPromptHint = {
+  zh: '系统授权框可能还在屏幕上，请手动点掉或点「不允许」。',
+  en: 'A system permission prompt may still be on screen; dismiss it or choose Don\'t Allow.',
+} as const;
+
+export function getSystemPromptHint(locale: SessionTaskSlotLocale): string {
+  return systemPromptHint[locale];
+}
+
+const automationPromptTimeoutHint = {
+  zh: `这条命令可能一直在等待无人处理的 macOS「自动化」授权框，随后超时。请在「系统设置」>「隐私与安全性」>「自动化」中允许 Agent Neo 控制相应应用，然后重跑。${systemPromptHint.zh}`,
+  en: `The command probably waited for an unanswered macOS Automation prompt and timed out. In System Settings > Privacy & Security > Automation, allow Agent Neo to control the app, then rerun. ${systemPromptHint.en}`,
+} as const;
+
+export function withAutomationPromptTimeoutHint(
+  text: string,
+  locale: SessionTaskSlotLocale,
+  flag?: boolean,
+): string {
+  if (!flag) return text;
+  const hasSentenceEnding = /[.!?。！？]$/.test(text);
+  const separator = locale === 'zh'
+    ? (hasSentenceEnding ? '' : '。')
+    : (hasSentenceEnding ? ' ' : '. ');
+  return `${text}${separator}${automationPromptTimeoutHint[locale]}`;
+}
+
+function withSystemPromptHint(text: string, locale: SessionTaskSlotLocale, flag?: boolean): string {
+  return flag ? `${text}${locale === 'zh' ? '。' : '. '}${getSystemPromptHint(locale)}` : text;
+}
+
 export function formatSessionCommandTaskIdleFailure(input: {
   idleMs: number;
   locale: SessionTaskSlotLocale;
+  mayAwaitSystemPrompt?: boolean;
 }): string {
-  return idleFailure[input.locale](durationText(input.idleMs, input.locale));
+  return withSystemPromptHint(
+    idleFailure[input.locale](durationText(input.idleMs, input.locale)),
+    input.locale,
+    input.mayAwaitSystemPrompt,
+  );
 }
 
 export function formatSessionTaskApprovalWaitFailure(input: {
   waitMs: number;
   locale: SessionTaskSlotLocale;
+  mayAwaitSystemPrompt?: boolean;
 }): string {
-  return approvalWaitFailure[input.locale](durationText(input.waitMs, input.locale));
+  return withSystemPromptHint(
+    approvalWaitFailure[input.locale](durationText(input.waitMs, input.locale)),
+    input.locale,
+    input.mayAwaitSystemPrompt,
+  );
 }

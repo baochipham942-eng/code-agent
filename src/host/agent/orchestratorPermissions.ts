@@ -3,22 +3,30 @@
 // ============================================================================
 
 import type { AgentEvent, AppSettings, PermissionRequest, PermissionResponse } from '../../shared/contract';
+import { PermissionRequestReason } from '../../shared/contract/permission';
 import type { PermissionAskResult, PermissionDeliveryOutcome, PermissionDenialSource } from '../../shared/contract/permission';
 import type { ToolApprovalPayload, PendingApprovalKind } from '../../shared/contract/pendingApproval';
 import { INTERACTION_TIMEOUTS } from '../../shared/constants/timeouts';
 import { PARKED_APPROVAL_PREVIEW_MAX_CHARS } from '../../shared/constants/pendingApproval';
-import { redactSecrets } from '../security/secretRedaction';
+import { PARKED_APPROVAL_CLOSURE_SENTENCES } from '../../shared/parkedApprovalClosure';
+import { redactCommandSecrets } from '../security/secretRedaction';
 import { generatePermissionRequestId } from '../../shared/utils/id';
 import type { ExecutionTopology } from '../permissions';
 import { getPermissionModeManager } from '../permissions/modes';
 import { isUnattendedAllowedReadOnlyTool } from '../permissions/unattendedReadOnlyTools';
+import { approveByScheduleWriteGrant } from '../cron/cronWriteGrant';
 import { getSessionAutomationService } from '../services/sessionAutomation/sessionAutomationService';
 import { notificationService } from '../services/infra/notificationService';
 import type { PendingApprovalRepository } from '../services/core/repositories/PendingApprovalRepository';
 import { isExternalSideEffectTool } from '../tools/externalSideEffect';
 import { EDITABLE_PERMISSION_TIMEOUT_MS, isEditableTool } from '../../shared/contract/permissionEdit';
 import { approvalParkEvents } from './approvalParkEvents';
-import { noteUnattendedApprovalTimeout, UNATTENDED_APPROVAL_TIMEOUT } from './unattendedApprovalTerminal';
+import {
+  buildUnattendedDegradeFeedback,
+  noteUnattendedApprovalDenial,
+  noteUnattendedApprovalTimeout,
+  UNATTENDED_APPROVAL_TIMEOUT,
+} from './unattendedApprovalTerminal';
 import { getConfirmationGate } from './confirmationGate';
 import { mintAppGrantSession, mintAppGrantStanding } from '../permissions/appGrantStore';
 import { getPermissionLevel } from './orchestrator/modelConfigResolver';
@@ -70,7 +78,7 @@ function buildParkedArgsPreview(request: PermissionRequest): string | undefined 
     request.details?.changes,
   ].filter((part): part is string => typeof part === 'string' && part.length > 0);
   if (parts.length === 0) return undefined;
-  const redacted = redactSecrets(parts.join(' · '));
+  const redacted = redactCommandSecrets(parts.join(' · '));
   return redacted.length > PARKED_APPROVAL_PREVIEW_MAX_CHARS
     ? `${redacted.slice(0, PARKED_APPROVAL_PREVIEW_MAX_CHARS - 1)}…`
     : redacted;
@@ -78,6 +86,19 @@ function buildParkedArgsPreview(request: PermissionRequest): string | undefined 
 
 /** 真人点的会话/始终。带 targetApp 时只记该应用，不记工具级放行。plain allow 不记。 */
 function recordHumanGrant(response: PermissionResponse, request: PermissionRequest): void {
+  // ADR-088 §4 三层保证之 3（host 侧永不铸造）：敏感步骤交回的应答**整体**跳过铸造——
+  // 包括 allow_session 在无 targetApp 时回落 recordApproval 的会话级工具放行记录
+  // （那同样是本流程不许产生的授权）。任何形态的记住应答都降级为一次性语义。
+  if (
+    request.reasonCode === PermissionRequestReason.SensitiveStepHandback
+    || request.details?.sensitiveStep
+  ) {
+    logger.info('Sensitive step hand-back answer never mints a grant', {
+      tool: request.tool,
+      response,
+    });
+    return;
+  }
   const app = request.details?.targetApp;
   if (response === 'allow_session' && request.sessionId) {
     if (app?.name) mintAppGrantSession(request.sessionId, app);
@@ -274,6 +295,15 @@ export class OrchestratorPermissionIsland {
         return 'lost';
       }
       approvalParkEvents.emit('resolved', { id, sessionId: pending.request.sessionId ?? null, status });
+      // 裁决赢了就把停车时发的那条「有操作等你确认」撤回（N-FIX-PARKED-BANNER-STALE-AFTER-RESOLVE）：
+      // 错过横幅的用户回来不该再被一条已处理完的停车提醒误导。approve/deny/timeout 的赢面
+      // 出口都汇到这一行；没赢（抢答/过期/台账写不进）不撤——赢的那次已经撤过。停车时若
+      // 通知被策略拦下没投递，retractNeedsInput 自身是 no-op。
+      try {
+        notificationService.retractNeedsInput(id);
+      } catch (err) {
+        logger.warn('Parked approval notification retract failed', err);
+      }
     }
     // B4 铸权：仅当人工在停车审批卡点「每次都允许发 <target>」（allow_standing）且赢得裁决后，
     // 把 (tool, target) 长期授权规则写到该会话所属 automation。target 从审批请求透传字段取，
@@ -410,6 +440,15 @@ export class OrchestratorPermissionIsland {
     const settings = this.getSettings();
     const permissionLevel = getPermissionLevel(request.type);
     const forceConfirm = request.forceConfirm === true;
+    // 权限入口可见性：裁决树分叉前先留一张请求快照（type/forceConfirm/来源档），
+    // 否则「为什么没走 X 分支」只能靠猜（2026-10-24 写授权 e2e 排查实证）。
+    logger.debug('Permission request received', {
+      type: request.type,
+      tool: request.tool,
+      forceConfirm,
+      topology: this.getExecutionTopology(),
+      path: request.details?.path ?? request.details?.filePath,
+    });
 
     // 无人值守（async_agent）会话：连接器显式声明为只读的 MCP 工具免交互审批直接放行。
     // 这条既有豁免须在停车前生效；否则读飞书日历/表格会被停车等人，无人值守 cron 永远跑不完
@@ -436,6 +475,7 @@ export class OrchestratorPermissionIsland {
     const approvalTerminal = getPermissionModeManager().isUnattendedApprovalTerminal(fullRequest.sessionId);
     const unattended = getPermissionModeManager().isUnattendedSession(fullRequest.sessionId);
     const voice = getPermissionModeManager().isLiveVoiceSession(fullRequest.sessionId);
+
     // 请求侧留痕（N-SANDBOX-ESCALATE-CHMOD-SHAPE-FU1）：应答侧每个出口都有日志，请求侧
     // 此前一行都没有——「卡根本没被请求」与「请求了但没送到前端」无从区分。
     // delegate_task 后台 lane 与前台共用 sessionId，这条日志同时是 lane 归属的证据。
@@ -445,10 +485,30 @@ export class OrchestratorPermissionIsland {
       tool: request.tool,
       type: request.type,
       forceConfirm,
+      // 返修 r2 的成因标记与结构化原因码一并留痕：定时任务写授权只放行
+      // boundary-only 形态，真跑日志必须能直接核这三元组（Rework r3 证据要求）。
+      forceConfirmBoundaryOnly: request.forceConfirmBoundaryOnly === true,
+      reasonCode: request.reasonCode ?? null,
       unattended,
       voice,
       approvalTerminal,
     });
+
+    // 写授权放行（N-RESIDENT-SCHEDULE-KEEPALIVE-DAEMON-FU1）：用户在任务详情面板预授权过
+    // 工作文件夹的 cron/heartbeat 会话，写文件夹内的 file_write/file_edit 直接放行——
+    // ADR-083「后台继续」场景下壳已退出、没人能应答，不预授权就是整趟静默卡死。
+    // 判定全在 cronWriteGrant（类型/forceConfirm 形态/来源/realpath 界内/保护路径），Bash
+    // 与出界写照旧走下面的停车分支。类型门放在调用侧：非文件写请求不付这次异步查会话的代价。
+    if (unattended && (request.type === 'file_write' || request.type === 'file_edit')) {
+      const scheduleGrant = await approveByScheduleWriteGrant(request);
+      if (scheduleGrant) {
+        logger.info(
+          `[Permission] Auto-approved via schedule write grant: ${request.type} for ${request.tool}`,
+          { approvalSource: scheduleGrant.approvalSource, sessionId: fullRequest.sessionId },
+        );
+        return scheduleGrant;
+      }
+    }
     // cron/heartbeat/channel/语音派都走停车审批，24h backstop 只负责泄漏兜底；
     // 60s 终态仅保留给显式登记的旧兼容会话。
     if (unattended || voice) {
@@ -459,7 +519,9 @@ export class OrchestratorPermissionIsland {
           permissionLevel,
           parkRepo,
           'tool_approval',
-          approvalTerminal ? 'unattended' : 'backstop',
+          approvalTerminal
+            ? 'unattended'
+            : getPermissionModeManager().isUnattendedApprovalDegrade(fullRequest.sessionId) ? 'degrade' : 'backstop',
         );
       }
     } else {
@@ -584,15 +646,36 @@ export class OrchestratorPermissionIsland {
     permissionLevel: string,
     repo: PendingApprovalRepository,
     kind: PendingApprovalKind = 'tool_approval',
-    deadline: 'unattended' | 'backstop' = 'backstop',
+    deadline: 'unattended' | 'backstop' | 'degrade' = 'backstop',
   ): Promise<PermissionAskResult> {
     const releaseHold = holdStallClock(fullRequest.sessionId);
     return new Promise<PermissionAskResult>((resolve) => {
       const unattendedDeadline = deadline === 'unattended';
+      const degradeDeadline = deadline === 'degrade';
       const timeoutMs = unattendedDeadline
         ? INTERACTION_TIMEOUTS.PERMISSION
-        : INTERACTION_TIMEOUTS.PARKED_APPROVAL;
+        : degradeDeadline
+          ? INTERACTION_TIMEOUTS.UNATTENDED_PARKED_APPROVAL_DEGRADE
+          : INTERACTION_TIMEOUTS.PARKED_APPROVAL;
       const timeoutId = setTimeout(() => {
+        if (degradeDeadline) {
+          logger.warn(`Unattended parked approval ${fullRequest.id} unanswered, degrading to deny`);
+          const degraded = this.resolveParkedApproval(
+            fullRequest.id,
+            'deny',
+            buildUnattendedDegradeFeedback(fullRequest.tool, timeoutMs),
+            'timeout',
+          );
+          if (degraded && fullRequest.sessionId) {
+            noteUnattendedApprovalDenial(fullRequest.sessionId, {
+              tool: fullRequest.tool,
+              argsPreview: fullRequest.argsPreview,
+              requestedAt: fullRequest.timestamp,
+              code: UNATTENDED_APPROVAL_TIMEOUT,
+            });
+          }
+          return;
+        }
         logger.warn(
           unattendedDeadline
             ? `Unattended approval ${fullRequest.id} timed out, denying`
@@ -601,7 +684,11 @@ export class OrchestratorPermissionIsland {
         const resolved = this.resolveParkedApproval(
           fullRequest.id,
           'deny',
-          unattendedDeadline ? UNATTENDED_APPROVAL_TIMEOUT : 'parked approval expired',
+          // 24h 兜底写中文闭场句（与重启收口 describeParkedApprovalClosure 同源同句），
+          // renderer 精确匹配后按「未执行」呈现，不再给用户看英文的 parked-expired 文案。
+          unattendedDeadline
+            ? UNATTENDED_APPROVAL_TIMEOUT
+            : PARKED_APPROVAL_CLOSURE_SENTENCES.expiredAfterRestart24h,
           'timeout',
         );
         if (resolved && unattendedDeadline && fullRequest.sessionId) {
@@ -629,6 +716,10 @@ export class OrchestratorPermissionIsland {
       const argsRef = fullRequest.sessionId && fullRequest.parentToolUseId
         ? { sessionId: fullRequest.sessionId, toolCallId: fullRequest.parentToolUseId }
         : undefined;
+      const argsSummaryRaw = fullRequest.details?.command
+        ?? fullRequest.details?.path
+        ?? fullRequest.details?.filePath
+        ?? fullRequest.details?.url;
       const payload: ToolApprovalPayload = {
         sessionId: fullRequest.sessionId ?? null,
         ...(fullRequest.parentToolUseId ? { toolCallId: fullRequest.parentToolUseId } : {}),
@@ -636,10 +727,7 @@ export class OrchestratorPermissionIsland {
         type: fullRequest.type,
         permissionLevel,
         requestedAt: fullRequest.timestamp,
-        argsSummary: fullRequest.details?.command
-          ?? fullRequest.details?.path
-          ?? fullRequest.details?.filePath
-          ?? fullRequest.details?.url,
+        argsSummary: argsSummaryRaw === undefined ? undefined : redactCommandSecrets(argsSummaryRaw),
         ...(argsRef ? { argsRef } : {}),
         // 跨重启存活原料（N-PARKED-APPROVAL-SURVIVE-RESTART-RESUME）：指纹 + 忠实标记由
         // toolExecutor 随请求上抛；不忠实（台账形 ≠ 原始 args）的行照写数据，判据侧拦。
@@ -650,6 +738,10 @@ export class OrchestratorPermissionIsland {
           }
           : {}),
         ...(argsPreview ? { argsPreview } : {}),
+        // ADR-088 敏感步骤交回：收件箱/会话卡据此渲染单状态交回卡（展示元数据，无秘密本体）。
+        ...(fullRequest.details?.sensitiveStep
+          ? { sensitiveStep: fullRequest.details.sensitiveStep }
+          : {}),
         // 目录授权卡直接给人话："访问 <path>（只读/读写）· <agent 理由>"，不用通用 tool 名。
         displayTool: isDirectoryAccess
           ? `目录访问：${fullRequest.details?.path ?? '(unknown path)'}（${
@@ -680,6 +772,9 @@ export class OrchestratorPermissionIsland {
             sessionId: fullRequest.sessionId,
             title: '有操作等你确认',
             body: `无人值守任务请求执行 ${fullRequest.tool}，已挂起等待你在收件箱确认。`,
+            // 停车口先发；同一条请求随后经 permission_request 事件再进落库通知口，
+            // 同键去重，用户只看到这一条更具体的「去收件箱确认」横幅。
+            dedupeKey: fullRequest.id,
           });
         } catch (err) {
           logger.warn('Parked approval notification failed', err);

@@ -40,6 +40,7 @@ import { createJevWarden } from './jevWarden';
 import { runToolStepGuardRails } from './toolStepGuardRails';
 import { createPlanExitFallbackState } from './planExitFallback';
 import { settlePlanExitFallbackOnTextBreak } from './planExitFallbackCard';
+import { settleRoleFlowStallOnTextBreak } from './roleFlowStallExit';
 import { generateAutoContinuationPrompt as buildAutoContinuationPrompt } from './truncationPrompts';
 
 // Import refactored modules
@@ -706,6 +707,14 @@ export class ConversationRuntime {
               },
             });
             if (fallbackOutcome === 'reminded') continue;
+            // FB-327 停摆出口：建/改角色严格流程以纯文本收尾、既无草稿也无问句时，
+            // 落一条用户可见的「继续/放弃」说明再结束，替代静默空闲（详见 roleFlowStallExit）。
+            await settleRoleFlowStallOnTextBreak({
+              ctx: this.ctx,
+              assembly: this.contextAssembly,
+              boundary: this.ctx.turn.skillToolBoundary,
+              finalText: response.type === 'text' ? (response.content ?? '') : '',
+            });
             break;
           }
         }
@@ -946,7 +955,9 @@ export class ConversationRuntime {
 
 
     // F1: Goal Re-Injection
-    this.ctx.goalTracker.initialize(userMessage);
+    // 目标提取只看用户原话：包装体以注入块开头时，首句会变成注入块的第一行，
+    // 之后每 3 轮把这句「假目标」重刷给模型（N-CAP-NOTICE-LEAK）。
+    this.ctx.goalTracker.initialize(userRequest);
 
     logger.debug(` Task complexity: ${complexityAnalysis.complexity} (${Math.round(complexityAnalysis.confidence * 100)}%)`);
     if ((complexityAnalysis.targetFiles || []).length > 0) {
@@ -1024,7 +1035,10 @@ export class ConversationRuntime {
         // Parallel Judgment via small model (Groq)
         try {
           const orchestrator = getTaskOrchestrator();
-          const judgment = await raceStartupStep(this.ctx, orchestrator.judge(userMessage));
+          // 判定输入只给用户原话：小模型把整条包装体（含 <repeated_workarounds> 注入块）
+          // 当成待分析任务去复述，产生 `Judgment fallback used: No JSON found in response`
+          // （realrun20 07/08 真机实录，N-CAP-NOTICE-LEAK）。
+          const judgment = await raceStartupStep(this.ctx, orchestrator.judge(userRequest));
           if (startupStepAbandoned(this.ctx, judgment)) return null;
 
           if (judgment.shouldParallel && judgment.confidence >= 0.7) {
@@ -1066,7 +1080,7 @@ export class ConversationRuntime {
     logger.info(`[AgentLoop] Checking dynamic mode for gen${genNum}`);
     if (genNum >= 3) {
       try {
-        const dynamicResult = buildDynamicPromptV2(userMessage, {
+        const dynamicResult = buildDynamicPromptV2(userRequest, {
           toolsUsedInTurn: this.ctx.turn.toolsUsedInTurn,
           iterationCount: this.ctx.turn.toolsUsedInTurn.length,
           hasError: false,
@@ -1087,8 +1101,8 @@ export class ConversationRuntime {
           reminderStats: dynamicResult.reminderStats,
         });
 
-        if (dynamicResult.userMessage !== userMessage) {
-          const reminder = dynamicResult.userMessage.substring(userMessage.length).trim();
+        if (dynamicResult.userMessage !== userRequest) {
+          const reminder = dynamicResult.userMessage.substring(userRequest.length).trim();
           if (reminder) {
             logger.info(`[AgentLoop] Injecting mode reminder (${reminder.length} chars, ${dynamicResult.tokensUsed} tokens) to persistent context`);
             // 任务模式 reminder（含 DATA_PROCESSING 等）持久化到 system context
@@ -1102,7 +1116,10 @@ export class ConversationRuntime {
 
     // Step-by-step execution for models that need it
     if (this.ctx.stepByStepMode && !isSimpleTask) {
-      const { steps, isMultiStep } = this.parseMultiStepTask(userMessage);
+      // 步骤解析只看用户原话：注入块里的候选列表行（`- 名字：已拼凑 N 次`）长得就是
+      // 步骤行，按包装体解析会把注入块当任务书、经 runStepByStep→run→initializeRun
+      // 无限递归（N-CAP-NOTICE-LEAK）。首步 prompt 仍用完整模型面消息。
+      const { steps, isMultiStep } = this.parseMultiStepTask(userRequest);
       if (isMultiStep) {
         logger.info(`[AgentLoop] Multi-step task detected (${steps.length} steps), using step-by-step mode`);
         await this.runStepByStep(userMessage, steps);
@@ -1115,9 +1132,12 @@ export class ConversationRuntime {
     // 每个 await 边界都带取消检查点。两个薄封装方法经回调注入以保留单测 spy。
     const assemblyStatus = await runStartupContextAssembly(this.ctx, this.contextAssembly, {
       userMessage,
+      // 桌面派生上下文（续办判定 / 工作区相关性评分 / 恢复提示）只按用户原话评分：
+      // 注入块里的词会把评分带偏（N-CAP-NOTICE-LEAK）。hook 仍收完整提交文本。
+      analysisUserRequest: userRequest,
       isSimpleTask,
       injectActivityContext: (options) => this.injectActivityContext(options),
-      bootstrapDesktopDerivedContext: () => this.bootstrapDesktopDerivedContext(userMessage),
+      bootstrapDesktopDerivedContext: () => this.bootstrapDesktopDerivedContext(userRequest),
     });
     if (assemblyStatus !== 'proceed') return null; // 'aborted'（装配期取消）或 'blocked'（hook 拦截）
 
@@ -1159,13 +1179,13 @@ export class ConversationRuntime {
     };
   }
 
-  async cancel(reason?: 'user' | 'session-switch'): Promise<void> {
+  async cancel(reason?: 'user' | 'session-switch' | 'idle-reaped'): Promise<void> {
     // 回复已经完成落库、但 run 还没从 registry 注销的尾窗里，cancel 必须是安全 no-op。
     // 这时再标 cancelled / preserve partial 会把同一条完整回复追加标记后写成第二行。
     if (this.ctx.control.isSettled) return;
 
-    markStreamSnapshotInterruptionReason({ workingDir: this.ctx.workingDirectory, sessionId: this.ctx.sessionId }, reason === 'session-switch' ? 'session-switch' : 'user');
-    this.ctx.control.markCancelled();
+    markStreamSnapshotInterruptionReason({ workingDir: this.ctx.workingDirectory, sessionId: this.ctx.sessionId }, reason === 'session-switch' || reason === 'idle-reaped' ? reason : 'user');
+    this.ctx.control.markCancelled(reason);
 
     await this.preserveStreamedPartial(
       reason === 'session-switch' ? '\n\n[未完成 — 切换会话中断]' : '\n\n[cancelled]',

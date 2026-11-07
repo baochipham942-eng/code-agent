@@ -42,6 +42,7 @@ import { CronWebhookScheduleFields } from './CronWebhookScheduleFields';
 import { CronWebhookCreatedView } from './CronWebhookCreatedView';
 import { useCronWebhookGate } from './useCronWebhookGate';
 import { takeCronEditorDraft } from './cronEditorDraftStash';
+import { useScrollToEventValidation } from './useScrollToEventValidation';
 
 interface CronJobEditorProps {
   isOpen: boolean;
@@ -100,7 +101,6 @@ function eventViolationFromDraft(draft: CronJobDraft): EventScheduleViolation | 
 function isEventScheduleKind(scheduleType: CronJobDraft['scheduleType']): boolean {
   return scheduleType === 'event' || scheduleType === 'event-mail' || scheduleType === 'event-webhook';
 }
-
 export const CronJobEditor: React.FC<CronJobEditorProps> = ({ isOpen, job, copySource, onClose }) => {
   const { t } = useI18n();
   const cc = t.cronCenter;
@@ -131,6 +131,8 @@ export const CronJobEditor: React.FC<CronJobEditorProps> = ({ isOpen, job, copyS
   const [eventValidationArmed, setEventValidationArmed] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [activeTab, setActiveTab] = useState<EditorTab>('basic');
+  const [eventFocusTick, setEventFocusTick] = useState(0);
+  useScrollToEventValidation(eventFocusTick);
 
   // Template-based creation state
   const [step, setStep] = useState<CreationStep>('simple');
@@ -228,11 +230,8 @@ export const CronJobEditor: React.FC<CronJobEditorProps> = ({ isOpen, job, copyS
   // reason → 本地化文案（用户看到的不是 createJob 的英文原文）；且只在闸门打开
   // （提交过/动过事件字段）后才显示，选完调度类型不立刻报。
   const eventViolation = isEventScheduleKind(draft.scheduleType) ? eventViolationFromDraft(draft) : null;
-  const eventValidationMessage = eventValidationArmed && eventViolation
-    ? cc.eventValidation[eventViolation.reason]
-    : null;
+  const eventValidationMessage = eventValidationArmed && eventViolation ? cc.eventValidation[eventViolation.reason] : null;
   const cloudRoleBound = isCloudRoleBoundAgentDraft(draft);
-
   const setField = <K extends keyof CronJobDraft>(key: K, value: CronJobDraft[K]) => {
     setDraft((current) => ({ ...current, [key]: value }));
   };
@@ -318,6 +317,10 @@ export const CronJobEditor: React.FC<CronJobEditorProps> = ({ isOpen, job, copyS
         const violation = eventViolationFromDraft(draft);
         if (violation) {
           setEventValidationArmed(true);
+          if (violation.reason === 'invalid-schedule' || violation.reason === 'requires-budget') {
+            setActiveTab('basic');
+            setEventFocusTick((tick) => tick + 1);
+          }
           setErrors({
             form: draft.scheduleType === 'event-mail'
               ? mailEventValidationMessage(violation, cc)
@@ -603,9 +606,7 @@ export const CronJobEditor: React.FC<CronJobEditorProps> = ({ isOpen, job, copyS
       footer={(
         <>
           <Button variant="ghost" onClick={onClose} disabled={submitting}>取消</Button>
-          <Button onClick={handleSubmit} loading={submitting} disabled={cloudRoleBound || webhookGated}>
-            {job ? '保存修改' : '创建任务'}
-          </Button>
+          <Button onClick={handleSubmit} loading={submitting} disabled={cloudRoleBound || webhookGated}>{job ? '保存修改' : '创建任务'}</Button>
         </>
       )}
     >

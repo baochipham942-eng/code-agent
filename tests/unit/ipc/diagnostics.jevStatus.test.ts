@@ -12,6 +12,8 @@ const providerState = vi.hoisted(() => ({
 vi.mock('../../../src/host/model/providers/typesafeProvider', () => ({
   resolveJevRoute: () => providerState.route,
   probeJevKeySource: () => providerState.keySource,
+  // getJevStatus() 现在还读托管资格（N-JEV-NEO-KEY）；本测试只管 official/openrouter/none，托管恒不具资格。
+  probeJevHostedEligible: () => false,
   systemOne: vi.fn(),
 }));
 

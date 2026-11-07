@@ -257,6 +257,70 @@ describe('toolRunPolicy', () => {
     });
   });
 
+  // FB-327：create-role 种子轮（/create-role 前导）不是指挥台轮，propose_role 可见；
+  // 用户的访谈应答是普通文本轮 → 撞上前台 brain 白名单 → propose_role/list_experts 被
+  // 「Run policy toolset: 6 -> 4」静默裁掉 → 模型只能念稿停摆。strict 流程面工具必须
+  // 穿过前台白名单（deny 语义不变）。
+  describe('strict skill 流程面 vs 前台白名单（FB-327）', () => {
+    const foregroundFace = ['AskUserQuestion', 'Glob', 'Grep', 'Read'];
+    const strictBoundary = {
+      skillName: 'create-role',
+      allowedTools: ['propose_role', 'exit_role_flow', 'list_experts', 'ask_user_question', 'read_file', 'glob', 'grep'],
+      strict: true,
+    };
+
+    it('跟进轮：边界工具（propose_role/list_experts/exit_role_flow）不被白名单裁掉', () => {
+      const ctx = {
+        allowedToolNames: foregroundFace,
+        turn: { skillToolBoundary: strictBoundary },
+      } as any;
+
+      const kept = filterToolsByRunPolicy([
+        tool('AskUserQuestion'),
+        tool('Glob'),
+        tool('Grep'),
+        tool('Read'),
+        tool('propose_role'),
+        tool('list_experts'),
+        tool('exit_role_flow'),
+        tool('Bash'),
+      ], ctx).map((item) => item.name);
+
+      expect(kept).toContain('propose_role');
+      expect(kept).toContain('list_experts');
+      expect(kept).toContain('exit_role_flow');
+      expect(kept).not.toContain('Bash');
+    });
+
+    it('allowedTools 里的别名（ask_user_question/read_file）归一后同样豁免', () => {
+      const ctx = {
+        allowedToolNames: foregroundFace,
+        turn: { skillToolBoundary: strictBoundary },
+      } as any;
+      expect(filterToolsByRunPolicy([
+        tool('AskUserQuestion'),
+        tool('Read'),
+      ], ctx).map((item) => item.name)).toEqual(['AskUserQuestion', 'Read']);
+    });
+
+    it('无 strict 边界时白名单语义不变（回归钉）', () => {
+      const ctx = { allowedToolNames: foregroundFace } as any;
+      expect(filterToolsByRunPolicy([
+        tool('propose_role'),
+        tool('Read'),
+      ], ctx).map((item) => item.name)).toEqual(['Read']);
+    });
+
+    it('显式 deny 仍然一票否决边界工具', () => {
+      const ctx = {
+        allowedToolNames: foregroundFace,
+        deniedToolNames: ['propose_role'],
+        turn: { skillToolBoundary: strictBoundary },
+      } as any;
+      expect(isToolDeniedForRun(ctx, 'propose_role')).toBe(true);
+    });
+  });
+
   // 2026-08-09 委派入口歧义单：收窄日志只打数量时，「24 -> 9 砍掉了谁」在日志里查不到，
   // 只能翻真库反推。这三条钉住「名字必须打出来」，别再退回纯数量。
   describe('收窄可观测性', () => {

@@ -491,7 +491,7 @@ export class AgentLoop {
     return this.runFinalizer.whenSessionEndMemoryWorkSettled();
   }
 
-  async cancel(reason?: 'user' | 'session-switch'): Promise<void> {
+  async cancel(reason?: 'user' | 'session-switch' | 'idle-reaped'): Promise<void> {
     await this.conversationRuntime.cancel(reason);
   }
 

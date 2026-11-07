@@ -74,6 +74,7 @@ const ALLOWLIST: AllowlistEntry[] = [
 
   // ---- UI 状态（与凭据无关的同名物）----
   { file: 'src/renderer/components/features/chat/ActiveConversationRewindBanner.tsx', name: 'refreshToken', reason: '同名异物：会话重做后的 UI 重取计数器（number），与认证 token 无关' },
+  { file: 'src/renderer/components/features/expert/RoleWakeLedger.tsx', name: 'refreshToken', reason: '同名异物：角色页「现在运行」结束后的重拉计数器（number），父组件递增触发 refetch，与认证 token 无关' },
   { file: 'src/renderer/components/StatusBar/modelSwitcherHelpers.tsx', name: 'api_key_payg', reason: '计费模式判别值 api_key_payg（按量付费徽标样式键），非凭据' },
   // skill caution 弹窗的规则文案键：embedded_secret_medium: 前缀命中的共用句子（string），非凭据数据
   { file: 'src/renderer/i18n/zhSkillCautionRules.ts', name: 'embeddedSecret', reason: 'i18n 文案键：嵌入密钥类 caution 命中的白话风险句（string），不承载任何凭据值' },
@@ -104,6 +105,7 @@ const ALLOWLIST: AllowlistEntry[] = [
   { file: 'src/renderer/components/features/settings/tabs/ProviderModelsSection.tsx', name: 'hasApiKey', reason: '布尔存在标志，不承载 key 值' },
   { file: 'src/renderer/components/features/settings/tabs/SearchSettings.tsx', name: 'apiKey', reason: '搜索 service key 表单态：setServiceApiKey 只写，回显走 maskApiKey' },
   { file: 'src/renderer/components/features/settings/tabs/CronCloudSettingsCard.tsx', name: 'apiKey', reason: '云端计划任务令牌：用户手输、setServiceApiKey 只写，回显仅掩码' },
+  { file: 'src/renderer/components/features/settings/tabs/PrivacySettings.tsx', name: 'outboundSecretMask', reason: '布尔设置开关（privacy.outboundSecretMask，出云密钥掩码），不承载凭据值' },
   { file: 'src/renderer/components/features/settings/tabs/VisualModelsSettings.tsx', name: 'apiKey', reason: '视觉模型表单态：用户手输、只写' },
   { file: 'src/renderer/components/features/settings/tabs/VoiceApiKeyConfig.tsx', name: 'apiKey', reason: '语音 key 表单态：用户手输、只写' },
   { file: 'src/renderer/components/features/settings/tabs/VoiceModelSettings.tsx', name: 'apiKey', reason: '语音 provider 表单态：用户手输、只写' },

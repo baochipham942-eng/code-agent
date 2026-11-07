@@ -687,6 +687,31 @@ export const enSettingsWork = {
         delete: 'Delete',
         evidence: 'Evidence',
         noEvidence: 'No evidence records',
+        sourceSession: {
+          open: 'Open source session',
+          missing: 'Source session no longer exists',
+          probeFailed: 'Cannot confirm the source session still exists',
+          opening: 'Opening source session…',
+        },
+        history: {
+          title: 'Change history',
+          empty: 'No change records yet',
+          failed: 'Failed to load change history',
+          operationLabels: { create: 'Created', update: 'Updated', delete: 'Deleted', evict: 'Evicted' },
+          actorLabels: {
+            user_manual: 'Manual', auto_review: 'Auto review', role_wake: 'Role wake',
+            dream: 'Background tidy', eviction: 'Auto cleanup', import: 'Import', unknown: 'Unknown source',
+          },
+          undo: {
+            button: 'Undo', confirmTitle: 'Undo this rewrite?',
+            confirmBody: 'This memory will be restored to its pre-rewrite content; later changes will be overwritten. History records are kept.',
+            previewLabel: 'Preview of the content to restore:',
+            truncatedReason: 'Pre-rewrite snapshot was truncated; cannot restore fully', noSnapshotReason: 'No pre-rewrite snapshot; cannot restore',
+            unresolvableReason: 'Restore failed: entry can no longer be resolved',
+            success: 'Rewrite undone; content restored', failed: 'Undo failed',
+          },
+        },
+        backgroundWriteBadge: 'Background write',
         selectToEdit: 'Select a memory entry to edit.',
         batchReview: {
           selection: 'Selection',
@@ -881,6 +906,12 @@ export const enSettingsWork = {
           on: 'On',
           off: 'Off',
         },
+      },
+      outboundMask: {
+        title: 'Outbound secret mask',
+        description: 'Off by default. When on, keys, login tokens (Bearer), card numbers and email addresses are replaced with placeholders in requests to the model vendor and swapped back in replies; chat always shows the real values.',
+        label: 'Mask secrets before sending to the model vendor',
+        body: 'When you paste a .env, key, login token, card number or email address into chat, the vendor request body only contains placeholders, and your device restores them in the reply. If masking fails, that request is not sent.',
       },
       evaluation: {
         title: 'Evaluation feedback-pool hook',

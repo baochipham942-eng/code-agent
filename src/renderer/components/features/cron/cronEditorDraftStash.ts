@@ -18,3 +18,8 @@ export function takeCronEditorDraft(): CronJobDraft | null {
   stashed = null;
   return draft;
 }
+
+/** 返回落点被放弃（用户从设置去了别处）时作废暂存：之后的「新建任务」给全新空白草稿。 */
+export function discardCronEditorDraft(): void {
+  stashed = null;
+}

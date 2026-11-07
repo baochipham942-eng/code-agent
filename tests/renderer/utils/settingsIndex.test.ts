@@ -103,6 +103,19 @@ describe('settings search index', () => {
     expect(searchSettings('progress spam').map((entry) => entry.tab)).toContain('channels');
   });
 
+  it('finds the external-import page when a source is detected', () => {
+    for (const q of ['导入', 'import', '保持聊天同步']) {
+      expect(searchSettings(q, { externalImportAvailable: true }).map((entry) => entry.tab)).toContain('external-import');
+    }
+  });
+
+  it('hides the external-import entry when no source is detected or the flag is omitted', () => {
+    for (const q of ['导入', 'import', '保持聊天同步']) {
+      expect(searchSettings(q, { externalImportAvailable: false }).map((entry) => entry.tab)).not.toContain('external-import');
+      expect(searchSettings(q).map((entry) => entry.tab)).not.toContain('external-import');
+    }
+  });
+
   it('only references registered settings tabs', () => {
     const registered = new Set<string>(SETTINGS_TAB_IDS);
     for (const entry of SETTINGS_INDEX) {

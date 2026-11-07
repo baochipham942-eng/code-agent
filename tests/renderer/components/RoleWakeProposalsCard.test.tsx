@@ -14,12 +14,15 @@ const acceptWakeProposal = vi.fn<(roleId: string, title: string) => Promise<{ pr
 const dismissWakeProposal = vi.fn<(roleId: string, title: string) => Promise<{ success: boolean }>>();
 const skipFirstWake = vi.fn();
 const goToExpertThread = vi.fn<(roleId: string, options?: { seed?: string }) => Promise<void>>();
+// 2026-11-05 返修：提议卡现在先问 first wake（failed 时不渲染），mock 需覆盖 getFirstWake
+const getFirstWake = vi.fn<(roleId: string) => Promise<unknown>>();
 
 vi.mock('../../../src/renderer/services/rolesClient', () => ({
   listWakeProposals: (roleId: string) => listWakeProposals(roleId),
   acceptWakeProposal: (roleId: string, title: string) => acceptWakeProposal(roleId, title),
   dismissWakeProposal: (roleId: string, title: string) => dismissWakeProposal(roleId, title),
   skipFirstWake: (...args: unknown[]) => skipFirstWake(...args),
+  getFirstWake: (roleId: string) => getFirstWake(roleId),
 }));
 vi.mock('../../../src/renderer/utils/inviteExpert', () => ({
   goToExpertThread: (...args: unknown[]) => goToExpertThread(...(args as [string, { seed?: string }?])),
@@ -38,6 +41,7 @@ describe('RoleWakeProposalsCard', () => {
     acceptWakeProposal.mockReset();
     dismissWakeProposal.mockReset();
     skipFirstWake.mockReset();
+    getFirstWake.mockReset().mockResolvedValue({ state: 'skipped', sourcesMode: 'connected', suggestions: [] });
     goToExpertThread.mockReset().mockResolvedValue(undefined);
   });
   afterEach(() => cleanup());

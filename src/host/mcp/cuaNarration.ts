@@ -34,6 +34,22 @@ interface AxElement {
 const windowElements = new Map<string, Map<number, AxElement>>();
 /** pid → app 身份（名字 + bundleId），驱动文案与 app 图标。 */
 const appByPid = new Map<number, { name?: string; bundleId?: string }>();
+/**
+ * (pid:window_id) → 该窗口最新一次**完整**快照是否含 AXSecureTextField（ADR-088 一期
+ * 窗口级信号）。true 一旦成立，只有「无 query 过滤、未截断」的快照才能翻回 false；
+ * query 过滤 / 截断的快照缺字段不构成反证（可能只是被滤掉/切掉）。
+ */
+const windowSecureField = new Map<string, SecureFieldSignal>();
+/**
+ * AX 树里唯一确定性的密码信号（先例 jevCuaStepCandidates CU_SECURE_ROLE 注释原文）。
+ * 窗口级规则按**原始快照文本**扫任意行（含无 [N] 的未索引行——0.14.2 format_node_line
+ * 只给带 AX action 的节点编号，未索引的 `- AXSecureTextField "Password"` 不在元素缓存里）。
+ */
+const SECURE_FIELD_ROLE = /^axsecuretextfield$/i;
+/** MCP 输出被 truncateMcpOutput 截断时追加的尾标（mcpToolRegistry TRUNCATION_NOTICE）。 */
+const OUTPUT_TRUNCATED_MARKER = '[Output truncated:';
+
+type SecureFieldSignal = { secure: true; label?: string } | { secure: false };
 
 function evict<K, V>(map: Map<K, V>, max: number): void {
   while (map.size > max) {
@@ -88,6 +104,22 @@ function parseTreeMarkdown(markdown: string): Map<number, AxElement> {
   return map;
 }
 
+/**
+ * 扫原始快照文本里是否有 AXSecureTextField 行（索引行与未索引行都算），命中时顺带取
+ * 第一个 secure 行的 label 供交回卡展示。行形如 `- [3] AXSecureTextField "Password"` /
+ * `  - AXSecureTextField "密码"`（括号 label 同 parseTreeMarkdown 口径）。
+ */
+function scanSecureField(markdown: string): { secure: true; label?: string } | { secure: false } | null {
+  const lineRe = /^\s*-\s*(?:\[\d+\]\s+)?(AX\w+)(?:\s+\(([^)]*)\)|\s+"([^"]*)")?/;
+  for (const rawLine of markdown.split('\n')) {
+    const m = rawLine.match(lineRe);
+    if (!m || !SECURE_FIELD_ROLE.test(m[1])) continue;
+    const label = (m[2] ?? m[3] ?? '').trim();
+    return { secure: true, ...(label ? { label } : {}) };
+  }
+  return null;
+}
+
 /** 把工具输出尽量解析成对象（CLI/部分 MCP 返回 JSON），失败返回 null。 */
 function tryParseObject(output: string): Record<string, unknown> | null {
   const trimmed = output.trim();
@@ -120,6 +152,15 @@ export function recordCuaResult(
         const obj = tryParseObject(output);
         const markdown =
           obj && typeof obj.tree_markdown === 'string' ? obj.tree_markdown : output;
+        // 窗口级敏感信号先记（未索引的 secure 行不在元素缓存里，元素缓存空不代表无 secure 行）
+        const secure = scanSecureField(markdown);
+        if (secure) {
+          windowSecureField.set(key, secure);
+        } else if (typeof args.query !== 'string' || !args.query.trim()) {
+          // 只有完整快照（无 query 过滤）且未截断的「无 secure 行」才能翻掉既有 true
+          if (!markdown.includes(OUTPUT_TRUNCATED_MARKER)) windowSecureField.set(key, { secure: false });
+        }
+        evict(windowSecureField, MAX_WINDOWS);
         const elements = parseTreeMarkdown(markdown);
         if (elements.size === 0) return;
         windowElements.delete(key); // 快照整体替换：旧索引作废
@@ -163,6 +204,77 @@ export function recordCuaResult(
 // ----------------------------------------------------------------------------
 // 文案生成（consume 侧）
 // ----------------------------------------------------------------------------
+
+/**
+ * 窗口级敏感输入信号（ADR-088 一期，消费方 cuaSensitiveStep）：目标窗口的最新快照是否
+ * 含 AXSecureTextField。pid+window_id 都在时只看该窗口（目标窗口为界）；只带 pid 时检查
+ * 该 pid 的所有缓存窗口（type_text 允许省 window_id）；只带 window_id 时按窗口号反扫。
+ * 返回 null = 目标窗口**从未有过快照**（无信号，不得升格交回，见规格 §9 故障态表）；
+ * 返回 { secure: false } = 有快照、无 secure 字段（正常窗口，照旧按应用授权链走）。
+ */
+export function readCuaWindowSecureField(
+  args: { pid?: unknown; window_id?: unknown },
+): { secure: boolean; label?: string } | null {
+  const pid = typeof args.pid === 'number' ? args.pid : undefined;
+  const windowId = typeof args.window_id === 'number' ? args.window_id : undefined;
+  if (pid === undefined && windowId === undefined) return null;
+  // 目标窗口明确（pid+window_id 都在）：只看这个窗口——同 app 别的窗口有密码框
+  // 不影响本窗口的正常输入（窗口级规则以「目标窗口」为界，规格 §2）。
+  if (pid !== undefined && windowId !== undefined) {
+    const hit = windowSecureField.get(`${pid}:${windowId}`);
+    if (!hit) return null;
+    return hit.secure ? { secure: true, ...(hit.label ? { label: hit.label } : {}) } : { secure: false };
+  }
+  // 只带 pid（type_text 允许省 window_id）：检查该 pid 的所有缓存窗口，任一 secure 即命中；
+  // 只带 window_id：按窗口号反扫。任一 secure 优先返回（带 label），否则记「有缓存但不敏感」。
+  let seen: SecureFieldSignal | undefined;
+  for (const [key, value] of windowSecureField) {
+    const sep = key.lastIndexOf(':');
+    const keyPid = key.slice(0, sep);
+    const keyWin = key.slice(sep + 1);
+    if ((pid !== undefined && keyPid === String(pid)) || (windowId !== undefined && keyWin === String(windowId))) {
+      if (value.secure) {
+        return { secure: true, ...(value.label ? { label: value.label } : {}) };
+      }
+      seen = seen ?? value;
+    }
+  }
+  return seen ? { secure: false } : null;
+}
+
+/** 可被点击的角色（索引行 = 带 AX action；这里再剔除输入框/静态文本等不会被「点下去就办事」的角色）。 */
+const CLICKABLE_ROLE = /^ax(button|link|menuitem|menubutton|popupbutton|checkbox|radiobutton|cell|row|toolbarbutton)$/i;
+
+/**
+ * 点击类敏感判定的只读查找（ADR-088 二期）：目标元素的 role/label（需 element_index），
+ * 以及目标窗口最新快照里带 label 的可点击行（像素点击的窗口级兜底用）。
+ * pid+window_id 都在时只看该窗口；只带 pid 时并集该 pid 的所有缓存窗口。
+ * 返回 null = 没有任何缓存快照（无信号，调用方留痕后放行）。
+ */
+export function readCuaClickTargets(
+  args: { pid?: unknown; window_id?: unknown; element_index?: unknown },
+): { target?: { role: string; label?: string }; clickables: Array<{ role: string; label: string }> } | null {
+  if (typeof args.pid !== 'number') return null;
+  const windows: Array<Map<number, AxElement>> = [];
+  if (typeof args.window_id === 'number') {
+    const hit = windowElements.get(`${args.pid}:${args.window_id}`);
+    if (hit) windows.push(hit);
+  } else {
+    for (const [key, value] of windowElements) {
+      if (key.startsWith(`${args.pid}:`)) windows.push(value);
+    }
+  }
+  if (windows.length === 0) return null;
+  const idx = args.element_index;
+  const target = typeof idx === 'number' && windows.length === 1 ? windows[0].get(idx) : undefined;
+  const clickables: Array<{ role: string; label: string }> = [];
+  for (const elements of windows) {
+    for (const el of elements.values()) {
+      if (el.label && CLICKABLE_ROLE.test(el.role)) clickables.push({ role: el.role, label: el.label });
+    }
+  }
+  return { ...(target ? { target } : {}), clickables };
+}
 
 function lookupElement(args: Record<string, unknown>): AxElement | undefined {
   const idx = args.element_index;
@@ -284,4 +396,5 @@ export function narrateCuaToolCall(
 export function resetCuaNarrationCacheForTest(): void {
   windowElements.clear();
   appByPid.clear();
+  windowSecureField.clear();
 }

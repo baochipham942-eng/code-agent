@@ -1,7 +1,8 @@
 // ============================================================================
 // browser_action `type` + secretRef guard (N-BROWSER-SECRETREF-HARDEN)
 // 1. 只解析 CODE_AGENT_BROWSER_SECRET_* 环境变量；`<NAME>_ORIGINS` 是站点白名单，缺失即拒绝。
-// 2. 填充前核对页面实时 origin；不在白名单（含跳到第三方 IdP）则什么都不填，交还给用户。
+// 2. 填充前核对页面实时 origin；不在白名单（含跳到第三方 IdP）则什么都不填，返回中性「需要用户自己输入」结果；
+//    真正把浏览器交给用户（waiting_human + 等待 Continue）由 ManagedBrowserProviderAdapter 在 takeover 成功后追加。
 // 3. 填充失败只返回本模块自己的句子：Playwright 报错会引用调用参数（即密码），绝不透传。
 // ============================================================================
 
@@ -146,9 +147,13 @@ export async function typeSecret(input: SecretTypeInput): Promise<ToolExecutionR
     const reason = resolved.allowedOrigins
       ? `the page is on ${origin}, which is not listed in ${resolved.originsVar}`
       : `${resolved.originsVar} is not set, so no site is allowed for this secret`;
+    // Neutral wording only: some callers never hand the browser to the user
+    // (legacy path without a surface identity; the user's own browser), so this
+    // guard must not claim a handover or a Continue button. The managed adapter
+    // appends the handover instructions after a takeover actually succeeded.
     return fail(
-      `This step needs you: ${reason}. Nothing was typed. Enter the credential yourself in the browser window (browser_action.switch_tab brings it to the front)` +
-        `, or add the exact site origin to ${resolved.originsVar} if you trust it.`,
+      `This step needs you: ${reason}. Nothing was typed. The user must enter the credential themselves in the browser window ` +
+        `(browser_action.switch_tab brings it to the front), or add the exact site origin to ${resolved.originsVar} if it is trusted.`,
       {
         code: 'SECRET_REF_ORIGIN_MISMATCH',
         userActionRequired: true,

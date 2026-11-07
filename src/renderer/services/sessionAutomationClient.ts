@@ -4,6 +4,7 @@ import type {
   SessionAutomationSessionSummary,
 } from '@shared/contract';
 import type { ParkedApprovalInboxItem } from '@shared/contract/pendingApproval';
+import type { AwaitingApprovalRun } from '@shared/contract/sessionAutomation';
 import ipcService from './ipcService';
 
 export const sessionAutomationClient = {
@@ -44,6 +45,22 @@ export const sessionAutomationClient = {
       IPC_DOMAINS.SESSION_AUTOMATION,
       'countPendingReview',
       {},
+    );
+  },
+
+  listAwaitingApprovalRuns(): Promise<AwaitingApprovalRun[]> {
+    return ipcService.invokeDomain<AwaitingApprovalRun[]>(
+      IPC_DOMAINS.SESSION_AUTOMATION,
+      'listAwaitingApprovalRuns',
+      {},
+    );
+  },
+
+  getVoidedApprovalReason(sessionId: string) {
+    return ipcService.invokeDomain<string | null>(
+      IPC_DOMAINS.SESSION_AUTOMATION,
+      'getVoidedApprovalReason',
+      { sessionId },
     );
   },
 

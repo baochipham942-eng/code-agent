@@ -8,7 +8,7 @@ import type { Dirent, Stats } from 'fs';
 import os from 'os';
 import path from 'path';
 import readline from 'readline';
-import type { AgentEngineKind } from '../../../shared/contract/agentEngine';
+import type { AgentEngineKind, RecentExternalChatImportResult } from '../../../shared/contract/agentEngine';
 import { CODEX_SESSION } from '../../../shared/constants';
 import {
   parseClaudeSession,
@@ -29,7 +29,6 @@ import { formatToolUseLine } from '../../externalImport/toolUseLine';
 import {
   importRecentExternalChats,
   type RecentExternalChatsImportOptions,
-  type RecentExternalChatImportResult,
 } from '../../externalImport/chatsImport';
 export type AgentEngineHistoryEngineKind = Extract<AgentEngineKind, 'codex_cli' | 'claude_code'>;
 export interface AgentEngineHistoryDiagnostic {

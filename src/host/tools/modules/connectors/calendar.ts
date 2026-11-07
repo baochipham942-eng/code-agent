@@ -11,6 +11,11 @@ import type {
   ToolResult,
 } from '../../../protocol/tools';
 import { getConnectorRegistry } from '../../../connectors';
+import {
+  appleScriptFailureLogDetail,
+  describeAppleScriptFailure,
+  isAppleScriptFailure,
+} from '../../../connectors/native/osascript';
 import { createVirtualArtifact } from '../../artifacts/artifactMeta';
 import { calendarSchema as schema } from './calendar.schema';
 
@@ -141,9 +146,18 @@ async function executeCalendar(
       meta: buildCalendarMeta(ctx, action, output, { count: events.length, events }),
     };
   } catch (error) {
+    const osascriptFailure = isAppleScriptFailure(error);
+    const failure = describeAppleScriptFailure('Calendar', error);
+    ctx.logger.warn('calendar connector failed', {
+      connector: 'calendar',
+      code: osascriptFailure ? failure.code : 'connector_error',
+      detail: appleScriptFailureLogDetail(error),
+    });
     return {
       ok: false,
-      error: `Calendar connector failed: ${error instanceof Error ? error.message : String(error)}`,
+      error: osascriptFailure
+        ? failure.message
+        : `Calendar connector failed: ${error instanceof Error ? error.message : String(error)}`,
     };
   }
 }

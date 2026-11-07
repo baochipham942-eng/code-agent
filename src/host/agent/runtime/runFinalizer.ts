@@ -30,7 +30,7 @@ import { getContextHealthService } from '../../context/contextHealthService';
 import { resolveContextWindow } from '../../model/modelLimits';
 import { getModelErrorStatus, summarizeModelErrorForUser } from '../../../shared/modelErrorDiagnostics';
 import { formatThrownError } from '../../../shared/utils/providerError';
-import { getModelAuthFailureMarker, getModelQuotaFailureMarker, getModelUnavailableMarker } from '../../model/errorClassifier';
+import { getModelAuthFailureMarker, getModelQuotaFailureMarker, getModelUnavailableMarker, getModelUsageLimitFailureMarker } from '../../model/errorClassifier';
 
 // Import refactored modules
 import type {
@@ -187,6 +187,25 @@ function hasTerminalWakeNoopAfterLastUser(messages: Message[]): boolean {
       message.role === 'assistant'
       && message.isMeta === true
       && message.toolCalls?.some((toolCall) => toolCall.name === 'wake_noop')
+    ) return true;
+  }
+  return false;
+}
+
+/**
+ * A successful tool can explicitly own the next visible UI (for example the
+ * direct-created role card plus first wake). This is a host-authored result
+ * marker, not a model argument, and is the only other valid silent terminal.
+ */
+function hasToolOwnedTerminalAfterLastUser(messages: Message[]): boolean {
+  for (let index = messages.length - 1; index >= 0; index -= 1) {
+    const message = messages[index];
+    if (message.role === 'user') return false;
+    if (
+      message.role === 'tool'
+      && message.toolResults?.some((result) => (
+        result.success && result.metadata?.endRunWithoutAssistant === true
+      ))
     ) return true;
   }
   return false;
@@ -374,6 +393,7 @@ export class RunFinalizer {
       terminalStatus === 'completed'
       && !hasVisibleAssistantTextAfterLastUser(this.ctx.messages)
       && !hasTerminalWakeNoopAfterLastUser(this.ctx.messages)
+      && !hasToolOwnedTerminalAfterLastUser(this.ctx.messages)
       && !this.ctx.circuitBreaker.isTripped()
       && iterations < this.ctx.maxIterations
       && this.ctx.unattendedTurn !== true
@@ -402,7 +422,7 @@ export class RunFinalizer {
         });
       }
       logger.error('[AgentLoop] Loop exited due to runtime error', terminalError);
-      const marker = getModelAuthFailureMarker(terminalError) ?? getModelUnavailableMarker(terminalError) ?? getModelQuotaFailureMarker(terminalError);
+      const marker = getModelAuthFailureMarker(terminalError) ?? getModelUnavailableMarker(terminalError) ?? getModelUsageLimitFailureMarker(terminalError) ?? getModelQuotaFailureMarker(terminalError);
       // 带上这一轮真正跑的模型：手机据此判断用户是否已经换走，换了就不再挂「换一个可用模型」。
       const modelFailure = marker && { ...marker, provider: marker.provider ?? this.ctx.modelConfig.provider, model: marker.model ?? this.ctx.modelConfig.model };
       logCollector.agent('ERROR', `Agent run failed: ${errorMessage}`);
@@ -522,7 +542,12 @@ export class RunFinalizer {
       });
     }
 
-    await recordTurnOutcomeStamp(this.ctx, terminalStatus, completionSummary);
+    await recordTurnOutcomeStamp(
+      this.ctx,
+      terminalStatus,
+      completionSummary,
+      terminalStatus === 'cancelled' && this.ctx.control.cancelReason === 'idle-reaped' ? 'idle_reaped' : undefined,
+    );
 
     await this.emitTurnDiff();
 
@@ -531,7 +556,14 @@ export class RunFinalizer {
     const terminalEventType = getRunTerminalAgentEventType(terminalStatus);
     logger.debug(`[AgentLoop] ========== run() END, emitting ${terminalEventType} ==========`);
     logCollector.agent('INFO', `Agent run ${terminalStatus}, ${iterations} iterations`);
-    this.ctx.onEvent({ type: terminalEventType, data: null });
+    if (terminalEventType === 'agent_cancelled') {
+      this.ctx.onEvent({
+        type: 'agent_cancelled',
+        data: this.ctx.control.cancelReason === 'idle-reaped' ? { reason: 'idle_reaped' } : null,
+      });
+    } else {
+      this.ctx.onEvent({ type: terminalEventType, data: null });
+    }
 
     // === Mechanism Stats (observability) ===
     logger.info(`[AgentLoop] === Mechanism Stats ===`);

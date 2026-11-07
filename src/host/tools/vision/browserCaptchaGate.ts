@@ -7,6 +7,8 @@
 
 import type { ToolContext, ToolExecutionResult } from '../types';
 import { classifyBrowserComputerManualTakeover } from '../../../shared/utils/browserComputerRedaction';
+import { detectBrowserChallenge } from '../../../shared/utils/browserChallengeDetection';
+import { readChallengeSignals, type ChallengeSignalPage } from '../../services/infra/browser/challengeSignalReader';
 
 const GATED_TAKEOVER_CLASSES = new Set<string>(['captcha_or_risk_control', 'mfa_required']);
 import { createLogger } from '../../services/infra/logger';
@@ -26,6 +28,7 @@ const BROWSER_CAPTCHA_MUTATION_ACTIONS = new Set<string>([
 
 interface CaptchaGateBrowserService {
   getPageContent(tabId?: string): Promise<{ url: string; title: string; text: string }>;
+  getActiveTab?(): { id: string; page: ChallengeSignalPage } | null;
 }
 
 export interface BrowserCaptchaGateInput {
@@ -47,15 +50,38 @@ export async function enforceBrowserCaptchaTakeoverGate(
   }
   let url: string;
   let visibleText: string;
+  let challenge: boolean;
   try {
     const content = await input.browserService.getPageContent(input.tabId);
     url = content?.url || '';
     visibleText = [content?.title || '', content?.text || ''].join('\n');
+    let signals: Awaited<ReturnType<typeof readChallengeSignals>> = null;
+    const active = input.browserService.getActiveTab?.() ?? null;
+    if (!input.browserService.getActiveTab) {
+      logger.warn('captcha takeover gate: signal reader unavailable (service has no getActiveTab), using title + short-body rule');
+    } else if (!active || (input.tabId && active.id !== input.tabId)) {
+      logger.warn('captcha takeover gate: signal reader unavailable (target tab is not the active tab), using title + short-body rule');
+    } else {
+      try {
+        signals = await readChallengeSignals(active.page);
+      } catch (error) {
+        logger.warn(`captcha takeover gate: signal read failed (${error instanceof Error ? error.message : 'unknown'}), using title + short-body rule`);
+      }
+      if (!signals) logger.warn('captcha takeover gate: signal reader unavailable (page lacks frames/$$eval), using title + short-body rule');
+    }
+    challenge = detectBrowserChallenge({
+      title: signals?.title ?? content?.title,
+      headings: signals?.headings,
+      bodyText: content?.text,
+      frameUrls: signals?.frameUrls,
+    });
   } catch (error) {
     logger.warn(`captcha takeover gate: page content unavailable, gate skipped (${error instanceof Error ? error.message : 'unknown'})`);
     return null;
   }
-  const takeover = classifyBrowserComputerManualTakeover(visibleText);
+  const takeover = challenge
+    ? 'captcha_or_risk_control'
+    : classifyBrowserComputerManualTakeover(visibleText, { skipCaptcha: true });
   // 只拦人机验证/风控与 MFA：login_required 的判据含裸「登录」字样，国内页面几乎都有登录入口，
   // 拦它会把普通点击全拖进审批（工单①口径：captcha / mfa / 风控）。登录墙交给主模型正常处理。
   if (!takeover || !GATED_TAKEOVER_CLASSES.has(takeover)) {

@@ -7,6 +7,7 @@ import { createLogger } from '../../services/infra/logger';
 import { getConfigService } from '../../services/core/configService';
 import { WEB_FETCH } from '../../../shared/constants';
 import { scrapeWithFirecrawl } from './firecrawlClient';
+import { isPrivateOrLocalHost } from '../../security/ssrfGuard';
 
 const logger = createLogger('FetchDocument');
 
@@ -81,6 +82,38 @@ function delay(ms: number): Promise<void> {
 }
 
 // ============================================================================
+// SSRF Guard (N-WEBFETCH-BLOCK-PRIVATE-NET)
+// ============================================================================
+
+const SSRF_REFUSAL_HINT =
+  'web_fetch only reaches public internet URLs. ' +
+  'If the user really wants to fetch a local/internal service, ' +
+  'use a Bash curl command instead — it asks the user for approval.';
+
+/**
+ * 校验抓取目标可达公网：仅 http/https 且 hostname 非 私网/环回/链路本地/云元数据
+ * （规则复用 ssrfGuard.isPrivateOrLocalHost，不复制）。初始 URL 与每跳重定向目标
+ * 都必须过这道闸。拒绝时抛模型可读的英文错误——绝不静默放行。
+ */
+function assertPublicHttpUrl(raw: string): URL {
+  let url: URL;
+  try {
+    url = new URL(raw);
+  } catch {
+    throw new Error(`Invalid URL: ${raw}`);
+  }
+  if (url.protocol !== 'http:' && url.protocol !== 'https:') {
+    throw new Error(`web_fetch blocked: only http/https URLs are allowed, got ${url.protocol}. ${SSRF_REFUSAL_HINT}`);
+  }
+  if (isPrivateOrLocalHost(url.hostname)) {
+    throw new Error(
+      `web_fetch blocked: ${url.hostname} is a private, loopback, link-local or cloud-metadata address. ${SSRF_REFUSAL_HINT}`,
+    );
+  }
+  return url;
+}
+
+// ============================================================================
 // Main Fetch Function
 // ============================================================================
 
@@ -92,8 +125,13 @@ function delay(ms: number): Promise<void> {
  * - LRU cache (TTL=15min, max 50 entries), keyed by final URL
  * - Retries once on 429/5xx with 1s delay
  * - Classifies cross-domain redirects for caller decision
+ * - SSRF guard: initial URL and every redirect hop must be public http/https
  */
 export async function fetchDocument(url: string): Promise<FetchDocumentResult> {
+  // SSRF 守卫先于缓存查询与 Firecrawl：私网/环回目标既不能被抓取、不能进缓存，
+  // 也不能被泄露给 Firecrawl 这个第三方云。
+  assertPublicHttpUrl(url);
+
   // Check cache first
   const cached = getCached(url);
   if (cached) {
@@ -137,14 +175,32 @@ export async function fetchDocument(url: string): Promise<FetchDocumentResult> {
         await delay(WEB_FETCH.RETRY_DELAY);
       }
 
-      const response = await fetch(url, {
-        headers: {
-          'User-Agent': 'Mozilla/5.0 (compatible; CodeAgent/1.0)',
-          Accept: 'text/markdown, text/html, */*',
-        },
-        redirect: 'follow',
-        signal: AbortSignal.timeout(WEB_FETCH.TIMEOUT),
-      });
+      // manual 重定向 + 逐跳 SSRF 校验：公网 URL 302 到私网目标时，
+      // 在发出对私网目标的请求之前拦下。整个跳转链共用一个总超时信号。
+      const signal = AbortSignal.timeout(WEB_FETCH.TIMEOUT);
+      let currentUrl = url;
+      let response: Response;
+      for (let hop = 0; ; hop++) {
+        const hopUrl = assertPublicHttpUrl(currentUrl);
+        response = await fetch(currentUrl, {
+          headers: {
+            'User-Agent': 'Mozilla/5.0 (compatible; CodeAgent/1.0)',
+            Accept: 'text/markdown, text/html, */*',
+          },
+          redirect: 'manual',
+          signal,
+        });
+        const location = response.headers.get('location');
+        if (response.status >= 300 && response.status < 400 && location) {
+          if (hop >= WEB_FETCH.MAX_REDIRECTS) {
+            throw new Error(`Too many redirects (more than ${WEB_FETCH.MAX_REDIRECTS}) for ${url}`);
+          }
+          // 相对 Location 以当前 URL 为基解析；下一跳开头会再过一遍守卫
+          currentUrl = new URL(location, hopUrl).toString();
+          continue;
+        }
+        break;
+      }
 
       // Retry on transient errors
       if (!response.ok && isRetryableStatus(response.status) && attempt < WEB_FETCH.MAX_RETRIES) {
@@ -159,7 +215,8 @@ export async function fetchDocument(url: string): Promise<FetchDocumentResult> {
 
       const contentType = response.headers.get('content-type') || '';
       const content = await response.text();
-      const finalUrl = response.url || url;
+      // manual 模式下 response.url 不可靠——最终 URL 由跳转链自己跟踪
+      const finalUrl = currentUrl;
 
       // Classify redirect
       const requestDomain = extractDomain(url);

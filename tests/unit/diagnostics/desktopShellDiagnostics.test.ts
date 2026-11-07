@@ -74,6 +74,27 @@ describe('desktop shell diagnostics aggregator', () => {
     fs.writeFileSync(filePath, content, 'utf8');
   }
 
+  function writeNativeManifest(
+    resourceRoot: string,
+    nativeName: string,
+    options: { writeNative: boolean; modules?: Record<string, unknown> },
+  ) {
+    const native = `dist/native/better-sqlite3/prebuilds/${nativeName}`;
+    writeFile(path.join(resourceRoot, 'dist', 'native', 'manifest.json'), JSON.stringify({
+      kind: 'agent_neo_native_dep_manifest',
+      schemaVersion: 1,
+      platform: `${process.platform}-${process.arch}`,
+      modules: options.modules ?? {
+        'better-sqlite3': { kind: 'node-module', entry: 'node_modules/better-sqlite3', native },
+      },
+    }));
+    if (options.writeNative) writeFile(path.join(resourceRoot, native));
+  }
+
+  function sqliteCheck(resourceRoot: string) {
+    return getDesktopShellResourceChecks({ resourceRoot }).find((check) => check.id === 'better-sqlite3-native');
+  }
+
   it('checks critical packaged resources without hashing the bundle', () => {
     const resourceRoot = path.join(root, '_up_');
     writeFile(path.join(resourceRoot, 'dist', 'web', 'webServer.cjs'));
@@ -81,14 +102,7 @@ describe('desktop shell diagnostics aggregator', () => {
     const nodePath = path.join(resourceRoot, 'dist', 'bundled-node', 'bin', 'node');
     writeFile(nodePath, '#!/usr/bin/env node\n');
     fs.chmodSync(nodePath, 0o755);
-    writeFile(path.join(
-      resourceRoot,
-      'dist',
-      'native',
-      'better-sqlite3',
-      'prebuilds',
-      `${process.platform}-${process.arch}.node`,
-    ));
+    writeNativeManifest(resourceRoot, `${process.platform}-${process.arch}.node`, { writeNative: true });
 
     const checks = getDesktopShellResourceChecks({ resourceRoot });
 
@@ -98,6 +112,48 @@ describe('desktop shell diagnostics aggregator', () => {
       required: false,
       status: 'missing',
     }));
+  });
+
+  it('reads the better-sqlite3 native path from the manifest, not from platform-arch', () => {
+    const resourceRoot = path.join(root, '_up_');
+    writeNativeManifest(resourceRoot, 'custom-layout-v2.node', { writeNative: true });
+
+    const check = sqliteCheck(resourceRoot);
+
+    expect(check).toMatchObject({ status: 'present', required: true });
+    expect(check?.path).toBe(path.join(resourceRoot, 'dist/native/better-sqlite3/prebuilds/custom-layout-v2.node'));
+  });
+
+  it('names the manifest when it is missing, distinct from a missing native file', () => {
+    const resourceRoot = path.join(root, '_up_');
+    fs.mkdirSync(resourceRoot, { recursive: true });
+
+    const check = sqliteCheck(resourceRoot);
+
+    expect(check?.status).toBe('missing');
+    expect(check?.message).toContain('dist/native/manifest.json');
+    expect(check?.message).not.toBe('resource missing from packaged bundle');
+  });
+
+  it('names the manifest when it is invalid or has no better-sqlite3 entry', () => {
+    const resourceRoot = path.join(root, '_up_');
+    writeFile(path.join(resourceRoot, 'dist', 'native', 'manifest.json'), '{"kind":"other"}');
+    expect(sqliteCheck(resourceRoot)?.message).toContain('dist/native/manifest.json');
+    expect(sqliteCheck(resourceRoot)?.message).toContain('invalid manifest');
+
+    writeNativeManifest(resourceRoot, 'x.node', { writeNative: false, modules: {} });
+    const check = sqliteCheck(resourceRoot);
+    expect(check?.status).toBe('missing');
+    expect(check?.message).toContain("declares no native file for 'better-sqlite3'");
+  });
+
+  it('keeps the packaged-bundle message when the declared native file is absent', () => {
+    const resourceRoot = path.join(root, '_up_');
+    writeNativeManifest(resourceRoot, `${process.platform}-${process.arch}.node`, { writeNative: false });
+
+    const check = sqliteCheck(resourceRoot);
+
+    expect(check).toMatchObject({ status: 'missing', message: 'resource missing from packaged bundle' });
   });
 
   it('treats the critical sqlite native module as a required resource', async () => {

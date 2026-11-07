@@ -19,12 +19,33 @@ import { deriveActionFingerprint, deriveSubmissionKey, delegationTargetIdentity 
 import { projectSessionCandidates, resolveCandidateRef } from '../../../services/delegation/delegationCandidates';
 import { getDelegationCandidateSecret, getDelegationToolRuntime, workspaceWithinRoots } from '../../../services/delegation/delegationToolRuntime';
 import { isCrossSessionDelegationEnabled } from '../../../services/delegation/crossSessionDelegationFlag';
+import { createLogger } from '../../../services/infra/logger';
+import { trackNode } from '../../../observability/posthogNode';
+import { POSTHOG_EVENTS } from '../../../../shared/observability/posthog-events';
 import { delegateSessionSchema as schema } from './delegateSession.schema';
+
+const logger = createLogger('DelegateSession');
 
 const REJECTION_SUFFIX = ' Nothing was delegated. Ask the user with AskUserQuestion; do not retry with create_new.';
 
-function rejection(code: string, detail: string): ToolResult<string> {
-  return { ok: false, code: 'DELEGATION_REJECTED', error: `${code}: ${detail}.${REJECTION_SUFFIX}` };
+// FB-772：origin_turn_id 参与 submission_key 派生（session\0turn\0action\0target）。
+// 旧代码在 ctx.turnId 缺失时落 'unknown-turn' 跨轮共享常量——同 origin session
+// 同目标的第二个不同正文委托被 G4 误拒（idempotency_conflict）。turn id 经
+// buildProtocolContext 到达后，缺值只可能是调用方装配错误：turn 与 run 双缺时
+// 拒绝并告警，绝不回退跨轮共享常量；run 与用户轮一一对应，可作回退身份。
+function originTurnIdOf(ctx: Parameters<ToolHandler['execute']>[1]): string {
+  const turnId = typeof ctx.turnId === 'string' && ctx.turnId.trim().length > 0 ? ctx.turnId : undefined;
+  if (turnId !== undefined) return turnId;
+  const runId = typeof ctx.runId === 'string' && ctx.runId.trim().length > 0 ? ctx.runId : undefined;
+  if (runId !== undefined) return runId;
+  logger.warn('[DelegateSession] origin turn identity missing: ctx.turnId is empty and ctx.runId is empty; refusing to derive a submission key (no cross-turn constant fallback)');
+  throw new Error('delegate_session requires an origin turn identity; both ctx.turnId and ctx.runId are empty');
+}
+
+// ADR-072 E6 打点：meta 只带 code/gate 两个枚举值（无内容、无 id、无路径），
+// 记录层从这里读，避免解析模型可见的 error 文本。
+function rejection(code: string, detail: string, gate?: string): ToolResult<string> {
+  return { ok: false, code: 'DELEGATION_REJECTED', error: `${code}: ${detail}.${REJECTION_SUFFIX}`, meta: { code, gate: gate ?? 'none' } };
 }
 
 function successfulOutput(input: { delegationId: string; targetName: string; queuedAhead: number }): ToolResult<string> {
@@ -95,7 +116,7 @@ async function buildSnapshot(
   }
   return {
     originSessionId: ctx.sessionId,
-    originTurnId: ctx.turnId ?? 'unknown-turn',
+    originTurnId: originTurnIdOf(ctx),
     ...(hostWorkspaceRoot ? { hostWorkspaceRoot } : {}),
     ...(candidateSet ? {
       candidates: {
@@ -192,7 +213,7 @@ async function admissionFor(
   const db = runtime.getDb();
   const existing = db ? new SessionDelegationRepository(db).getBySubmissionKey(deriveSubmissionKey({
     originSessionId: ctx.sessionId,
-    originTurnId: ctx.turnId ?? 'unknown-turn',
+    originTurnId: originTurnIdOf(ctx),
     action: call.action,
     targetIdentity,
   })) : null;
@@ -212,6 +233,34 @@ export async function executeDelegateSession(
   canUseTool: Parameters<ToolHandler['execute']>[2],
   _onProgress?: Parameters<ToolHandler['execute']>[3],
 ): Promise<ToolResult<string>> {
+  const result = await runDelegateSession(args, ctx, canUseTool, _onProgress);
+  recordDelegateSessionOutcome(args, result);
+  return result;
+}
+
+// ADR-072 E6：每个到达工具体的调用记录恰好一次结局（PostHog + host log 各一），
+// 属性恰好 outcome/code/gate/action 四个。FEATURE_DISABLED / PERMISSION_DENIED
+// 不是 gate 拒绝，不记录。
+function recordDelegateSessionOutcome(args: Record<string, unknown>, result: ToolResult<string>): void {
+  if (!result.ok && result.code !== 'DELEGATION_REJECTED') return;
+  const meta = (result as { meta?: { code?: unknown; gate?: unknown } }).meta;
+  const parsed = parseArgs(args);
+  const props = {
+    outcome: result.ok ? 'ok' : 'rejected',
+    code: typeof meta?.code === 'string' ? meta.code : result.ok ? 'ok' : 'unknown',
+    gate: typeof meta?.gate === 'string' ? meta.gate : 'none',
+    action: parsed.ok ? parsed.call.action : 'unknown',
+  };
+  trackNode(POSTHOG_EVENTS.DELEGATE_SESSION_OUTCOME, props);
+  logger.info('[DelegateSession] outcome', props);
+}
+
+async function runDelegateSession(
+  args: Record<string, unknown>,
+  ctx: Parameters<ToolHandler['execute']>[1],
+  canUseTool: Parameters<ToolHandler['execute']>[2],
+  _onProgress?: Parameters<ToolHandler['execute']>[3],
+): Promise<ToolResult<string>> {
   if (!isCrossSessionDelegationEnabled()) return { ok: false, code: 'FEATURE_DISABLED', error: 'cross-session delegation is disabled' };
   const permission = await canUseTool(schema.name, args);
   if (!permission.allow) return { ok: false, code: 'PERMISSION_DENIED', error: permission.reason };
@@ -221,7 +270,7 @@ export async function executeDelegateSession(
   const call = parsed.call;
   try {
     const admission = await admissionFor(call, ctx, runtime);
-    if (admission.result.kind === 'rejected') return rejection(admission.result.code, admission.result.detail);
+    if (admission.result.kind === 'rejected') return rejection(admission.result.code, admission.result.detail, admission.result.gate);
     if (admission.result.kind === 'reused') {
       // rework r3：同指纹重放只证明「提交过」，不证明「还能投」。行已
       // stopped/aborted/superseded 时载荷永久暂停（INV-6 撤回不复活），必须
@@ -264,7 +313,7 @@ async function executeNewDelegation(
   const input = {
     delegationId,
     originSessionId: ctx.sessionId,
-    originTurnId: ctx.turnId ?? 'unknown-turn',
+    originTurnId: originTurnIdOf(ctx),
     disposition: call.action as 'delegate_existing' | 'create_new',
     targetSessionId: targetId,
     submissionKey: admission.result.submissionKey,
@@ -339,7 +388,13 @@ async function executeChain(
     };
     const facts = await collectDeliveryFacts(deps, { sessionId: row.targetSessionId, queuedInputId: row.targetQueuedInputId, originSessionId: row.originSessionId });
     const delivery = (await import('../../../services/delegation/delegationAdmission')).recheckForDelivery(facts.snapshot);
-    if (delivery.kind !== 'deliver') return rejection(delivery.kind === 'pause' ? delivery.code : 'target_busy', delivery.kind === 'wait' ? 'another delegation is running' : delivery.detail);
+    if (delivery.kind !== 'deliver') {
+      // rework r1：pause 分支携带真实 gate（G1/G2/G11/G12/INV-2），必须随 meta
+      // 记录，E6 的 code × gate 分布才不失真；wait 是排队不是门拒绝，按工单
+      // 口径不传 gate（记 none）。
+      if (delivery.kind === 'pause') return rejection(delivery.code, delivery.detail, delivery.gate);
+      return rejection('target_busy', 'another delegation is running');
+    }
     queued.unpauseQueued(row.targetQueuedInputId, now);
     repository.markResumed(row.delegationId, now);
     runtime.notifyEnqueued(row.targetSessionId);
@@ -351,7 +406,7 @@ async function executeChain(
     const newTarget = row.targetSessionId;
     const target = runtime.getSessionRow(newTarget);
     const targetIdentity = `session:${newTarget}`;
-    const submissionKey = deriveSubmissionKey({ originSessionId: ctx.sessionId, originTurnId: ctx.turnId ?? 'unknown-turn', action: 'correct', targetIdentity: `delegation:${row.delegationId}` });
+    const submissionKey = deriveSubmissionKey({ originSessionId: ctx.sessionId, originTurnId: originTurnIdOf(ctx), action: 'correct', targetIdentity: `delegation:${row.delegationId}` });
     // The new queue row is a normal delegate_existing delivery; its stored
     // disposition must match the fingerprint used by K1C at delivery time.
     const actionFingerprint = deriveActionFingerprint({ action: 'delegate_existing', targetIdentity, content: call.content, attachmentRefs: [] });
@@ -359,7 +414,7 @@ async function executeChain(
     const envelope: ConversationEnvelope = { ...(oldEnvelope ?? { sessionId: newTarget }), content: call.content, sessionId: newTarget, options: target?.modelConfig ? { modelSpec: target.modelConfig } : oldEnvelope?.options };
     const committed = commitDelegation(
       db,
-      { delegationId: newId, originSessionId: ctx.sessionId, originTurnId: ctx.turnId ?? 'unknown-turn', disposition: 'delegate_existing', targetSessionId: newTarget, submissionKey, actionFingerprint, envelope, supersedesDelegationId: row.delegationId, now },
+      { delegationId: newId, originSessionId: ctx.sessionId, originTurnId: originTurnIdOf(ctx), disposition: 'delegate_existing', targetSessionId: newTarget, submissionKey, actionFingerprint, envelope, supersedesDelegationId: row.delegationId, now },
       undefined,
       {
         supersededDelegationId: row.delegationId,

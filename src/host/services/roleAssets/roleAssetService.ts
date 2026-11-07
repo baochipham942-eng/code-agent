@@ -305,9 +305,12 @@ export async function loadScopedMemoryIndex(target: ScopedMemoryTarget): Promise
     if (!trimmedContent) return null;
     const lines = trimmedContent.split('\n');
     if (lines.length > ROLE_ASSETS.INDEX_MAX_LINES) {
-      const omitted = lines.length - ROLE_ASSETS.INDEX_MAX_LINES;
+      // N 按「被裁掉的索引条目」计（`- ` 开头的条目行），物理行里的空行/标题行不计——
+      // 通知是给模型看的盲区清单，报条目数才有检索意义。
+      const omitted = lines.slice(ROLE_ASSETS.INDEX_MAX_LINES)
+        .filter((line) => line.trim().startsWith('- ')).length;
       logger.warn(
-        `Scoped ${target.scope} memory index has ${lines.length} lines, truncating to ${ROLE_ASSETS.INDEX_MAX_LINES} (${omitted} lines omitted this session)`,
+        `Scoped ${target.scope} memory index has ${lines.length} lines, truncating to ${ROLE_ASSETS.INDEX_MAX_LINES} (${omitted} index entries omitted this session)`,
       );
       return lines.slice(0, ROLE_ASSETS.INDEX_MAX_LINES).join('\n')
         + `\n\nOmittedMemoryIndexNotice: 省略了 ${omitted} 条记忆索引条目，需要时可使用 MemoryRead 获取。`;

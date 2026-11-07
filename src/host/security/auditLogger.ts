@@ -443,12 +443,18 @@ export class AuditLogger {
    */
   private getLogFilesInRange(startDate: Date, endDate: Date): string[] {
     const files: string[] = [];
-    const current = new Date(startDate);
+    // File names use UTC dates (getDateString), so enumerate UTC calendar days;
+    // local-calendar stepping skips the last day across a DST fall-back.
+    const current = new Date(Date.UTC(startDate.getUTCFullYear(), startDate.getUTCMonth(), startDate.getUTCDate()));
 
     while (current <= endDate) {
       files.push(this.getLogFilePath(this.getDateString(current)));
-      current.setDate(current.getDate() + 1);
+      current.setUTCDate(current.getUTCDate() + 1);
     }
+
+    // 跨夏令时回拨时 setDate 按本地日步进会比 endDate 晚 1 小时，循环少迭代一次而漏掉当天文件
+    const endFile = this.getLogFilePath(this.getDateString(endDate));
+    if (!files.includes(endFile)) files.push(endFile);
 
     return files;
   }

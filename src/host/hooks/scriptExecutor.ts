@@ -3,7 +3,8 @@
 // ============================================================================
 
 import { exec } from 'child_process';
-import { promisify } from 'util';
+import { existsSync } from 'fs';
+import { tmpdir } from 'os';
 import type { HookExecutionResult, AnyHookContext, HookActionResult } from '../protocol/events';
 import { createHookEnvVars } from '../protocol/events';
 import { maskSensitiveData } from '../security/sensitiveDetector';
@@ -13,8 +14,56 @@ import { truncateHeadTail } from '../context/layers/toolResultBudget';
 import { buildSpillNotice, spillToolResultArchive } from '../utils/toolResultSpill';
 import { HOOK_OUTPUT_BUDGET, HOOK_TIMEOUTS, TOOL_RESULT_SPILL } from '../../shared/constants';
 
-const execAsync = promisify(exec);
 const logger = createLogger('ScriptExecutor');
+
+/**
+ * exec 的子进程 stdin 是一根父进程持有、默认永不关闭的管道。CC 兼容的 hook 脚本
+ * 按协议从 stdin 读事件负载，读不到 EOF 就一直挂到 timeout（实测 cc-status 二进制
+ * 每次挂满 5s 被杀，Hooks 行报「N 个出错」）。这里立刻 end() stdin——`< /dev/null`
+ * 语义：不读 stdin 的脚本无感，读 stdin 的脚本立刻拿到 EOF 正常退出。
+ * 事件数据仍按 createHookEnvVars 走环境变量，不走 stdin。
+ */
+function execHookCommand(
+  command: string,
+  options: { timeout: number; cwd: string; env: NodeJS.ProcessEnv; maxBuffer: number },
+): Promise<{ stdout: string; stderr: string }> {
+  return new Promise((resolve, reject) => {
+    const child = exec(command, options, (error, stdout, stderr) => {
+      if (error) {
+        // 与 promisify(exec) 的 reject 形状对齐：把 stdout/stderr 挂上 error
+        // （catch 侧按 error.stdout / error.code / error.killed 分支决策）。
+        const augmented = error as NodeJS.ErrnoException & { stdout?: string; stderr?: string };
+        augmented.stdout = stdout;
+        augmented.stderr = stderr;
+        reject(augmented);
+      } else {
+        resolve({ stdout, stderr });
+      }
+    });
+    // stdio 全 pipe 下 stdin 必在；null 分支只覆盖自定义 stdio，这里不存在
+    child.stdin?.on('error', () => { /* 子进程先退出时写端 EPIPE，忽略 */ });
+    child.stdin?.end();
+  });
+}
+
+/**
+ * 解析 hook 子进程的 cwd：规划中的会话工作目录可能尚未落盘（懒开目录，
+ * N-DELIVERABLE-WORKDIR-LAZY——目录只在首个会写 cwd 的工具派发时创建，而
+ * UserPromptSubmit/PreToolUse 等 hook 在那之前就跑了）。cwd 缺失时 exec 会以
+ * `spawn /bin/sh ENOENT` 整批报错，Hooks 行显示「N 个出错」；回退到必然存在的
+ * tmpdir 让 hook 照常执行，目录随后由 WorkDirectoryMaterializer 落盘。
+ */
+function resolveHookCwd(options: ScriptExecutorOptions, context: AnyHookContext): string {
+  const requested = options.workingDirectory || context.workingDirectory;
+  if (requested && !existsSync(requested)) {
+    logger.warn('Hook working directory not on disk yet; falling back to tmpdir', {
+      workingDirectory: requested,
+      event: context.event,
+    });
+    return tmpdir();
+  }
+  return requested;
+}
 
 // ----------------------------------------------------------------------------
 // Constants
@@ -113,9 +162,9 @@ export async function executeScript(
       event: context.event,
     });
 
-    const { stdout, stderr } = await execAsync(options.command, {
+    const { stdout, stderr } = await execHookCommand(options.command, {
       timeout,
-      cwd: options.workingDirectory || context.workingDirectory,
+      cwd: resolveHookCwd(options, context),
       env,
       maxBuffer: TOOL_RESULT_SPILL.MAX_SPILL_BYTES,
     });

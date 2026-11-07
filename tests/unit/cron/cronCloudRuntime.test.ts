@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import { CronCloudRuntime } from '../../../src/host/cron/cronCloudRuntime';
 import type { CronJobDefinition, CronJobExecution } from '../../../src/shared/contract/cron';
+import { CRON_CLOUD_UNAVAILABLE_MESSAGE_ZH } from '../../../src/shared/utils/cronCloudUnavailable';
 
 function cloudJob(): CronJobDefinition {
   return {
@@ -98,6 +99,70 @@ describe('CronCloudRuntime.removeJob', () => {
   });
 });
 
+
+// N-CRON-FAIL-PLAIN-CLOUD-DOWN-FU1：云端侧失败此前只落库不通知——云端调度器不可用时
+// 用户零信号。recordFailure 落库后要能把刚持久化的执行交给 onFailureRecorded。
+describe('CronCloudRuntime.recordFailure 失败钩子', () => {
+  it('云端侧失败落库后调一次 onFailureRecorded，带回刚持久化的那条执行', async () => {
+    const executions: CronJobExecution[] = [];
+    const failures: Array<{ definition: CronJobDefinition; execution: CronJobExecution }> = [];
+    // 全链路 fetch 打不通（真实「云端调度器不可用」形状），listJobs 抛错即触发 recordFailure。
+    const fetchMock = vi.fn(async () => {
+      throw new Error('fetch failed');
+    });
+    const definition = cloudJob();
+    const runtime = new CronCloudRuntime(
+      () => ({ baseUrl: 'https://cron.example.test', token: 'secret-token' }),
+      {
+        getJobs: () => [{ definition, cloudJobId: 'remote-1' }],
+        persistJob: async () => {},
+        persistExecution: async (execution) => { executions.push(execution); },
+        loadExecutionStatus: () => undefined,
+        onCompleted: async () => {},
+        onFailureRecorded: (failedDefinition, execution) => {
+          failures.push({ definition: failedDefinition, execution });
+        },
+        unavailableMessage: () => CRON_CLOUD_UNAVAILABLE_MESSAGE_ZH,
+      },
+      fetchMock as typeof fetch,
+    );
+
+    await expect(runtime.removeJob(definition, 'remote-1')).resolves.toBe(false);
+
+    expect(executions).toHaveLength(1);
+    expect(failures).toHaveLength(1);
+    expect(failures[0]?.definition.id).toBe('local-job-1');
+    // 钩子拿到的是刚落库的那条执行（同一对象）：failed、固定句报文、无 sessionId
+    expect(failures[0]?.execution).toBe(executions[0]);
+    expect(failures[0]?.execution.status).toBe('failed');
+    expect(failures[0]?.execution.error).toBe(CRON_CLOUD_UNAVAILABLE_MESSAGE_ZH);
+    expect(failures[0]?.execution.sessionId).toBeUndefined();
+  });
+
+  it('未接钩子时只落库不炸（可选依赖，单测/不关心通知的装配方零扰动）', async () => {
+    const executions: CronJobExecution[] = [];
+    const fetchMock = vi.fn(async () => {
+      throw new Error('fetch failed');
+    });
+    const runtime = new CronCloudRuntime(
+      () => ({ baseUrl: 'https://cron.example.test', token: 'secret-token' }),
+      {
+        getJobs: () => [],
+        persistJob: async () => {},
+        persistExecution: async (execution) => { executions.push(execution); },
+        loadExecutionStatus: () => undefined,
+        onCompleted: async () => {},
+        unavailableMessage: () => CRON_CLOUD_UNAVAILABLE_MESSAGE_ZH,
+      },
+      fetchMock as typeof fetch,
+    );
+
+    await runtime.addJob(cloudJob());
+
+    expect(executions).toHaveLength(1);
+    expect(executions[0]?.status).toBe('failed');
+  });
+});
 
 describe('CronCloudRuntime.reconcile', () => {
   // 云端把这条弄丢了（Pod 重建 / 手工清理）时，本地那条会永远停在 enabled 却再也不触发，

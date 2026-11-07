@@ -76,7 +76,7 @@ describe('memory_amend 工具', () => {
     expect(dbMocks.updateMemory).toHaveBeenCalledWith('mem-target', {
       content: 'Corrected content',
       summary: 'Corrected content',
-    });
+    }, { actor: 'unknown', sessionId: null });
   });
 
   it('update：超长 content 截断出的 summary 带省略号', async () => {
@@ -110,7 +110,7 @@ describe('memory_amend 工具', () => {
       status: 'archived',
       deprecatedBy: null,
       metadata: {},
-    });
+    }, { actor: 'unknown', sessionId: null });
     expect(dbMocks.deleteMemory).not.toHaveBeenCalled();
     expect(result.ok && result.output).toContain('archived');
   });
@@ -128,7 +128,7 @@ describe('memory_amend 工具', () => {
       status: 'archived',
       deprecatedBy: 'mem-replacement',
       metadata: {},
-    });
+    }, { actor: 'unknown', sessionId: null });
   });
 
   it('坏 id：明确报错，不静默', async () => {

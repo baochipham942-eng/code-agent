@@ -9,8 +9,8 @@
 //   侧栏 tab 点击 / 设置搜索跳转 / 关闭设置页（返回键 + X）统一走
 //   guardWhileModelDirty，dirty 时弹 ConfirmDialog（丢弃修改 / 继续编辑）。
 // - dirty 期间侧栏「通用模型」tab 显示「未保存」徽标；其他即存页不参与。
-// - 已知边界：全局 Escape 快捷键（useKeyboardShortcuts）直接 setShowSettings(false)，
-//   走 store 不经过本组件，暂不拦截（拦截需把 dirty 提升到全局 store，留给后续批次）。
+// - 已知边界：全局 Escape 快捷键（useKeyboardShortcuts）直接走 store 的 closeSettings()，
+//   不经过本组件，暂不拦截（拦截需把 dirty 提升到全局 store，留给后续批次）。
 // ============================================================================
 
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
@@ -308,7 +308,7 @@ function getErrorMessage(error: unknown): string {
 
 export const SettingsModal: React.FC = () => {
   const {
-    setShowSettings,
+    closeSettings,
     openSettingsTab,
     modelConfig,
     setModelConfig,
@@ -382,6 +382,22 @@ export const SettingsModal: React.FC = () => {
     pending?.();
   }, [pendingNavigation]);
 
+  // 折叠组头点击（FB-572）：组头本身也是导航入口（Docusaurus link-less category 语义）——
+  // 折叠时点它 = 展开 + 落到组内第一个可见 tab（首项取自 buildSettingsTabGroups 的实际
+  // 可见列表，plugins 这类 admin-only 项天然排除）；已展开时点它 = 只收起，activeTab 不动。
+  // 切 tab 的那半步统一走 guardWhileModelDirty，别丢「通用模型」表单的未保存修改。
+  const handleCollapsedGroupHeaderClick = useCallback((group: SettingsTabGroupConfig) => {
+    if (expandedCollapsedGroups.has(group.id)) {
+      toggleCollapsedGroup(group.id);
+      return;
+    }
+    const firstTabId = group.tabs[0]?.id;
+    guardWhileModelDirty(() => {
+      toggleCollapsedGroup(group.id);
+      if (firstTabId !== undefined) setActiveTab(firstTabId);
+    });
+  }, [expandedCollapsedGroups, guardWhileModelDirty, toggleCollapsedGroup]);
+
   // 搜到的条目落点未必还在设置页（自动化 / 能力中心那几项已搬走），交给同一个判定函数分流
   const handleSearchNavigate = useCallback((tab: SettingsTab) => {
     guardWhileModelDirty(() => {
@@ -394,8 +410,9 @@ export const SettingsModal: React.FC = () => {
   }, [guardWhileModelDirty, installedCapabilities, openSettingsTab]);
 
   const handleClose = useCallback(() => {
-    guardWhileModelDirty(() => setShowSettings(false));
-  }, [guardWhileModelDirty, setShowSettings]);
+    // closeSettings：带返回落点（自动化门「去设置」）时回自动化页，否则等同关掉设置回聊天。
+    guardWhileModelDirty(() => closeSettings());
+  }, [guardWhileModelDirty, closeSettings]);
 
   const [showUpdateModal, setShowUpdateModal] = useState(false);
 
@@ -503,6 +520,7 @@ export const SettingsModal: React.FC = () => {
                 onNavigate={handleSearchNavigate}
                 access={accessSubject}
                 installedCapabilities={installedCapabilities}
+                externalImportAvailable={externalImportStatus === 'available'}
               />
             </div>
           </div>
@@ -511,14 +529,21 @@ export const SettingsModal: React.FC = () => {
             {tabGroups.map((group) => {
               const isCollapsible = COLLAPSED_SETTINGS_TAB_GROUPS.has(group.id);
               const isCollapsed = isCollapsible && !expandedCollapsedGroups.has(group.id);
+              // 折叠但 activeTab 在组内（如在组内 tab 上收起了组）：组头要顶替子项标出「你在这里」
+              const highlightCollapsedHeader = isCollapsed && group.tabs.some((tab) => tab.id === activeTab);
               return (
                 <div key={group.id} className="space-y-1">
                   {isCollapsible ? (
                     <button /* ds-allow:button: 设置分组折叠头，11px 微字号纯文本行头样式，primitive 无对应变体（同款豁免见 SidebarProjectDrawer） */
                       type="button"
-                      onClick={() => toggleCollapsedGroup(group.id)}
+                      onClick={() => handleCollapsedGroupHeaderClick(group)}
                       aria-expanded={!isCollapsed}
-                      className="flex w-full items-center gap-1 rounded-lg px-3 pb-1 pt-2 text-left text-[11px] font-medium tracking-wide text-zinc-500 transition-colors hover:text-zinc-300"
+                      aria-current={highlightCollapsedHeader ? 'true' : undefined}
+                      className={`flex w-full items-center gap-1 rounded-lg px-3 pb-1 pt-2 text-left text-[11px] font-medium tracking-wide transition-colors ${
+                        highlightCollapsedHeader
+                          ? 'bg-zinc-800/60 text-zinc-200'
+                          : 'text-zinc-500 hover:text-zinc-300'
+                      }`}
                     >
                       {isCollapsed
                         ? <ChevronRight className="h-3 w-3 shrink-0" />

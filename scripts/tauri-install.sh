@@ -130,9 +130,12 @@ resign_app_if_possible() {
 kill_zombie_webserver() {
   # 杀掉可能占用 WEB_PORT 的 zombie webServer.cjs（前次 Tauri main 异常退出残留）。
   # 不清这些 zombie 会导致新 Tauri main 启动时 webServer spawn 检测失败而 abort(SIGABRT)。
-  pkill -f "webServer.cjs" 2>/dev/null || true
+  # 只按「谁 LISTEN 在 WEB_PORT」定位，绝不能按进程名 pkill：
+  # 别的 Dev 槽 / verify-slotless / 其他会话的 webServer 同名不同端口，按名字杀会把
+  # 它们一起带走（FB-553）。-sTCP:LISTEN 同时避免把 merely 连着这个端口的客户端
+  # （比如开着 localhost 页面的浏览器 tab）一并 kill -9。
   local zombies
-  zombies=$(lsof -ti :"${WEB_PORT}" 2>/dev/null || true)
+  zombies=$(lsof -ti tcp:"${WEB_PORT}" -sTCP:LISTEN 2>/dev/null || true)
   if [ -n "$zombies" ]; then
     echo "[tauri-install] killing zombie processes on port ${WEB_PORT}: $zombies"
     echo "$zombies" | xargs kill -9 2>/dev/null || true
@@ -143,8 +146,11 @@ kill_zombie_webserver() {
 # APPLICATIONS_DIR 覆盖用于 /tmp fixture，不能误杀用户正在跑的包）。
 mark_target_unindexed
 if is_system_install; then
-  pkill -f "$APP_NAME" 2>/dev/null || true
-  pkill -f "$LEGACY_APP_NAME" 2>/dev/null || true
+  # 别用 `pkill -f "$APP_NAME"`："Agent Neo" 是 Dev 槽包路径（"Agent Neo Dev.app" /
+  # "Agent Neo Dev 2.app"）的前缀，装生产包会把别人正在验的 Dev 槽一并杀掉（FB-553）。
+  # 锚定安装路径下的可执行目录，让两者不再互相命中（与 tauri-install-dev.sh 同一打法）。
+  pkill -f "$INSTALLED_APP/Contents/MacOS/" 2>/dev/null || true
+  pkill -f "$APPLICATIONS_DIR/$LEGACY_APP_NAME.app/Contents/MacOS/" 2>/dev/null || true
   sleep 1
 fi
 

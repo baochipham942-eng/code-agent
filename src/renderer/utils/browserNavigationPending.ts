@@ -2,7 +2,7 @@
 // 回车后立刻锁定归一化 URL + 反馈，导航落地后再回写真实 URL；
 // 失败则保留错误并可还原，避免「输入被清空且无反馈」窗口。
 
-export type BrowserNavigationPendingStatus = 'pending' | 'failed';
+type BrowserNavigationPendingStatus = 'pending' | 'failed';
 
 export interface BrowserNavigationPending {
   url: string;

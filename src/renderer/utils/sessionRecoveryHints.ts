@@ -1,6 +1,6 @@
 import type { SessionWithMeta } from '../stores/sessionStore';
 
-export type SessionRecoveryHintKind =
+type SessionRecoveryHintKind =
   | 'workspace'
   | 'artifact'
   | 'replay'

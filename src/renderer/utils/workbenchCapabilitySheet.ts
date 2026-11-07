@@ -11,10 +11,6 @@ export interface WorkbenchCapabilityTarget {
   id: string;
 }
 
-export function getWorkbenchCapabilityTargetKey(target: WorkbenchCapabilityTarget): string {
-  return `${target.kind}:${target.id}`;
-}
-
 export function findWorkbenchCapabilityHistoryItem(
   history: WorkbenchHistoryItem[],
   target: WorkbenchCapabilityTarget,
@@ -22,7 +18,7 @@ export function findWorkbenchCapabilityHistoryItem(
   return history.find((item) => item.kind === target.kind && item.id === target.id) || null;
 }
 
-export function buildWorkbenchCapabilityRegistryItemFromReference(
+function buildWorkbenchCapabilityRegistryItemFromReference(
   reference: WorkbenchReference,
 ): WorkbenchCapabilityRegistryItem {
   switch (reference.kind) {

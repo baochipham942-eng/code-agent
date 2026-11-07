@@ -6,7 +6,7 @@ import type { ToolResultArchiveRef } from '../utils/toolResultSpill';
 import type { CompressedMessage } from './tokenOptimizer';
 import { estimateTokens } from './tokenEstimator';
 
-export type SurvivorManifestSource =
+type SurvivorManifestSource =
   | 'manual_current'
   | 'manual_from_message'
   | 'auto_threshold'
@@ -40,12 +40,12 @@ export interface CompactMessagesForSummaryOptions {
   maxTotalTokens?: number;
 }
 
-export interface SurvivorTextItem {
+interface SurvivorTextItem {
   messageId?: string;
   text: string;
 }
 
-export interface SurvivorShellCommandSummary {
+interface SurvivorShellCommandSummary {
   messageId?: string;
   command: string;
   cwd?: string;
@@ -56,13 +56,13 @@ export interface SurvivorShellCommandSummary {
   errorSummary?: string;
 }
 
-export interface SurvivorArtifactSummary {
+interface SurvivorArtifactSummary {
   messageId?: string;
   path: string;
   source: 'tool_result' | 'metadata' | 'artifact' | 'message';
 }
 
-export interface SurvivorArchivedToolResultSummary {
+interface SurvivorArchivedToolResultSummary {
   artifactId: string;
   filePath: string;
   toolName: string;
@@ -74,9 +74,9 @@ export interface SurvivorArchivedToolResultSummary {
   sourceMessageId?: string;
 }
 
-export type SurvivorFileSurvival = 'path_only' | 'digest' | 'excerpt';
+type SurvivorFileSurvival = 'path_only' | 'digest' | 'excerpt';
 
-export interface SurvivorFileMetadata {
+interface SurvivorFileMetadata {
   size?: number;
   mtime?: number;
   readTime?: number;
@@ -85,7 +85,7 @@ export interface SurvivorFileMetadata {
   sensitive?: boolean;
 }
 
-export interface SurvivorFileRecord {
+interface SurvivorFileRecord {
   path: string;
   reason?: string;
   lastKnownReason?: string;

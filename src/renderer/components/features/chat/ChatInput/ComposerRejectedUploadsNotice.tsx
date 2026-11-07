@@ -49,5 +49,3 @@ export const ComposerRejectedUploadsNotice: React.FC = () => {
     </div>
   );
 };
-
-export default ComposerRejectedUploadsNotice;

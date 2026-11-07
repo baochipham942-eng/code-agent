@@ -8,7 +8,7 @@
 
 import { create } from 'zustand';
 
-export interface RejectedUpload {
+interface RejectedUpload {
   id: string;
   name: string;
   size: number;

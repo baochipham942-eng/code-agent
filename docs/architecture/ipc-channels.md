@@ -193,6 +193,7 @@ interface IPCResponse<T = unknown> {
 | `listResources` | - | 资源列表 | 列出所有资源 |
 | `setServerEnabled` | `{ serverName, enabled }` | `{ success }` | 启用/禁用服务器 |
 | `reconnectServer` | `{ serverName }` | `boolean` | 重新连接 |
+| `reauthorizeServer` | `{ serverName, requiredScope? }` | `{ success, error? }` | 作废 tokens 后重连并走授权流，把缺的 scope 并进授权 URL；等授权完成才返回 |
 
 ### Cron / Loop / Notification 通道
 

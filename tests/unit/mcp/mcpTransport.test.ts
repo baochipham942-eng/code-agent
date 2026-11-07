@@ -232,6 +232,7 @@ describe('mcpTransport remote connection retry', () => {
         requestInit: {},
         fetch: expect.any(Function),
         authProvider,
+        onInsufficientScope: 'throw',
       },
     );
   });
@@ -298,6 +299,7 @@ describe('mcpTransport remote connection retry', () => {
         },
         fetch: expect.any(Function),
         authProvider,
+        onInsufficientScope: 'throw',
       },
     );
   });

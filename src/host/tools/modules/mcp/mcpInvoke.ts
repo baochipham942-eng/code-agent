@@ -28,6 +28,7 @@ import type {
   ToolResult,
 } from '../../../protocol/tools';
 import { getMCPClient } from '../../../mcp/mcpClient';
+import { MCP_INSUFFICIENT_SCOPE_METADATA_KEY } from '../../../mcp/mcpErrors';
 import { createVirtualArtifact } from '../../artifacts/artifactMeta';
 import { mcpInvokeSchema as schema } from './mcpInvoke.schema';
 
@@ -220,7 +221,11 @@ export async function executeMcpInvoke(
       ok: false,
       error: result.error || 'MCP 工具调用失败',
       code: errorCode,
-      meta: buildMcpInvokeMeta({ server, tool, duration: result.duration, errorCode }),
+      meta: {
+        ...buildMcpInvokeMeta({ server, tool, duration: result.duration, errorCode }),
+        // 权限范围不足标记透传，引擎据此发「重新授权」连接卡
+        ...(result.metadata?.[MCP_INSUFFICIENT_SCOPE_METADATA_KEY] ? { [MCP_INSUFFICIENT_SCOPE_METADATA_KEY]: result.metadata[MCP_INSUFFICIENT_SCOPE_METADATA_KEY] } : {}),
+      },
     };
   } catch (error: unknown) {
     if (isAbortError(error) || ctx.abortSignal.aborted) {

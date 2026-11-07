@@ -29,6 +29,7 @@ import { getToolCache } from '../../../src/host/services/infra/toolCache';
 import { getProtocolRegistry } from '../../../src/host/tools/protocolRegistry';
 import { ToolExecutor } from '../../../src/host/tools/toolExecutor';
 import type { PermissionRequestData } from '../../../src/host/tools/types';
+import { HostReasonCode } from '../../../src/shared/contract/permission';
 import { getPermissionClassifier } from '../../../src/host/tools/permissionClassifier';
 import { getPolicyEngine, resetPolicyEngine } from '../../../src/host/permissions/policyEngine';
 import type { ExecutionTopology } from '../../../src/host/permissions';
@@ -81,6 +82,10 @@ describe('ToolExecutor 用户拒绝规则', () => {
     );
     expect(result.success).toBe(false);
     expect(result.error).toContain('Bash(rm *)');
+    // N-FIX-PERM-DENY-ENGLISH-COPY：硬拒出口带结构化 hostReason，renderer 登记表据此出人话；
+    // 英文原文（模型可见）不动。
+    expect(result.metadata?.hostReason).toMatchObject({ code: HostReasonCode.PermissionDeniedUserRule });
+    expect(result.error).toContain('Blocked by your permission deny rule');
     expect(permissionRequests).toHaveLength(0);
     expect(existsSync(path.join(workspace, 'victim.txt'))).toBe(true);
   });

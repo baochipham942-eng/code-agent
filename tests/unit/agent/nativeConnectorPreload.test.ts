@@ -172,4 +172,32 @@ describe.skipIf(!darwin)('native connector preload from enabledNative', () => {
     const names = getDeferredToolsToPreloadForTurn(turn(PROMPT, { allowedConnectorIds: ['feishu'] }));
     expect(names).not.toContain('reminders_create');
   });
+
+  // N-FG-CONNECTOR-TOOLS：文字前台 allowlist 的连接器扩展必须复用本文件的判据真源
+  // （connectors/nativeConnectorIntent.ts），不许长出第二份正则副本。两侧输出对不上
+  // 即红——「修了预载漏了前台」或反之的复发形态。
+  it('文字前台 allowlist 与 deferred 预载共用同一意图判据（单一真源）', async () => {
+    enable(ALL);
+    const { getTextForegroundToolNamesForPrompt } = await import('../../../src/host/app/sessionCommandCenterBrain');
+    const { getNativeConnectorToolNamesForIntent } = await import('../../../src/host/connectors/nativeConnectorIntent');
+    const { getTextForegroundToolNames } = await import('../../../src/host/tools/protocolRegistry');
+
+    const prompts = [
+      PROMPT,
+      '加个提醒',
+      '给 a@b.c 发封邮件说会议改期',
+      '解释一下这个仓库',
+      '帮我看看今天有什么安排',
+    ];
+    for (const prompt of prompts) {
+      const intentNames = getNativeConnectorToolNamesForIntent({ userText: prompt });
+      const foreground = getTextForegroundToolNamesForPrompt(prompt);
+      for (const name of intentNames) {
+        expect(foreground).toContain(name);
+      }
+      if (intentNames.length === 0) {
+        expect(foreground).toEqual(getTextForegroundToolNames());
+      }
+    }
+  });
 });

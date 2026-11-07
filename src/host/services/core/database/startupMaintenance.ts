@@ -117,6 +117,7 @@ export function runStartupMaintenance(deps: StartupMaintenanceDeps): RecoverySna
           messages,
           Date.now(),
           sessionRepo.getSession(sessionId)?.workingDirectory || null,
+          sessionRepo.getSession(sessionId)?.origin?.kind ?? null,
         )
         : new Set<string>();
       for (const assistantMessage of messages) {

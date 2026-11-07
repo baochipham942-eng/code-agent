@@ -10,6 +10,7 @@ import {
   nextFrame,
   publishJourneyError,
   publishJourneyResult,
+  waitForCommitSettlement,
 } from './journey-probe-instrument';
 
 const instrument = createJourneyInstrument();
@@ -57,6 +58,7 @@ function ColdStartJourney(): React.ReactElement {
       const acceptsInput = editor.getAttribute('data-plain-text') === 'x'
         && editor.getAttribute('aria-disabled') == null;
       if (!acceptsInput) throw new Error('cold-start: composer did not accept input');
+      await waitForCommitSettlement(instrument);
       if (!cancelled) {
         publishJourneyResult('cold-start', instrument, {
           acceptsInput: true,

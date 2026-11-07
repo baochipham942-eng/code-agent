@@ -7,11 +7,13 @@
 // 2) 工作台 grid 不再 flex-1 min-h-0（会被压到 0），而是 flex-[1_0_420px]
 //    （高屏占满、矮屏保底可滚）。
 import React from 'react';
-import { cleanup, render, screen } from '@testing-library/react';
+import { act, cleanup, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const invokeDomain = vi.hoisted(() => vi.fn());
 const openBudgetSettings = vi.hoisted(() => vi.fn());
+const countPendingReview = vi.hoisted(() => vi.fn());
+const inboxProps = vi.hoisted(() => ({ notify: (() => undefined) as (n: number) => void }));
 
 vi.mock('../../../src/renderer/services/ipcService', () => ({
   default: { invokeDomain },
@@ -30,8 +32,17 @@ vi.mock('../../../src/renderer/services/cronClient', () => ({
 }));
 
 // 重子组件打桩：本测试只锁 CronCenterPanel 的布局契约，不递归验子树。
+vi.mock('../../../src/renderer/services/sessionAutomationClient', () => ({
+  sessionAutomationClient: {
+    countPendingReview: () => countPendingReview(),
+    listAwaitingApprovalRuns: () => Promise.resolve([]),
+  },
+}));
 vi.mock('../../../src/renderer/components/features/cron/AutomationReviewInbox', () => ({
-  AutomationReviewInbox: () => <div data-testid="stub-inbox" />,
+  AutomationReviewInbox: ({ onPendingCountChange }: { onPendingCountChange?: (n: number) => void }) => {
+    inboxProps.notify = (n) => onPendingCountChange?.(n);
+    return <div data-testid="stub-inbox" />;
+  },
 }));
 vi.mock('../../../src/renderer/components/features/cron/CronFeaturedTemplates', () => ({
   CronFeaturedTemplates: () => <div data-testid="stub-templates" />,
@@ -51,6 +62,7 @@ vi.mock('../../../src/renderer/components/features/settings/WebModeBanner', () =
 
 import { CronCenterPanel } from '../../../src/renderer/components/features/cron/CronCenterPanel';
 import { useCronStore } from '../../../src/renderer/stores/cronStore';
+import { useAppStore } from '../../../src/renderer/stores/appStore';
 
 beforeEach(() => {
   invokeDomain.mockReset();
@@ -122,6 +134,16 @@ describe('CronCenterPanel 双 tab（批C4 WorkBuddy 式改造）', () => {
     expect(screen.getByTestId('stub-inbox').parentElement!.className).toContain('hidden');
   });
 
+  it('面板已开在 jobs 时 openCronCenterRuns() 切到 runs 并清掉一次性请求', async () => {
+    render(<CronCenterPanel onClose={() => undefined} />);
+    expect(screen.getByTestId('cron-center-tab-jobs').getAttribute('aria-selected')).toBe('true');
+    act(() => { useAppStore.getState().openCronCenterRuns(); });
+    await vi.waitFor(() => {
+      expect(screen.getByTestId('cron-center-tab-runs').getAttribute('aria-selected')).toBe('true');
+    });
+    expect(useAppStore.getState().cronCenterRunsRequested).toBe(false);
+  });
+
   it('切「运行记录」：拉跨任务执行流并渲染任务名列，任务工作台让位', async () => {
     const { cronClient } = await import('../../../src/renderer/services/cronClient');
     // refresh() 挂载即拉任务列表并覆写 store，任务名要从 mock 供给
@@ -162,5 +184,27 @@ describe('CronCenterPanel 双 tab（批C4 WorkBuddy 式改造）', () => {
       expect(summary.textContent).toContain('今天');
       expect(summary.textContent).toContain('$0.0123');
     });
+  });
+});
+
+describe('pending review tile (N-CRON-REVIEW-COUNT-LIVE)', () => {
+  it('从未成功前显示破折号，成功后显示数字，之后计数失败保留上次值而非 0', async () => {
+    countPendingReview.mockReset();
+    countPendingReview.mockRejectedValueOnce(new Error('Load failed'));
+    render(<CronCenterPanel onClose={() => undefined} />);
+    expect(screen.getByTestId('cron-status-pending').textContent).toContain('—');
+
+    // 首次失败（收件箱回报 0 条也不能变成 0）
+    await act(async () => { inboxProps.notify(0); });
+    expect(screen.getByTestId('cron-status-pending').textContent).toContain('—');
+
+    countPendingReview.mockResolvedValueOnce(3);
+    await act(async () => { inboxProps.notify(3); });
+    await waitFor(() => expect(screen.getByTestId('cron-status-pending').textContent).toContain('3'));
+
+    countPendingReview.mockRejectedValueOnce(new Error('Load failed'));
+    await act(async () => { inboxProps.notify(0); });
+    expect(screen.getByTestId('cron-status-pending').textContent).toContain('3');
+    expect(screen.getByTestId('cron-status-pending').textContent).not.toContain('0');
   });
 });

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { redactSecrets, redactToolResultSecrets, sanitizeLogValue } from '../../../src/host/security/secretRedaction';
+import { redactSecrets, redactToolResultSecrets, sanitizeLogOutput, sanitizeLogValue } from '../../../src/host/security/secretRedaction';
 import { sanitizeToolResultForHistory } from '../../../src/host/agent/messageHandling/converter';
 import type { ToolResult } from '../../../src/shared/contract';
 
@@ -149,5 +149,38 @@ describe('tool result 脱敏（transcript / 导出 / 事件流）', () => {
     expect(sanitized.output).not.toContain('sk-ant-api03-realkeyvalue0001');
     expect(sanitized.output).not.toContain(`ghp_${'g'.repeat(36)}`);
     expect(sanitized.output).toContain('MAX_TOKENS = 128000');
+  });
+  describe('log-only keyword masking (sanitizeLogOutput)', () => {
+    it('masks password=… / --password … shapes in strings, nested objects, Error message and stack', () => {
+      expect(String(sanitizeLogOutput('login password=hunter2xyz ok'))).not.toContain('hunter2xyz');
+      expect(String(sanitizeLogOutput('mysql --password hunter2xyz -h db'))).not.toContain('hunter2xyz');
+      expect(JSON.stringify(sanitizeLogOutput({ nested: { note: 'password=hunter2xyz' } }))).not.toContain('hunter2xyz');
+
+      const error = new Error('connect failed password=hunter2xyz');
+      error.stack = 'Error: connect failed password=hunter2xyz\n    at x';
+      const out = sanitizeLogOutput(error) as { message: string; stack: string };
+      expect(out.message).not.toContain('hunter2xyz');
+      expect(out.stack).not.toContain('hunter2xyz');
+    });
+
+    it('leaves source-shaped strings unchanged', () => {
+      for (const src of ['apiKey: options.apiKey,', 'password: req.body.password', 'token: TokenType;']) {
+        expect(sanitizeLogOutput(src)).toBe(src);
+        expect(sanitizeLogOutput({ line: src })).toEqual({ line: src });
+      }
+    });
+
+    it('sanitizeLogValue (snapshot path) keeps the old behaviour', () => {
+      expect(sanitizeLogValue('password=hunter2xyz')).toBe('password=hunter2xyz');
+    });
+
+    it('redactToolResultSecrets stays byte-identical for password= and source forms', () => {
+      const result: ToolResult = {
+        toolCallId: 't1',
+        success: true,
+        output: 'run password=hunter2xyz\napiKey: options.apiKey,\n',
+      };
+      expect(redactToolResultSecrets(result)).toBe(result);
+    });
   });
 });

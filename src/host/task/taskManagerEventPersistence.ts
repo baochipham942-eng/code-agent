@@ -8,6 +8,7 @@ import { createLogger } from '../services/infra/logger';
 import {
   closeBackgroundRunAtTerminal,
   settleBackgroundOnTaskComplete,
+  settlePrimaryRunSessionStatus,
   trackBackgroundRunTerminalError,
   type BackgroundRunErrorRecord,
 } from './backgroundTaskTerminal';
@@ -154,6 +155,10 @@ export async function persistTaskManagerEvent(
           body: req.tool ? `${req.tool}: ${req.command || '请求执行权限'}` : '请求执行权限',
           dedupeKey: typeof event.data.id === 'string' ? event.data.id : undefined,
         });
+      } else if (typeof event.data.id === 'string') {
+        // 审批已裁决（超时/被顶替/别处应答）：把之前投递的那条 needs-input 通知撤回，
+        // 错过横幅的用户回来不再收到已处理完的「需要授权」补提醒（没投递过则 no-op）。
+        notificationService.retractNeedsInput(event.data.id);
       }
     }
 
@@ -167,6 +172,9 @@ export async function persistTaskManagerEvent(
       trackBackgroundRunTerminalError(deps.backgroundRunTerminalErrors, sessionId, event.data);
     }
     if ((event.type === 'agent_complete' || event.type === 'agent_cancelled') && eventKey === sessionId) {
+      // 主跑终态先落 session 状态并广播（settlePrimaryRunSessionStatus 只读 error 账，
+      // 必须排在会消费账目的 closeBackgroundRunAtTerminal 之前——顺序见该函数头注释）。
+      await settlePrimaryRunSessionStatus(sessionId, event.type, deps.backgroundRunTerminalErrors);
       await closeBackgroundRunAtTerminal(sessionId, event.type, deps.backgroundRunTerminalErrors);
     }
   } catch (error) {

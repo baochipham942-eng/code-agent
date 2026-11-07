@@ -145,7 +145,9 @@ export const useAppStore = create<AppState>()((set, get) => ({
   showActivityPanel: false,
   showCapabilityHub: false,
   capabilityHubTab: 'experts',
+  expertPanelTab: 'discover',
   showCronCenter: false,
+  cronCenterRunsRequested: false,
   showTimeCapabilityCenter: false,
   showFileExplorer: false,
   voicePasteStatus: 'idle' as const,
@@ -164,6 +166,9 @@ export const useAppStore = create<AppState>()((set, get) => ({
 
   // 开发者模式默认关闭
   developerMode: false,
+
+  // 首次醒来卡片可见 roleId（null = 不可见）
+  firstWakeCardRoleId: null,
 
   // Initial Chat State (messages/todos/currentSessionId 已迁移到 sessionStore)
   isProcessing: false,
@@ -357,6 +362,7 @@ export const useAppStore = create<AppState>()((set, get) => ({
   setShowActivityPanel: (show) => set({ ...(show ? SECONDARY_PAGES_CLOSED : {}), showActivityPanel: show }),
   setShowCapabilityHub: (show) => set({ ...(show ? SECONDARY_PAGES_CLOSED : {}), showCapabilityHub: show }),
   openCapabilityHub: (tab) => {
+    const state = get();
     // 关掉设置且不回自动化：返回落点与暂存草稿一并作废（同 setShowSettings(false) 的放弃语义）。
     discardCronEditorDraft();
     set({
@@ -364,10 +370,14 @@ export const useAppStore = create<AppState>()((set, get) => ({
       showCapabilityHub: true,
       showSettings: false,
       capabilityHubTab: tab,
+      expertPanelTab: !state.showCapabilityHub && !state.expertDetailRoleId ? 'discover' : state.expertPanelTab,
       settingsReturnTo: null,
     });
   },
+  setExpertPanelTab: (tab) => set({ expertPanelTab: tab }),
   closeSecondaryPages: () => set({ ...SECONDARY_PAGES_CLOSED }),
+  openCronCenterRuns: () => set({ ...SECONDARY_PAGES_CLOSED, showCronCenter: true, cronCenterRunsRequested: true }),
+  clearCronCenterRunsRequest: () => set({ cronCenterRunsRequested: false }),
   setShowCronCenter: (show) => set({ ...(show ? SECONDARY_PAGES_CLOSED : {}), showCronCenter: show }),
   setShowTimeCapabilityCenter: (show) => set({ ...(show ? SECONDARY_PAGES_CLOSED : {}), showTimeCapabilityCenter: show }),
   setShowFileExplorer: (show) => {
@@ -384,6 +394,16 @@ export const useAppStore = create<AppState>()((set, get) => ({
   setCloudUIStrings: (strings) => set({ cloudUIStrings: strings }),
   setDisclosureLevel: (level) => set({ disclosureLevel: level }),
   setDeveloperMode: (enabled) => set({ developerMode: enabled }),
+  setFirstWakeCardRoleId: (roleId, previous) => {
+    if (roleId !== null) {
+      set({ firstWakeCardRoleId: roleId });
+      return;
+    }
+    // 清空只清自己那份：并发两张卡（banner + composer 位）不互相抹掉
+    const current = get().firstWakeCardRoleId;
+    if (previous && current !== previous) return;
+    set({ firstWakeCardRoleId: null });
+  },
 
 
   setIsProcessing: (processing) => set({ isProcessing: processing }),

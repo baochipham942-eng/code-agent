@@ -65,6 +65,26 @@ export function resolveSessionCommandTaskApprovalWaitCapMs(
 }
 
 /**
+ * 模型侧任务结果文本（resultText）的封顶字符数。UI/账本仍用 240 字 summary；
+ * 前台模型读到的是这份宽松上限——SSRF 拒绝提示里的「改走 Bash curl 审批」整句
+ * 必须完整到达前台，否则前台不知道下一步能做什么（FB-577）。
+ */
+const SESSION_COMMAND_TASK_RESULT_MODEL_MAX_CHARS = 1500;
+
+/**
+ * resultText 的单一真源：detail 规范化空白后封顶；超限保留前缀并显式标注总长，
+ * 让模型知道文本被裁过。空 detail 返回 undefined——消费点回落 240 字 summary。
+ * 按 code point 计数，与 compactSummary 的口径一致。
+ */
+export function composeSessionCommandTaskResultText(value: string | undefined): string | undefined {
+  const normalized = value?.replace(/\s+/g, ' ').trim();
+  if (!normalized) return undefined;
+  const chars = Array.from(normalized);
+  if (chars.length <= SESSION_COMMAND_TASK_RESULT_MODEL_MAX_CHARS) return chars.join('');
+  return `${chars.slice(0, SESSION_COMMAND_TASK_RESULT_MODEL_MAX_CHARS).join('')}…(truncated, ${chars.length} chars total)`;
+}
+
+/**
  * 判据单一真源：本轮是否套用指挥台 brain。
  *
  * 桌面（agentAppService）和 web（routes/agent.ts）两条路各自把工具面/迭代上限/系统上下文

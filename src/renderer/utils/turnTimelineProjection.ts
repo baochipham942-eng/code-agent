@@ -27,6 +27,8 @@ interface ProjectionArgs {
   hookEvents?: HookActivityEvent[];
   /** 当前会话正在执行的 hook 批次（hook_started 未配对 hook_trigger）。 */
   hookRunning?: HookRunningEvent | null;
+  /** 会话工作目录：只用于产物去重键的词法对齐，不参与任何展示路径。 */
+  workingDirectory?: string | null;
 }
 
 interface TurnWindow {
@@ -582,7 +584,7 @@ function enrichTurn(
   );
   const hookActivity = buildHookActivity(turn, window, args.hookEvents, args.hookRunning);
   const skillActivity = buildSkillActivity(turn, args.capabilities);
-  const artifactOwnership = buildArtifactOwnershipItems(turn, routingEvidence);
+  const artifactOwnership = buildArtifactOwnershipItems(turn, routingEvidence, args.workingDirectory);
 
   if (!snapshot && !capabilityScope && !routingEvidence && !hookActivity && !skillActivity && artifactOwnership.length === 0) {
     return turn;
@@ -698,6 +700,7 @@ export function buildTurnExecutionClarityProjection(args: ProjectionArgs): Trace
       routingEvents: args.routingEvents,
       hookEvents: args.hookEvents || [],
       hookRunning: args.hookRunning ?? null,
+      workingDirectory: args.workingDirectory,
     })),
   };
 }

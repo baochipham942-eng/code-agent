@@ -95,6 +95,19 @@ describe('protocolAdapter — buildProtocolContext', () => {
     expect(typeof ctx.logger.info).toBe('function');
   });
 
+  it('Neo Tag 外部触发标记穿过 protocol 与 legacy 适配层', () => {
+    const neoTag = { runId: 'tag-run-1' } as LegacyToolContext['neoTag'];
+    const legacy = { ...makeLegacyCtx('/tmp/workdir'), neoTag } as LegacyToolContext;
+    const ctx = buildProtocolContext({
+      sessionId: 'sess-tag',
+      workingDirectory: '/tmp/workdir',
+      legacyCtx: legacy,
+    });
+
+    expect(ctx.neoTag).toBe(neoTag);
+    expect(buildLegacyCtxFromProtocol(ctx).neoTag).toBe(neoTag);
+  });
+
   it('sessionId 缺失时退回 protocol-unknown', () => {
     const legacy = makeLegacyCtx('/tmp/workdir');
     const ctx = buildProtocolContext({
@@ -102,6 +115,27 @@ describe('protocolAdapter — buildProtocolContext', () => {
       legacyCtx: legacy,
     });
     expect(ctx.sessionId).toBe('protocol-unknown');
+  });
+
+  // FB-772：delegate_session 的 submission_key 按发起轮 origin_turn_id 派生，
+  // adapter 漏搬 turnId = 协议工具恒看到 undefined，只能落跨轮共享常量。
+  it('原样搬运 legacy ctx 的 turnId（委托 submission_key 的发起轮来源）', () => {
+    const legacy = { ...makeLegacyCtx('/tmp/workdir'), turnId: 'turn-abc-123' } as LegacyToolContext;
+    const ctx = buildProtocolContext({
+      sessionId: 'sess-turn',
+      workingDirectory: '/tmp/workdir',
+      legacyCtx: legacy,
+    });
+    expect(ctx.turnId).toBe('turn-abc-123');
+  });
+
+  it('legacy ctx 没有 turnId 时不无中生有（fail-closed）', () => {
+    const ctx = buildProtocolContext({
+      sessionId: 'sess-no-turn',
+      workingDirectory: '/tmp/workdir',
+      legacyCtx: makeLegacyCtx('/tmp/workdir'),
+    });
+    expect(ctx.turnId).toBeUndefined();
   });
 
   it('外部传入的 abortSignal 被保留', () => {

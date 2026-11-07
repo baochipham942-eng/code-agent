@@ -4,13 +4,13 @@
 // ============================================================================
 
 import { useMemo } from 'react';
-import type { Message, MessageMetadata } from '@shared/contract';
+import type { AgentErrorCategory, Message, MessageMetadata } from '@shared/contract';
 import {
   findRegisteredSystemEvent,
   findUnregisteredSystemEventKeys,
 } from '@shared/contract/systemEventRegistry';
 import type { NeoWorkCardDetail } from '@shared/contract/tag';
-import type { TraceProjection, TraceTurn, TraceNode } from '@shared/contract/trace';
+import type { AgentErrorRunInfo, TraceProjection, TraceTurn, TraceNode } from '@shared/contract/trace';
 import type { SwarmLaunchRequest } from '@shared/contract/swarm';
 import type { TurnArtifactOwnershipItem } from '@shared/contract/turnTimeline';
 import { isSkillStatusContent } from '../components/features/chat/MessageBubble/SkillStatusMessage';
@@ -251,6 +251,7 @@ export function projectTurns(
   let currentTurn: TraceTurn | null = null;
   let turnCounter = 0;
   const voiceArtifactAnchors = new Map<string, string>();
+  const seenSystemEventIds = new Set<string>(); // 同 id 的登记事件（直播+重载各送一次）只投一个节点
   // recovery snapshot 是「未执行」的展示权威源。同一 tool call 可能同时残留一条
   // success=false 的旧节点和一条 snapshot 在途节点；渲染只保留 snapshot 那条，
   // 且整次中断收成一个时间线落点，不让同一 Write 同屏报失败又报中断。
@@ -291,6 +292,54 @@ export function projectTurns(
   // 连续相同的模型路由决策只显示首个——agent 一个 turn 内多次 LLM 调用会各发一条
   // "用户选择 mimo"，重复刷没意义；模型变化（降级/角色档位）时 key 不同会照常显示。
   let lastModelDecisionKey: string | null = null;
+
+  // 连续同因失败折叠（N-UI-AGENT-ERROR-REPEAT-COLLAPSE）：一段连续失败轮若同
+  // agentError.category，只有段内最新一轮渲染整卡，早先的压成一行灰字。纯渲染期
+  // 从消息列表推导、不落库，重载历史得到同样结果。换 category，或中间出现成功轮
+  // （不带 agentError 的最终回复），都结束这一段。失败轮以用户消息为界：两条用户
+  // 消息之间的同因报错是**同一轮失败**的重复上报（web 路径 host 结构化标记与原始
+  // 供应商报错各落一条），只算一次、只渲染最后一条。带 toolCalls 的轮中消息不打断
+  // 连续段——那一轮可能还会失败。
+  const agentErrorRunByMessageId = new Map<string, AgentErrorRunInfo>();
+  {
+    // 扁平三变量而非可空对象：typescript7 对「可空对象 + `?.` 等值比较 + 显式判空」
+    // 的组合会错把变量窄化成 never（隔离复现 TS2339/TS7022），扁平写法无此问题。
+    let runMessageId: string | null = null;
+    let runCategory: AgentErrorCategory | null = null;
+    let runLength = 0;
+    let sawUserSinceLastFailure = false;
+    for (const msg of messages) {
+      if (msg.role === 'user') {
+        sawUserSinceLastFailure = true;
+        continue;
+      }
+      if (msg.role !== 'assistant') continue;
+      const agentError = msg.metadata?.agentError;
+      if (agentError) {
+        const sameCategory = runCategory === agentError.category;
+        if (sameCategory && runMessageId !== null && sawUserSinceLastFailure) {
+          // 新一轮失败、同因延续：上一轮降为灰字行
+          agentErrorRunByMessageId.set(runMessageId, { runLength, latest: false });
+          runLength += 1;
+        } else if (sameCategory && runMessageId !== null) {
+          // 同一轮内的重复报错：前一条不再渲染，次数也不涨
+          agentErrorRunByMessageId.set(runMessageId, { runLength, latest: false, duplicate: true });
+        } else {
+          runCategory = agentError.category;
+          runLength = 1;
+        }
+        runMessageId = msg.id;
+        sawUserSinceLastFailure = false;
+        agentErrorRunByMessageId.set(msg.id, { runLength, latest: true });
+        continue;
+      }
+      if (!msg.toolCalls?.length && msg.content?.trim()) {
+        runCategory = null;
+        runMessageId = null;
+        runLength = 0;
+      }
+    }
+  }
 
   for (const msg of messages) {
     if (msg.source === 'skill' && isSkillStatusContent(msg.content)) {
@@ -476,6 +525,8 @@ export function projectTurns(
         continue;
       }
       const { spec, payload } = event;
+      if (seenSystemEventIds.has(msg.id)) continue;
+      seenSystemEventIds.add(msg.id);
       if (msg.metadata?.turnCheckoutNote && msg.id !== latestTurnCheckoutNoteId) {
         continue;
       }
@@ -651,6 +702,11 @@ export function projectTurns(
         }
         const attachReasoning = !reasoningAttachedForMessage;
         reasoningAttachedForMessage = true;
+        // 同因连续段信息只随 agentError 走：同一条消息拆出的所有正文节点拿同一个
+        // run 对象，折叠/整卡的判定整条消息一致。
+        const agentErrorRun = projectedMetadata?.agentError
+          ? agentErrorRunByMessageId.get(msg.id)
+          : undefined;
         turn.nodes.push({
           id: index && index > 1 ? `${msg.id}-text-${index}` : `${msg.id}-text`,
           messageId: msg.id,
@@ -662,6 +718,7 @@ export function projectTurns(
           artifacts: msg.artifacts,
           modelDecision,
           metadata: projectedMetadata,
+          ...(agentErrorRun ? { agentErrorRun } : {}),
         });
       };
 

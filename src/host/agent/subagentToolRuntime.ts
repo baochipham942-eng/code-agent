@@ -65,13 +65,22 @@ function inheritParentAdditionalRoots(
   return createWorkspaceScope(worktreeScope.projectId, roots);
 }
 
+type SubagentPolicyDecision = 'deny' | 'ask' | { decision: 'deny' | 'ask'; reason?: string; policyName?: string };
+
+export interface SubagentToolPolicy {
+  allowedTools: Set<string>;
+  policyName?: string;
+  check: (toolName: string, params: Record<string, unknown>) => SubagentPolicyDecision;
+}
+
 export function createSubagentToolRuntime(input: {
   context: SubagentExecutionContext;
   sessionId: string;
   effectiveMode: string;
   identity: SubagentEventIdentity;
   allowedToolNames: Set<string>;
-  checkToolExecution(request: ToolExecutionRequest): boolean;
+  policyName?: string;
+  checkToolExecution(request: ToolExecutionRequest): boolean | { allowed: boolean; reason?: string };
 }) {
   const { context } = input;
   const worktreeWorkspace = isAgentWorktreePath(context.cwd) ? context.cwd : undefined;
@@ -124,9 +133,14 @@ export function createSubagentToolRuntime(input: {
       return context.permission.request({ ...request, ...input.identity });
     },
   });
+  const policyName = input.policyName || 'subagent pipeline';
   const policy = {
     allowedTools: input.allowedToolNames,
-    check: (toolName: string, params: Record<string, unknown>): 'deny' | 'ask' => {
+    policyName,
+    check: (
+      toolName: string,
+      params: Record<string, unknown>,
+    ): 'ask' | 'deny' | { decision: 'deny' | 'ask'; reason?: string; policyName?: string } => {
       const definition = context.resolver.getDefinition(toolName);
       const request: ToolExecutionRequest = {
         toolName,
@@ -135,8 +149,39 @@ export function createSubagentToolRuntime(input: {
         command: params.command as string | undefined,
         url: params.url as string | undefined,
       };
-      return input.checkToolExecution(request) ? 'ask' : 'deny';
+      const outcome = input.checkToolExecution(request);
+      if (typeof outcome === 'boolean') {
+        return outcome ? 'ask' : { decision: 'deny', reason: 'Permission denied', policyName };
+      }
+      return outcome.allowed
+        ? 'ask'
+        : { decision: 'deny', reason: outcome.reason || 'Permission denied', policyName };
     },
   };
   return { executor, policy };
+}
+
+export function evaluateSubagentPolicyDenial(
+  subagentPolicy: SubagentToolPolicy,
+  toolName: string,
+  params: Record<string, unknown>,
+): { error: string; reason: string; policyName: string } | null {
+  const result = subagentPolicy.check(toolName, params);
+  if (result === 'ask') return null;
+  if (result === 'deny') {
+    const policyName = subagentPolicy.policyName || 'subagent pipeline';
+    return {
+      policyName,
+      reason: 'Permission denied',
+      error: `Denied by subagent permission policy (${policyName}): Permission denied (${toolName})`,
+    };
+  }
+  if (result.decision === 'ask') return null;
+  const policyName = result.policyName || subagentPolicy.policyName || 'subagent pipeline';
+  const reason = result.reason || 'Permission denied';
+  return {
+    policyName,
+    reason,
+    error: `Denied by subagent permission policy (${policyName}): ${reason} (${toolName})`,
+  };
 }

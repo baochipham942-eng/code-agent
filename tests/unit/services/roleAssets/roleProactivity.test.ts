@@ -15,7 +15,9 @@ import os from 'os';
 const mockConfigDir = vi.hoisted(() => ({ dir: '' }));
 const mockOrchestrator = vi.hoisted(() => ({
   sendMessage: vi.fn(),
+  cancel: vi.fn(async () => undefined),
 }));
+const mockLogger = vi.hoisted(() => ({ info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() }));
 const mockSessionManager = vi.hoisted(() => ({
   getCurrentSessionId: vi.fn(() => null),
   getSession: vi.fn(),
@@ -24,8 +26,12 @@ const mockSessionManager = vi.hoisted(() => ({
   updateMessage: vi.fn(),
 }));
 const mockRunRoleWriteBack = vi.hoisted(() => vi.fn(async () => ({ written: [], skipped: [], historyAppended: true })));
-// advance→goal run（P4）：Electron 路径用落库事件读 goal 终态
-const mockSessionEvents = vi.hoisted(() => ({ getEventsByType: vi.fn(() => [] as Array<{ eventData?: unknown }>) }));
+// advance→goal run（P4）：Electron 路径用落库事件读 goal 终态。
+// 签名对齐真实 SessionEventService.getEventsByType(sessionId, eventType)——0 参箭头会让
+// 带参 mockImplementation 撞 TS2345（tsc-tests-ratchet 2026-11-04 返修）。
+const mockSessionEvents = vi.hoisted(() => ({
+  getEventsByType: vi.fn((_sessionId: string, _eventType: string) => [] as Array<{ eventData?: unknown }>),
+}));
 const mockSessionAutomation = vi.hoisted(() => ({
   recordCreated: vi.fn(async () => undefined),
   recordEvent: vi.fn(async () => undefined),
@@ -37,7 +43,7 @@ vi.mock('../../../../src/host/config/configPaths', () => ({
 }));
 
 vi.mock('../../../../src/host/services/infra/logger', () => ({
-  createLogger: () => ({ info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() }),
+  createLogger: () => mockLogger,
 }));
 
 vi.mock('../../../../src/host/services/infra/sessionManager', () => ({
@@ -832,6 +838,87 @@ describe('roleProactivity', () => {
       await triggerEventWakes(wakeSessionId, ROLE_PROACTIVITY.LONG_TASK_MIN_TURNS);
 
       expect(mockOrchestrator.sendMessage).not.toHaveBeenCalled();
+    });
+  });
+
+  // --------------------------------------------------------------------------
+  // 无人值守挂死双闸（D3）：醒来 run 墙钟超时 + goal 暂停（anti_spin）即中止
+  // --------------------------------------------------------------------------
+
+  describe('无人值守挂死双闸（超时 + goal 暂停）', () => {
+    it('醒来 run 永不返回 → 注入短超时切断：抛可区分超时错误、cancel 底层 run、warn 原因', async () => {
+      await seedProductHistory(RESEARCHER);
+      primeWakeRun('report', 'wake-timeout-1');
+      // 底层 run 挂死形状：sendMessage 永不 settle
+      mockOrchestrator.sendMessage.mockImplementation(() => new Promise(() => {}));
+
+      await expect(
+        wakeRole(RESEARCHER, 'cadence', { wakeTimeoutMs: 40 }),
+      ).rejects.toThrow(/Role wake timed out after 40ms \(wake-run/);
+
+      // 超时后取消底层 run（orchestrator.cancel），warn 里点名 roleId/sessionId/阶段
+      expect(mockOrchestrator.cancel).toHaveBeenCalled();
+      expect(mockLogger.warn).toHaveBeenCalledWith(
+        expect.stringContaining('timed out'),
+        expect.objectContaining({
+          roleId: RESEARCHER,
+          sessionId: 'wake-timeout-1',
+          phase: 'wake-run',
+        }),
+      );
+    });
+
+    it('advance goal run 因 anti_spin 暂停 → 不再等下去：cancel 并按 aborted 收尾（D3 回归）', async () => {
+      await seedProductHistory(RESEARCHER);
+      const wakeOutput = '我要推进。<goal>创建 DONE.md</goal><verify>test -f DONE.md</verify><decision>advance</decision>';
+      mockSessionManager.createSession.mockResolvedValue({ id: 'wake-advance-paused', workingDirectory: undefined });
+      mockSessionManager.getSession.mockResolvedValue({
+        id: 'wake-advance-paused',
+        messages: [{ id: 'm2', role: 'assistant', content: wakeOutput, timestamp: 2 }],
+      });
+      // 第 1 次（侦察醒来）正常返回；第 2 次（goal run）永不返回 = D3 的挂死形状
+      let sendCalls = 0;
+      mockOrchestrator.sendMessage.mockImplementation(async () => {
+        sendCalls += 1;
+        if (sendCalls === 1) return undefined;
+        return new Promise<void>(() => {});
+      });
+      // orchestrator 路径从落库会话事件观察 goal_iteration：paused / anti_spin
+      mockSessionEvents.getEventsByType.mockImplementation((_sessionId: string, type: string) =>
+        type === 'goal_iteration'
+          ? [{ eventData: { goalStatus: 'paused', pauseReason: 'anti_spin' } }]
+          : [],
+      );
+
+      // 长超时在场也不许靠超时兜底：暂停观察必须先命中（否则本测试挂到 vitest 超时）
+      const result = await wakeRole(RESEARCHER, 'cadence', { wakeTimeoutMs: ROLE_PROACTIVITY.WAKE_TIMEOUT_MS });
+
+      expect(result.advanceGoalStatus).toBe('aborted');
+      expect(mockOrchestrator.cancel).toHaveBeenCalled();
+      expect(mockLogger.warn).toHaveBeenCalledWith(
+        expect.stringContaining('paused'),
+        expect.objectContaining({
+          roleId: RESEARCHER,
+          sessionId: 'wake-advance-paused',
+          pauseReason: 'anti_spin',
+        }),
+      );
+      // wake 正常收尾：履历按既有 [goal:aborted] 摘要落账
+      const history = await loadRoleHistory(RESEARCHER, 100);
+      expect(history.some((l) => l.includes('[goal:aborted]'))).toBe(true);
+    });
+
+    it('正常醒来不受影响：不注入超时的 report 醒来一次 sendMessage 即完成、无 cancel', async () => {
+      await seedProductHistory(RESEARCHER);
+      primeWakeRun('report', 'wake-normal-guards');
+      mockSessionEvents.getEventsByType.mockReturnValue([]);
+
+      const result = await wakeRole(RESEARCHER, 'cadence');
+
+      expect(result.status).toBe('completed');
+      expect(result.decision).toBe('report');
+      expect(mockOrchestrator.sendMessage).toHaveBeenCalledTimes(1);
+      expect(mockOrchestrator.cancel).not.toHaveBeenCalled();
     });
   });
 });

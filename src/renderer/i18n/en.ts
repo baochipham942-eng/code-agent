@@ -19,6 +19,7 @@ import { decisionCardEn } from './decisionCard';
 import { planApprovalEn } from './planApproval';
 import { taskStatusPanelsEn } from './taskStatusPanels';
 import { noticesEn } from './notices';
+import { serverConnectionEn } from './serverConnection';
 import { agentErrorEn } from './agentError';
 import { labEn } from './lab';
 import { labGpt1En } from './labGpt1';
@@ -196,6 +197,9 @@ export const en = {
     slidesPreviewHint: 'Render the real layout of the current outline (local, free)',
     slidesPreviewing: 'Rendering preview…',
     slidesPreviewMissing: 'The pixel preview component is being prepared in the background. Retry in a moment; check progress in Settings > Local capabilities.',
+    slidesPreviewOffline: 'Network unavailable: the LibreOffice download source could not be reached, so the pixel preview component was not installed. Check the network, then retry in Settings > Local capabilities.',
+    slidesPreviewInstallFailed: 'The pixel preview component (LibreOffice) did not finish installing. Retry in Settings > Local capabilities; if it keeps failing, open the install log.',
+    slidesPreviewUnsupported: 'Automatic install of the pixel preview component is not supported on this platform; only the text outline is available.',
     slidesKindCover: 'Cover',
     slidesKindContent: 'Content',
     slidesKindEnd: 'End',
@@ -600,12 +604,7 @@ export const en = {
       simple: {
         name: 'Simple',
         description: 'Clean interface for beginners',
-        features: [
-          'Basic chat interface',
-          'Essential tools only',
-          'Minimal configuration',
-          'Auto-generated prompts',
-        ],
+        features: ['Basic chat interface', 'Essential tools only', 'Minimal configuration', 'Auto-generated prompts'],
       },
       standard: {
         name: 'Standard',
@@ -951,6 +950,7 @@ export const en = {
   ...planApprovalEn,
   ...taskStatusPanelsEn,
   ...noticesEn,
+  ...serverConnectionEn,
   ...agentErrorEn,
   ...labEn,
   ...labGpt1En,

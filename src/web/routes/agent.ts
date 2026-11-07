@@ -69,7 +69,7 @@ import { AgentRunController } from './agentRunController';
 import { getBackgroundTaskManager } from '../../host/session/backgroundTaskManager';
 import { resolveBackgroundRunSettlement, settleBackgroundRun } from '../../host/session/backgroundRunSettlement';
 import { getProjectSourceTrustFailureMarker } from '../../host/services/project/projectSourceTrustError';
-import { getModelAuthFailureMarker } from '../../host/model/errorClassifier';
+import { getModelAuthFailureMarker, getModelUsageLimitFailureMarker } from '../../host/model/errorClassifier';
 import { AgentRunEventCollector } from './agentRunEventCollector';
 import { RunRegistry, RunSessionConflictError } from '../../host/runtime/runRegistry';
 import { isTerminalRunStatus, type RunEnvelope } from '../../shared/contract/durableRun';
@@ -644,11 +644,16 @@ export function createAgentRouter(deps: AgentRouterDeps): Router {
     let persistedSession: Session | null = null;
     let sessionManagerForRun: AgentSessionManagerLike | null = null;
     let sessionPreflightReadFailed = false;
+    // 行「确认还不存在」：preflight 真读了（sm 带 getSession、读未失败）且返回 null。
+    // 只有这种确认缺失才把 kickoff 的 running 写推迟到建行后（见 pre-persist 处）；
+    // 读失败或 sm 缺席（降级态）保持原地点写，行为不变。
+    let sessionRowMissingAtPreflight = false;
     try {
       const sm = await tryGetSessionManager();
       sessionManagerForRun = sm ?? null;
       if (sm?.getSession) {
         persistedSession = await sm.getSession(sessionId, 1);
+        sessionRowMissingAtPreflight = persistedSession === null;
       }
     } catch (err) {
       sessionPreflightReadFailed = true;
@@ -922,7 +927,14 @@ export function createAgentRouter(deps: AgentRouterDeps): Router {
       ...(clientMessageId ? { clientMessageId } : {}),
       ...(runHandle ? { runId: runHandle.context.runId } : {}),
     });
-    await runController.updateSessionStatus('running');
+    // kickoff running 写：新会话的行此刻还没建（try 内 prePersistUserMessage 才建行），
+    // 在这里写必然 assertAccessibleSession 抛 Session not found ⇒ 每个新会话一条
+    // 「Failed to persist session status running」WARN（基线实测 3/3 个新会话各一条）。
+    // 行确认缺失就不在这里写：新会话的 running 在建行之后补写；老会话/读失败/降级态
+    // 维持原地点写不变。终态写路径（interrupted/completed/error）不在此列，照旧原样写。
+    if (!sessionRowMissingAtPreflight) {
+      await runController.updateSessionStatus('running');
+    }
 
     let externalEngineFailureContext: ExternalAgentEngineFailureContext | undefined;
     // try 路径 commitTurn 成功后置位：catch 里的失败收口据此避免二次 commit。
@@ -1294,7 +1306,13 @@ export function createAgentRouter(deps: AgentRouterDeps): Router {
       if (commandCenterBrain) {
         // 文字前台由 web TaskManager 承载，免除 CLI 专用的任务工具禁用表。
         config.taskManagerToolsEnabled = true;
-        config.allowedToolNames = applyMorningBriefSaveDraftRoleTools(prompt, getTextForegroundToolNamesForPrompt(prompt), config.agentOverride?.tools);
+        config.allowedToolNames = applyMorningBriefSaveDraftRoleTools(
+          prompt,
+          // 手选/专家连接器收窄必须透传（rework r1）：非空 scope 之外即使意图命中也不进白名单，
+          // 否则 run policy 放行范围外连接器写、预载却按收窄不送 schema，判决互相矛盾。
+          getTextForegroundToolNamesForPrompt(prompt, config.toolScope?.allowedConnectorIds),
+          config.agentOverride?.tools,
+        );
         config.foregroundToolFace = true;
         config.maxIterations = Math.min(
           config.maxIterations ?? SESSION_COMMAND_CENTER_BRAIN_MAX_ITERATIONS,
@@ -1535,6 +1553,13 @@ export function createAgentRouter(deps: AgentRouterDeps): Router {
         },
       });
 
+      // 新会话的 kickoff running 补写：行刚由 pre-persist 建好，此刻写才落得进去。
+      // pre-persist 失败（行仍缺）就不补写——再写还是必失败，只会多一条 WARN；
+      // 老会话的 running 已在 opening 原地写过，这里只补行刚建的那批。
+      if (sessionRowMissingAtPreflight && userMsgPrePersistedDb) {
+        await runController.updateSessionStatus('running');
+      }
+
       // 宿主自己起的轮次（抽干排队消息、断连后续跑）：这条用户消息只有宿主知道，
       // 前端没有本地乐观副本，不广播的话屏幕上只有回答、没有对应的问题
       // ——2026-08-01 验收截图里排队消息就是这样只剩「丙一收到」。
@@ -1736,13 +1761,16 @@ export function createAgentRouter(deps: AgentRouterDeps): Router {
       );
       // 引擎发过终态 error 时它的 failure 优先：那条带着这一轮真正跑的模型（provider/model），
       // 抛出的原始错误上通常没有——这里是手机唯一收到的那条 error，丢了「换走失败模型收起卡片」就失效。
-      const failure = getProjectSourceTrustFailureMarker(error) ?? runController.lastTerminalFailure ?? getModelAuthFailureMarker(error);
+      const failure = getProjectSourceTrustFailureMarker(error) ?? runController.lastTerminalFailure ?? getModelAuthFailureMarker(error) ?? getModelUsageLimitFailureMarker(error);
       deps.publishCompanionEvent?.(sessionId, 'error', { event: { code: 'RUN_FAILED', ...(failure ? { failure } : {}) }, runId: runContext?.runId });
-      if (!runController.disconnected) {
+      // 引擎已发过终态 error（runFinalizer 先发再抛）就不补发：同轮第二条 error 只会让
+      // renderer 再渲染一张同款红卡。引擎那条自带 failure，落库分类走 lastTerminalErrorData。
+      if (!runController.disconnected && !runController.hadTerminalError) {
         runController.emitAgentEvent({
           type: 'error',
           data: {
             message,
+            ...(failure ? { failure } : {}),
           },
         });
       }

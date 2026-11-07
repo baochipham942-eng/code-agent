@@ -32,25 +32,37 @@ export function resolveChannelReplyLimit(configured: unknown): number {
     : CHANNEL_REPLY_CHAR_LIMIT_DEFAULT;
 }
 
+/** 单行 Markdown 标题段：trimmed 后只有一行且以 1–6 个 # 加空白起头 */
+function isHeadingOnlyParagraph(paragraph: string): boolean {
+  const trimmed = paragraph.trim();
+  return !trimmed.includes('\n') && /^#{1,6}\s/.test(trimmed);
+}
+
 /**
  * 回复不超限原样返回；超限则按段落累积不超限的前几段，首段本身超限时在该段内
- * 取最近的句末标点（找不到才按上限切），最后附固定提示。
+ * 取最近的句末标点（找不到才按上限切），最后附固定提示。正文被截断时，甩在截
+ * 断点前的尾部标题段（下面已没有内容）一并丢弃，避免群里出现孤标题。
  */
 export function softLimitChannelReply(text: string, limit: number): string {
   if (text.length <= limit) return text;
   const paragraphs = text.split(/\n\s*\n/);
-  let kept = '';
+  const kept: string[] = [];
+  let keptLength = 0;
   for (const paragraph of paragraphs) {
-    const next = kept ? `${kept}\n\n${paragraph}` : paragraph;
-    if (next.length > limit) break;
-    kept = next;
+    const nextLength = keptLength ? keptLength + 2 + paragraph.length : paragraph.length;
+    if (nextLength > limit) break;
+    kept.push(paragraph);
+    keptLength = nextLength;
   }
-  if (!kept) {
+  if (kept.length < paragraphs.length) {
+    while (kept.length > 0 && isHeadingOnlyParagraph(kept[kept.length - 1])) kept.pop();
+  }
+  if (kept.length === 0) {
     const head = paragraphs[0].slice(0, limit);
     const cut = Math.max(head.lastIndexOf('。'), head.lastIndexOf('. '), head.lastIndexOf('！'), head.lastIndexOf('？'));
-    kept = cut > 0 ? head.slice(0, cut + 1) : head;
+    return `${cut > 0 ? head.slice(0, cut + 1) : head}\n\n${CHANNEL_REPLY_FULL_TEXT_NOTE}`;
   }
-  return `${kept}\n\n${CHANNEL_REPLY_FULL_TEXT_NOTE}`;
+  return `${kept.join('\n\n')}\n\n${CHANNEL_REPLY_FULL_TEXT_NOTE}`;
 }
 
 /** 开跑回执：「收到，开始处理：<请求前 30 字>」。空请求返回空串（调用方跳过回执）。 */

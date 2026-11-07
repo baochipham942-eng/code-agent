@@ -29,7 +29,7 @@ export function parseJourneyBrowserSmokeOptions(argv: string[]): JourneyBrowserS
     }
     if (argument === '--journey') {
       const value = argv[index + 1];
-      if (!value || value.startsWith('--')) throw new Error('--journey requires cold-start|first-token|long-session|session-switch|all');
+      if (!value || value.startsWith('--')) throw new Error('--journey requires cold-start|first-token|long-session|long-session-scroll|session-switch|all');
       if (value === 'all') journeys = [...JOURNEY_IDS];
       else if (isJourneyId(value)) journeys = [value];
       else throw new Error(`Unknown journey: ${value}`);
@@ -82,7 +82,7 @@ Usage:
   npx tsx scripts/perf/journey-browser-smoke.ts [options]
 
 Options:
-  --journey <id|all>     cold-start | first-token | long-session | session-switch | all
+  --journey <id|all>     cold-start | first-token | long-session | long-session-scroll | session-switch | all
   --extra-renders <n>    Inject n extra Profiler commits (correlation / mutation)
   --repeat <n>           Run each journey n times on the same Vite/browser
   --out <path>           Write JSON report (single journey: one object; all: array)

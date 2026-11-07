@@ -5,7 +5,9 @@
 import type { Connector, ConnectorExecutionResult, ConnectorStatus } from '../base';
 import {
   buildAppleScriptDateVar,
+  describeAppleScriptFailure,
   escapeAppleScriptString,
+  isAppleScriptFailure,
   parseAppleScriptDate,
   runAppleScript,
   sharedAppleScriptHandlers,
@@ -47,7 +49,9 @@ function parseLine(line: string): string[] {
 }
 
 function errorMessage(error: unknown): string {
-  return error instanceof Error ? error.message : String(error);
+  return isAppleScriptFailure(error)
+    ? describeAppleScriptFailure('Calendar', error).message
+    : error instanceof Error ? error.message : String(error);
 }
 
 function buildCalendarStatus(capabilities: string[]): ConnectorStatus {
@@ -176,7 +180,7 @@ async function listEvents(payload: Record<string, unknown>): Promise<CalendarEve
     'set rawUrl to url of ev',
     'end try',
     'set eventUrl to my sanitizeText(rawUrl)',
-    'set eventLine to (uid of ev as text) & "|" & (my sanitizeText(name of cal)) & "|" & (my sanitizeText(summary of ev)) & "|" & (my sanitizeText((start date of ev) as text)) & "|" & (my sanitizeText((end date of ev) as text)) & "|" & eventLocation & "|" & eventNotes & "|" & eventUrl',
+    'set eventLine to (uid of ev as text) & "|" & (my sanitizeText(name of cal)) & "|" & (my sanitizeText(summary of ev)) & "|" & (my isoDateText(start date of ev)) & "|" & (my isoDateText(end date of ev)) & "|" & eventLocation & "|" & eventNotes & "|" & eventUrl',
     'set end of outputLines to eventLine',
     'set emittedCount to emittedCount + 1',
     'if emittedCount >= eventLimit then exit repeat',
@@ -249,7 +253,7 @@ async function getEvent(payload: Record<string, unknown>): Promise<CalendarEvent
     'try',
     'set rawUrl to url of targetEvent',
     'end try',
-    `return (uid of targetEvent as text) & "|" & (my sanitizeText("${escapeAppleScriptString(calendarName)}")) & "|" & (my sanitizeText(summary of targetEvent)) & "|" & (my sanitizeText((start date of targetEvent) as text)) & "|" & (my sanitizeText((end date of targetEvent) as text)) & "|" & (my sanitizeText(rawLocation)) & "|" & (my sanitizeText(rawNotes)) & "|" & (my sanitizeText(rawUrl))`,
+    `return (uid of targetEvent as text) & "|" & (my sanitizeText("${escapeAppleScriptString(calendarName)}")) & "|" & (my sanitizeText(summary of targetEvent)) & "|" & (my isoDateText(start date of targetEvent)) & "|" & (my isoDateText(end date of targetEvent)) & "|" & (my sanitizeText(rawLocation)) & "|" & (my sanitizeText(rawNotes)) & "|" & (my sanitizeText(rawUrl))`,
     'end tell',
     'end tell',
   ]);
@@ -304,7 +308,7 @@ async function createEvent(payload: Record<string, unknown>): Promise<CalendarEv
     'tell application "Calendar"',
     `tell calendar "${escapeAppleScriptString(calendarName)}"`,
     `set newEvent to make new event at end with properties {${propertyParts.join(', ')}}`,
-    `return (uid of newEvent as text) & "|" & (my sanitizeText("${escapeAppleScriptString(calendarName)}")) & "|" & (my sanitizeText(summary of newEvent)) & "|" & (my sanitizeText((start date of newEvent) as text)) & "|" & (my sanitizeText((end date of newEvent) as text)) & "|" & (my sanitizeText(location of newEvent))`,
+    `return (uid of newEvent as text) & "|" & (my sanitizeText("${escapeAppleScriptString(calendarName)}")) & "|" & (my sanitizeText(summary of newEvent)) & "|" & (my isoDateText(start date of newEvent)) & "|" & (my isoDateText(end date of newEvent)) & "|" & (my sanitizeText(location of newEvent))`,
     'end tell',
     'end tell',
   ]);
@@ -379,7 +383,7 @@ async function updateEvent(payload: Record<string, unknown>): Promise<CalendarEv
   }
 
   lines.push(
-    `return (uid of targetEvent as text) & "|" & (my sanitizeText("${escapeAppleScriptString(calendarName)}")) & "|" & (my sanitizeText(summary of targetEvent)) & "|" & (my sanitizeText((start date of targetEvent) as text)) & "|" & (my sanitizeText((end date of targetEvent) as text)) & "|" & (my sanitizeText(location of targetEvent))`,
+    `return (uid of targetEvent as text) & "|" & (my sanitizeText("${escapeAppleScriptString(calendarName)}")) & "|" & (my sanitizeText(summary of targetEvent)) & "|" & (my isoDateText(start date of targetEvent)) & "|" & (my isoDateText(end date of targetEvent)) & "|" & (my sanitizeText(location of targetEvent))`,
     'end tell',
     'end tell',
   );

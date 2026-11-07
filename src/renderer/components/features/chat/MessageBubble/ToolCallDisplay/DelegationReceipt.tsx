@@ -1,7 +1,7 @@
 import React from 'react';
 import { useI18n } from '../../../../../hooks/useI18n';
 import { useAppStore } from '../../../../../stores/appStore';
-import { describeLastToolFailure, describeLastToolStep } from '../../../../../utils/agentActivity';
+import { describeLastToolFailure, describeLastToolStep, resolveAgentActivityStepStatus } from '../../../../../utils/agentActivity';
 import { openExternalLink } from '../../../../../utils/platform';
 import type { DelegationPresentation } from './delegationPresentation';
 
@@ -21,14 +21,26 @@ export function DelegationHeader({ presentation }: { presentation: DelegationPre
 export function DelegationReceipt({ presentation }: { presentation: DelegationPresentation }) {
   const { t } = useI18n();
   const openPreview = useAppStore((state) => state.openPreview);
+  // 审批未决时活动行不得谎报完成态（N-APPROVAL-PENDING-STATUS-COPY）：连接器写
+  // 步在审批卡挂着时亮「请求…」词形，卡一答完、工具在跑就落「正在…」词形。
+  const pendingPermissionRequest = useAppStore((state) => state.pendingPermissionRequest);
+  const pendingPermissionSessionId = useAppStore((state) => state.pendingPermissionSessionId);
+  const queuedPermissionRequests = useAppStore((state) => state.queuedPermissionRequests);
   const toolFailure = presentation.state === 'working'
     ? undefined
     : describeLastToolFailure(presentation.toolFailure, t);
 
   if (presentation.state === 'working') {
+    const status = resolveAgentActivityStepStatus({
+      step: presentation.lastToolStep,
+      working: true,
+      activityIds: presentation.activityIds,
+      sessionId: presentation.sessionId ?? null,
+      permission: { pendingPermissionRequest, pendingPermissionSessionId, queuedPermissionRequests },
+    });
     return (
       <div className="ml-6 mt-0.5 truncate text-xs text-zinc-500" data-testid="delegation-activity">
-        {describeLastToolStep(presentation.lastToolStep, t)}
+        {describeLastToolStep(presentation.lastToolStep, t, status)}
       </div>
     );
   }

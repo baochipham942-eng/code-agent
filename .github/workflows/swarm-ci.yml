@@ -116,6 +116,8 @@ on:
       - 'packages/internal/evaluation-center/snapshots/request-replay/*.state.json'
   push:
     branches: [main]
+  # 11-07 合并队列：merge_group 不支持 paths 过滤，队列里每批一律跑全套；文末 merge-queue-gate 汇总成必需检查 ai-review
+  merge_group:
   workflow_dispatch:
 
 concurrency:
@@ -586,3 +588,22 @@ jobs:
   # 不再写回 ci/swarm-health.json：streak 直接从 GitHub Actions API 派生，
   # 用 scripts/ci/swarm-streak.sh 按需查询，避免 [skip ci] commit + 1-commit
   # lag 的 trade-off。详见 docs/decisions/010-swarm-road-to-10.md #1。
+
+  # ---------------------------------------------------------------------------
+  # 合并队列总闸（11-07 仓库迁到 neo-cowork 组织开 merge queue）：
+  # 分支规则的必需检查只有 ai-review。PR 上它是 ship 写的人审判决状态；
+  # 合并队列的临时合并提交上没有那个状态，由这个任务产出同名检查，并要求 smoke/unit/full 全部 success。
+  # always()：上游失败时本任务照跑并失败——若被跳过，GitHub 会把跳过的必需检查当通过。
+  # ---------------------------------------------------------------------------
+  merge-queue-gate:
+    name: ai-review
+    if: ${{ always() && github.event_name == 'merge_group' }}
+    needs: [smoke, unit, full]
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Swarm smoke/unit/full 全部通过
+        run: |
+          echo "smoke=${{ needs.smoke.result }} unit=${{ needs.unit.result }} full=${{ needs.full.result }}"
+          test "${{ needs.smoke.result }}" = success
+          test "${{ needs.unit.result }}" = success
+          test "${{ needs.full.result }}" = success

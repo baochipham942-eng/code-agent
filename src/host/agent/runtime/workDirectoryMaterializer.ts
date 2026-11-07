@@ -24,7 +24,7 @@ import * as fs from 'fs/promises';
 import * as fsSync from 'fs';
 import * as path from 'path';
 import { getDefaultWorkDirectory } from '../../config/configPaths';
-import { materializeSessionWorkDirectory } from '../../config/sessionWorkDirectory';
+import { isPlannedSessionWorkDirectory, materializeSessionWorkDirectory } from '../../config/sessionWorkDirectory';
 import { listSessionWorkDirectoryReservations } from '../../config/sessionWorkDirectoryReservations';
 import { isPathWithinRoot } from '../../runtime/workspaceScope';
 import { hasUnclearedStreamSnapshots } from '../../session/streamSnapshot';
@@ -210,4 +210,54 @@ function readDirents(dir: string): fsSync.Dirent[] | undefined {
   } catch {
     return undefined;
   }
+}
+
+/**
+ * 启动清扫的年龄档：其它 app 实例可能共用同一个默认工作根，太新的夹子不碰。
+ */
+const ORPHAN_SWEEP_MIN_AGE_MS = 60 * 60 * 1000;
+
+/**
+ * 启动孤儿清扫（N-DELEGATE-WORKDIR-LAZY-FU1-FU1-FU2）：挂死的子代理 run 永不触发
+ * endWorkDirectoryRun，进程重启后 createdByThisProcess（内存）失忆，回收路径
+ * （recycleCreatedMetadataDir）永远不认领这些夹子——case e 形状的元数据夹就在默认
+ * 工作根里永久堆积。启动时扫一遍默认工作根的直接子项，只删同时满足全部条件的夹子：
+ * ① isPlannedSessionWorkDirectory（任务_/Task_ 规划形状、严格在默认工作根之内）；
+ * ② isOnlyCodeAgentMetadata（空、或只剩 .code-agent 至多空 stream-snapshots 脚手架、
+ *    无未清快照——内容判据单一真源沿用运行期回收，不另造谓词）；
+ * ③ 不在本进程 activeRuns 里；
+ * ④ lstat mtime 早于 1 小时前（多实例共根的年龄档）。
+ * 只扫直接子项；符号链接一律跳过（isOnlyCodeAgentMetadata 同样用 lstat 拒链）；
+ * 绝不递归进其它路径找候选。返回清扫数；任何失败按 warn 留痕继续，绝不抛错。
+ */
+export async function sweepOrphanMetadataOnlyWorkDirectories(): Promise<number> {
+  const root = getDefaultWorkDirectory();
+  let children: fsSync.Dirent[];
+  try {
+    children = await fs.readdir(root, { withFileTypes: true });
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== 'ENOENT') {
+      logger.warn(`[WorkDirectoryMaterializer] Cannot sweep orphan session work dirs in ${root}:`, error);
+    }
+    return 0;
+  }
+  const cutoffMs = Date.now() - ORPHAN_SWEEP_MIN_AGE_MS;
+  let swept = 0;
+  for (const entry of children) {
+    if (entry.isSymbolicLink()) continue;
+    const dir = path.resolve(root, entry.name);
+    if (activeRuns.has(dir)) continue;
+    if (!isPlannedSessionWorkDirectory(dir)) continue;
+    if (!isOnlyCodeAgentMetadata(dir)) continue;
+    try {
+      const stats = await fs.lstat(dir);
+      if (stats.mtimeMs > cutoffMs) continue;
+      await fs.rm(dir, { recursive: true, force: false });
+      swept += 1;
+      logger.info(`[WorkDirectoryMaterializer] Swept orphan metadata-only session work dir: ${dir}`);
+    } catch (error) {
+      logger.warn(`[WorkDirectoryMaterializer] Failed to sweep orphan session work dir ${dir}:`, error);
+    }
+  }
+  return swept;
 }

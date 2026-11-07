@@ -6,9 +6,11 @@ import {
   formatRunCostUsd,
   formatRunListTime,
   getExecutionStatusMeta,
+  isPermissionDeniedExecution,
 } from './types';
 import { wakeSkipSentence } from './wakeSkipSentence';
 import { CronRunsOnPill } from './CronRunsOnSelector';
+import { awaitingApprovalLabel } from './awaitingApprovalLabel';
 
 interface CronExecutionListProps {
   executions: CronJobExecution[];
@@ -19,7 +21,7 @@ interface CronExecutionListProps {
   /** Immutable execution location keyed by job id. */
   runsOnByJobId?: Record<string, CronJobDefinition['runsOn']>;
   /** jobId → 等批准运行（N-CRON-UNATTENDED-BASH-PARK-STUCK）：running 行状态格换 amber 徽章。 */
-  awaitingByJobId?: Map<string, unknown>;
+  awaitingByJobId?: Map<string, { commandPreview?: string }>;
 }
 
 const thClass = 'whitespace-nowrap px-1 py-2';
@@ -72,12 +74,15 @@ export const CronExecutionList: React.FC<CronExecutionListProps> = ({
         <tbody>
           {executions.map((execution) => {
             const statusMeta = getExecutionStatusMeta(execution.status);
+            // 需处理（N-CRON-RUN-COMPLETED-BUT-DENIED）：被拒且无产出的完成运行换琥珀徽章。
+            const permissionDenied = isPermissionDeniedExecution(execution);
             const wakeSkipText = wakeSkipSentence(execution, {
               silentLevel: cc.wakeSkipSilentLevel,
               dailyBudget: cc.wakeSkipDailyBudget,
               quietHours: cc.wakeSkipQuietHours,
             });
             const costRunsOn = execution.runsOn ?? runsOnByJobId?.[execution.jobId];
+            const awaitingPreview = awaitingByJobId?.get(execution.jobId)?.commandPreview;
             const isSelected = execution.id === selectedExecutionId;
             const rowTone = isSelected ? 'bg-zinc-800/80' : 'bg-zinc-900/40 hover:bg-zinc-800/50';
             return (
@@ -94,10 +99,18 @@ export const CronExecutionList: React.FC<CronExecutionListProps> = ({
                   <td className={`whitespace-nowrap ${tdClass}`}>
                     {execution.status === 'running' && (awaitingByJobId?.has(execution.jobId) ?? false) ? (
                       <span
-                        className="rounded-full border border-badge-warning/40 bg-amber-500/15 px-2 py-1 text-xs text-badge-warning"
+                        className="inline-block max-w-[180px] overflow-hidden text-ellipsis whitespace-nowrap rounded-full border border-badge-warning/40 bg-amber-500/15 px-2 py-1 align-middle text-xs text-badge-warning"
                         data-testid="cron-exec-awaiting-approval"
+                        title={awaitingPreview ? cc.awaitingApprovalWithPreview.replace('{preview}', awaitingPreview) : undefined}
                       >
-                        {cc.awaitingApprovalBadge}
+                        {awaitingApprovalLabel(cc.awaitingApprovalWithPreview, awaitingPreview) ?? cc.awaitingApprovalBadge}
+                      </span>
+                    ) : permissionDenied ? (
+                      <span
+                        className="rounded-full px-2 py-1 text-xs text-badge-warning bg-amber-500/10"
+                        data-testid="cron-execution-permission-denied"
+                      >
+                        {cc.permissionDeniedBadge}
                       </span>
                     ) : (
                       <span className={`rounded-full px-2 py-1 text-xs ${statusMeta.className}`}>

@@ -87,6 +87,14 @@ export const ShareLinkPanel: React.FC<ShareLinkPanelProps> = ({
       toast.error(labels.tokenMissing);
       return;
     }
+    if (message.includes('Share service token rejected')) {
+      toast.error(labels.tokenRejected);
+      return;
+    }
+    if (message.includes('Share service unavailable')) {
+      toast.error(labels.serviceUnavailable);
+      return;
+    }
     toast.error(`${labels.actionFailed}: ${message}`);
   };
 

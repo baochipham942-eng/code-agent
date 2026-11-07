@@ -15,6 +15,10 @@ const COMPONENTS_DIR = path.join(RENDERER_DIR, 'components');
 const MIGRATED: string[] = [
   'ChatView.tsx',
   'CommandPalette.tsx',
+  'features/chat/CronRunSessionIntro.tsx',
+  'features/chat/CronRunSessionStatusBar.tsx',
+  'features/chat/DecisionSlot.tsx',
+  'features/chat/cronRunSessionStatus.ts',
   'features/chat/TurnBasedTraceView.tsx',
   'features/chat/ChatSearchBar.tsx',
   'features/chat/ToolStepGroup.tsx',

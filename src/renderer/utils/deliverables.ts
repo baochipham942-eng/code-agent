@@ -18,6 +18,7 @@ import type {
 } from '@shared/contract';
 import type { TurnArtifactOwnershipItem } from '@shared/contract/turnTimeline';
 import { getFileExtension, isPreviewable } from './previewable';
+import { deliverableDedupeKeyPath } from './deliverablePath';
 
 function basename(value: string): string {
   const withoutQuery = value.split(/[?#]/, 1)[0] || value;
@@ -705,6 +706,7 @@ export function kindForTurnArtifact(item: TurnArtifactOwnershipItem): string {
 
 export function buildTurnArtifactDeliverableCards(
   items: TurnArtifactOwnershipItem[],
+  workingDirectory?: string | null,
 ): DeliverableCardView[] {
   const cards: DeliverableCardView[] = items.map((item, index) => {
     const openTarget = openTargetForTurnArtifact(item);
@@ -786,7 +788,9 @@ export function buildTurnArtifactDeliverableCards(
   });
 
   const dedupKeyForCard = (card: DeliverableCardView): string => {
-    if (card.openTarget.kind === 'file-preview') return card.openTarget.path;
+    // 去重键走 deliverableDedupeKeyPath：`./a.html` 与同一文件的绝对路径在工作目录
+    // 已知时折叠成一张卡；card.openTarget.path（展示与打开目标）原样保留。
+    if (card.openTarget.kind === 'file-preview') return deliverableDedupeKeyPath(card.openTarget.path, workingDirectory);
     if (card.openTarget.kind === 'workspace-preview') return card.openTarget.itemId;
     return card.id;
   };

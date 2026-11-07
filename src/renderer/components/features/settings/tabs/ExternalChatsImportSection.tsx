@@ -8,7 +8,7 @@
 // 文案：裸 reason 串（含源路径）只进宿主日志，绝不出现在页面 DOM——与技能结果块
 // 同一条规矩。
 
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { Download, Loader2 } from 'lucide-react';
 import type { RecentExternalChatImportResult } from '@shared/contract/agentEngine';
 import { IPC_DOMAINS } from '@shared/ipc';
@@ -54,19 +54,25 @@ export const ExternalChatsImportSection: React.FC = () => {
   const [sync, setSync] = useState<ChatsSyncState>({ mode: 'off' });
   const [syncBusy, setSyncBusy] = useState(false);
   const [syncFailed, setSyncFailed] = useState(false);
+  // 用户一旦操作过开关，晚到的初始读取结果就是过期数据，不得覆盖。
+  const syncActedRef = useRef(false);
 
   useEffect(() => {
     let alive = true;
     ipcService
       .invokeDomain<ChatsSyncState>(IPC_DOMAINS.AGENT_ENGINE, 'getChatsSync')
-      .then((state) => { if (alive && state) setSync(state); })
+      .then((state) => { if (alive && !syncActedRef.current && state) setSync(state); })
       .catch(() => {});
     return () => { alive = false; };
   }, []);
 
   const changeSync = async (mode: ChatsSyncState['mode']): Promise<void> => {
+    syncActedRef.current = true;
+    const previous = sync;
     setSyncBusy(true);
     setSyncFailed(false);
+    // 乐观显示目标态：宿主开启时会先同步一轮才返回，等待期间开关不能原地不动。
+    setSync({ ...previous, mode });
     try {
       const next = await ipcService.invokeDomain<ChatsSyncState>(
         IPC_DOMAINS.AGENT_ENGINE,
@@ -79,6 +85,7 @@ export const ExternalChatsImportSection: React.FC = () => {
         void useSessionStore.getState().loadSessions({ silent: true }).catch(() => {});
       }
     } catch {
+      setSync(previous);
       setSyncFailed(true);
     } finally {
       setSyncBusy(false);

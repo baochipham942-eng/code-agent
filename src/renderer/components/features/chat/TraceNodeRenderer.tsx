@@ -510,12 +510,14 @@ const AssistantTextNode: React.FC<{
         </div>
       )}
 
-      {/* 运行失败的结构化错误卡片（替代旧版 merge 进正文的 ⚠ 文本） */}
+      {/* 运行失败的结构化错误卡片（替代旧版 merge 进正文的 ⚠ 文本）。
+          run 是投影层推导的同因连续段：早先的失败轮降为灰字行，只有最新一轮整卡。 */}
       {node.metadata?.agentError && (
         <AgentErrorPresentation
           error={node.metadata.agentError}
           messageId={messageId}
           sessionId={sessionId}
+          run={node.agentErrorRun}
         />
       )}
 

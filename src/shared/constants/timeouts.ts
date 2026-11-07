@@ -113,6 +113,8 @@ export const INTERACTION_TIMEOUTS = {
    * 等待用户，等待期间由 beginHumanWait/endHumanWait 暂停该会话的工具计时。
    */
   PARKED_APPROVAL: 86_400_000,
+  /** cron/heartbeat 停车审批无人应答的降级期限（30 分钟）；channel/voice 仍走上面的 24h 兜底。 */
+  UNATTENDED_PARKED_APPROVAL_DEGRADE: 1_800_000,
   /** MCP Elicitation 用户输入超时 */
   MCP_ELICITATION: 60_000,
   /**
@@ -626,6 +628,11 @@ export const CRON_GUARDRAILS = {
    * 存量值视为未设置，走指数退避；新代码显式写下的其它值不受影响。
    */
   LEGACY_DEFAULT_RETRY_DELAY_MS: 5_000,
+  /**
+   * timeout 的旧版默认值：旧保存路径把未设置写成 `|| 60000`，存量 agent 任务读回都是 60000。
+   * agent 分支把它与未设置同等对待（不限时），否则存量任务会在 60s 被误杀；shell 分支不受影响。
+   */
+  LEGACY_DEFAULT_TIMEOUT_MS: 60_000,
 } as const;
 
 /**
@@ -690,4 +697,16 @@ export const CLI_DURABLE_TERMINAL = {
 export const JEV_HOSTED_TIMEOUTS = {
   /** 持续性服务故障（401/404/5xx/网络/超时）后短退避：避免每次判官调用都先付一次云端往返再降级 */
   SERVICE_FAILURE_BACKOFF: 5 * 60_000,
+} as const;
+
+/** 自动化页「待过目」收件箱的后台刷新（N-CRON-REVIEW-COUNT-LIVE） */
+export const CRON_REVIEW_INBOX_TIMEOUTS = {
+  /** 页面可见时的轮询间隔：定时任务在页面停着时跑完，数字无需切页就更新 */
+  POLL_INTERVAL: 10_000,
+} as const;
+
+/** 渲染端系统通知投递超时 */
+export const OS_NOTIFICATION_TIMEOUTS = {
+  /** 读取系统通知权限（聚合 native 探测）的上限，超时按 unknown 继续发送 */
+  PERMISSION_READ_MS: 3_000,
 } as const;

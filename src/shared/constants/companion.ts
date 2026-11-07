@@ -139,6 +139,20 @@ export const COMPANION_LIMITS = {
   pushMaxAttempts: 5,
   /** APNs provider JWT lifetime; Apple accepts iat within one hour. */
   pushJwtTtlMs: 50 * 60 * 1000,
+  /**
+   * 桌面在场心跳间隔（N-NOTIFY-PRESENCE-HEARTBEAT）：renderer 每隔这么久上报一次
+   * 可见/聚焦/最近输入/正在看的会话；可见性或焦点切换时立即加报一拍。renderer 节奏与
+   * host 判定同源，唯一真源在这里。
+   */
+  desktopPresenceHeartbeatMs: 15_000,
+  /**
+   * 在场新鲜窗（= 3× 心跳，容忍连续丢两拍）：报告本身或最近输入超出该窗即视为
+   * 「用户不在电脑前」，普通推送（agent_complete / agent_cancelled）恢复发出；
+   * approval / error 紧急类永不看它。
+   */
+  desktopPresenceFreshMs: 45_000,
+  /** pointer/key 事件采样 lastInputAt 的最小间隔：只写 ref 也按拍采样，避免每帧 pointermove 都进门。 */
+  desktopPresenceInputSampleMs: 1_000,
   /** Host dial-out relay: absent/disabled config must not change LAN behavior. */
   relayConfigFile: 'companion-relay.json',
   /** Host 数据目录下的设备票据文件（N-COMPANION-RELAY-DEVICE-TICKET），与 relayConfigFile 同目录。 */

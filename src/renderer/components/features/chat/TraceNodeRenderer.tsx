@@ -33,6 +33,7 @@ import { UI } from '@shared/constants';
 import { humanizeToolError } from '../../../utils/toolExecutionPresentation';
 import { useI18n } from '../../../hooks/useI18n';
 import { interpolate } from '../../../i18n/interpolate';
+import { getStreamInterruptionReasonLabel } from '../../../utils/streamInterruptionPresentation';
 import { useMessageActionStore } from '../../../stores/messageActionStore';
 import { useAppStore } from '../../../stores/appStore';
 import { useStreamResumeStore } from '../../../stores/streamResumeStore';
@@ -387,6 +388,10 @@ const AssistantTextNode: React.FC<{
   // （历史消息、仍在思考中的节点）保持原样不渲染，不动既有折叠/思考展示逻辑。
   const isActiveEmptyGap =
     turnStreaming && !hasRenderableContent && !(node.thinking || node.reasoning)?.trim();
+  const bareStopReason = !node.content && !node.metadata?.agentError ? node.metadata?.streamInterruptionReason : undefined;
+  if (bareStopReason) {
+    return <div data-testid="bare-interruption-note" className="py-1 text-xs text-zinc-500">{getStreamInterruptionReasonLabel(bareStopReason, t)}</div>;
+  }
   if (!hasRenderableContent) {
     if (!isActiveEmptyGap) return null;
     return (

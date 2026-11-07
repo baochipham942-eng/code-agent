@@ -19,6 +19,7 @@ import { isModelFallbackNoticeContent } from '../components/features/chat/fallba
 import { isContextCompressionSignalContent } from '../components/features/chat/contextCompressionSignal';
 import { measureStreamingPerformanceTiming } from '../utils/streamingPerformanceMetrics';
 import { isToolResultEcho } from '../utils/toolResultEcho';
+import { bareInterruptionNode } from '../utils/bareInterruptionNode';
 import { isStreamRecoveryMessage, stripStreamRecoveryMarker } from '../utils/streamRecoveryMessage';
 import {
   isPersistedStreamInterruptionMessage,
@@ -681,10 +682,11 @@ export function projectTurns(
         // 正文是真实答案的前半段（recovery 消息自己的文本仍被上方原规则压掉，不会
         // 双渲染），只剥掉正文尾部的裸协议标记，中断语义走样式行。
         const streamBreakKeptSegment = streamInterruptionReason === 'stream-break' && !recoveryMessage;
-        if (streamInterruptionReason && !streamBreakKeptSegment && (
-          recoveryMessage
-          || isPersistedStreamInterruptionMessage(msg)
-        )) return;
+        if (streamInterruptionReason && !streamBreakKeptSegment && (recoveryMessage || isPersistedStreamInterruptionMessage(msg))) {
+          const bare = bareInterruptionNode(msg, messages, streamInterruptionReason);
+          if (bare) turn.nodes.push(bare);
+          return;
+        }
         const projectedContent = streamBreakKeptSegment ? stripStreamBreakMarker(content) : content;
         if (streamBreakKeptSegment && !projectedContent.trim()) return;
         // 模型回显：小模型有时把工具结果 JSON 当正文复述，整段吞掉不当答案渲染。

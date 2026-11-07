@@ -22,7 +22,7 @@ import { writeDurableFacts } from '../../lightMemory/durableFactWriter';
 import { getLangfuseService, getBudgetService, BudgetAlertLevel } from '../../services';
 import { RUN_ERROR_CODE_MAX_ITERATIONS } from '../../../shared/constants';
 import { logCollector } from '../../mcp/logCollector.js';
-import { createLogger } from '../../services/infra/logger';
+import { createLogger } from '../../services/infra/logger'; import { buildEmptyFinalError } from './emptyFinalError';
 import { trackNode } from '../../observability/posthogNode';
 import { silence } from '../../utils/errorHandling';
 import type { BudgetEventData } from '../../../shared/contract';
@@ -399,7 +399,7 @@ export class RunFinalizer {
       && this.ctx.unattendedTurn !== true
     ) {
       terminalStatus = 'failed';
-      terminalError = new Error('任务已结束，执行记录和产物已保留。这一轮没有生成最终说明，请直接查看上面的工具结果。');
+      terminalError = buildEmptyFinalError(this.ctx.messages);
     }
 
     const runEvent = getRunTerminalPostHogEvent(terminalStatus);

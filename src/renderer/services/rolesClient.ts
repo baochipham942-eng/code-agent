@@ -49,6 +49,11 @@ export async function skipFirstWake(roleId: string): Promise<{ success: boolean 
   return ipcService.invokeDomain<{ success: boolean }>(IPC_DOMAINS.ROLES, 'firstWakeSkip', { roleId });
 }
 
+/** roles IPC firstWakeRetry。failed 终态复位 pending 重新排队（其余终态宿主拒绝）。 */
+export async function retryFirstWake(roleId: string): Promise<{ retried: boolean }> {
+  return ipcService.invokeDomain<{ retried: boolean }>(IPC_DOMAINS.ROLES, 'firstWakeRetry', { roleId });
+}
+
 /** roles IPC wakeProposalsList。每日醒来「外部增量」给出的一键工作提议（pending）。 */
 export async function listWakeProposals(roleId: string): Promise<RoleWakeProposal[]> {
   return ipcService.invokeDomain<RoleWakeProposal[]>(IPC_DOMAINS.ROLES, 'wakeProposalsList', { roleId });

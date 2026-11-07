@@ -51,6 +51,29 @@ export interface TraceNode {
   neoWorkCard?: import('./tag').NeoWorkCardDetail;
   launchRequest?: import('./swarm').SwarmLaunchRequest;
   turnTimeline?: import('./turnTimeline').TurnTimelineNode;
+  /**
+   * 连续同因失败折叠（N-UI-AGENT-ERROR-REPEAT-COLLAPSE）：投影层从消息列表推导的
+   * 同因连续段信息，不落库。latest=false 的失败轮渲染一行灰字「没有回复 · 原因」，
+   * 段内最新一轮渲染整卡（runLength≥2 时附带「连续 N 次」说明）；duplicate=true 是
+   * 同一轮内的重复失败上报，不渲染。同一消息的全部节点携带同一对象。缺失时按单次
+   * 失败（runLength 1 / latest）处理。
+   */
+  agentErrorRun?: AgentErrorRunInfo;
+}
+
+/**
+ * 连续同因失败折叠的推导结果形状（见 TraceNode.agentErrorRun）。
+ */
+export interface AgentErrorRunInfo {
+  /** 本段连续同因失败中的第几次（从 1 起） */
+  runLength: number;
+  /** 段内最新一轮渲染整卡；早先的压成一行灰字 */
+  latest: boolean;
+  /**
+   * 同一轮内的重复失败上报（两条用户消息之间没有新的用户输入，同因再次落错——
+   * web 路径 host 结构化标记与原始供应商报错各落一条）：同一失败，不再渲染。
+   */
+  duplicate?: boolean;
 }
 
 export interface TraceTurn {

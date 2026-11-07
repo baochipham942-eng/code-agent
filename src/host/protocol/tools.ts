@@ -232,6 +232,8 @@ export interface ToolContext {
   readonly skillDiscoveryService?: unknown;
   /** Opaque run-scoped telemetry owner for spawned agents. */
   readonly telemetryCollector?: unknown;
+  /** Approved Neo Tag / external-trigger context; authoring tools must fail closed when present. */
+  readonly neoTag?: import('../../shared/contract/tag').NeoTagRunContext;
 
   /** 轻量 logger 接口，不耦合 services/infra/logger 实现 */
   readonly logger: Logger;

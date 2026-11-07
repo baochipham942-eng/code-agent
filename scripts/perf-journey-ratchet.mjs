@@ -7,15 +7,16 @@ import process from 'node:process';
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 
-const JOURNEY_IDS = ['cold-start', 'first-token', 'long-session', 'session-switch'];
+const JOURNEY_IDS = ['cold-start', 'first-token', 'long-session', 'long-session-scroll', 'session-switch'];
 const scriptDir = path.dirname(fileURLToPath(import.meta.url));
 const args = process.argv.slice(2);
 
 // Post-merge swarm-ci `perf-journey-ratchet` (push to main, no path filter) re-runs
-// all four journeys. That is the safety net for product paths that PR-time
-// gates:fast no longer selects: each shared product path is attached to exactly
-// one journey. Shared probe infra (journey-probe-*, journey-browser-smoke.ts,
-// this script and its baseline) still selects all four.
+// all five journeys. That is the safety net for product paths that PR-time
+// gates:fast no longer selects. Product paths normally attach to one journey;
+// TurnBasedTraceView deliberately attaches to both entry and scroll coverage.
+// Shared probe infra (journey-probe-*, journey-browser-smoke.ts, this script
+// and its baseline) still selects all five.
 
 function fail(message) {
   console.error(`[perf-journey-ratchet] ✗ ${message}`);
@@ -169,7 +170,7 @@ function formatSummary({ comparisons, increases, decreases }) {
   } else {
     lines.push('**Can tighten:** none', '');
   }
-  lines.push('This job has no path filter and always runs all four journeys. It is the safety net for product paths that PR-time `gates:fast` no longer selects (each shared path is attached to exactly one journey).');
+  lines.push('This job has no path filter and always runs all five journeys. It is the safety net for product paths that PR-time `gates:fast` no longer selects (product paths normally attach to one journey; TurnBasedTraceView deliberately attaches to entry and scroll probes).');
   return `${lines.join('\n')}\n`;
 }
 

@@ -60,6 +60,7 @@ import {
   normalizeStreamTextPayload,
   normalizeTurnIdPayload,
   normalizeUserMessagePayload,
+  normalizeSystemMessagePayload,
 } from './streamEventNormalizers';
 
 const logger = createLogger('useAgent');
@@ -535,6 +536,14 @@ export function applyConversationStreamEvent(
               ...(userMessage.metadata ? { metadata: userMessage.metadata } : {}),
             });
           }
+          break;
+        }
+
+        // 宿主落库并广播的 role:'system' 事件消息（登记制，如 roleFlowStalled）：独立消息按 id 幂等入库，
+        // 由投影按登记表呈现；绝不能走下面的 assistant commit 合并，否则同一句话进正文又进 info 行。
+        const systemMessage = normalizeSystemMessagePayload(event.data);
+        if (systemMessage) {
+          if (!getFreshMessages().some((message) => message.id === systemMessage.id)) actions.addMessage(systemMessage);
           break;
         }
 

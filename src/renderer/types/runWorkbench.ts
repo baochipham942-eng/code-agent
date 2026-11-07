@@ -88,6 +88,8 @@ export interface TaskRecord {
   ownerRunId?: string | null;
   sourceThreadId?: string | null;
   resumeHint?: string;
+  /** resumeHint 是 raw 日志被清洗掉时（ADR-050）的语义类别；渲染层用 taskBlockedReason[category] 兜底 */
+  resumeHintCategory?: TaskBlockedCategory;
   outputRefs?: TaskRecordOutputRef[];
   /** 终态失败（后台任务 failed/expired/orphaned）：status 仍为 blocked，面板标签显示「失败」 */
   failed?: boolean;

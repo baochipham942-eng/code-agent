@@ -80,6 +80,11 @@ vi.mock('../../../src/host/externalImport/chatsSyncPreference', () => ({
   readChatsSyncState: () => ({ mode: 'off' }),
   writeChatsSyncState: () => {},
 }));
+vi.mock('../../../src/host/externalImport/skillsSyncPreference', () => ({
+  readSkillsSyncState: () => ({ mode: 'off' }),
+  readSkillsSyncStored: () => ({ mode: 'off', handled: { codex: [], cursor: [] } }),
+  writeSkillsSyncStored: () => {},
+}));
 vi.mock('../../../src/host/services/sessionFork/ownerScope', () => ({
   currentSessionForkOwnerScopeId: () => 'owner-fixture',
 }));
@@ -160,6 +165,14 @@ describe('agentEngine.ipc dispatch 特征：只读委派', () => {
       fail('INVALID_PAYLOAD', 'setChatsSync requires mode off | on | paused.'),
     );
     expect(await call('setChatsSync')).toMatchObject({ success: false });
+  });
+
+  it('getSkillsSync 回传偏好状态；setSkillsSync 非法 mode → INVALID_PAYLOAD', async () => {
+    expect(await call('getSkillsSync')).toEqual({ success: true, data: { mode: 'off' } });
+    expect(await call('setSkillsSync', { mode: 'sometimes' })).toEqual(
+      fail('INVALID_PAYLOAD', 'setSkillsSync requires mode off | on | paused.'),
+    );
+    expect(await call('setSkillsSync')).toMatchObject({ success: false });
   });
 });
 

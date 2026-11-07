@@ -630,7 +630,7 @@ export const GeneralSettings: React.FC = () => {
                   {generalText.migration.acknowledge}
                 </button>
                 <a
-                  href="https://github.com/baochipham942-eng/code-agent/releases/latest"
+                  href="https://github.com/neo-cowork/code-agent/releases/latest"
                   target="_blank"
                   rel="noreferrer"
                   className="text-xs text-badge-info underline hover:text-badge-info"

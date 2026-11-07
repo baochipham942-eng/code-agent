@@ -657,7 +657,7 @@ Use process_kill to terminate the session.`;
       try {
         result = startBackgroundTask(sandboxed.command, workingDirectory, timeout, {
           sessionId: ctx.sessionId,
-          toolCallId: ctx.currentToolCallId,
+          toolCallId: ctx.currentToolCallId, ownerAgentId: ctx.agentId, displayCommand: normalizedCommand,
           env: childEnv.env,
           sandboxed: sandboxDecision.sandboxed,
           ...(sandboxCleanup ? { onExit: cleanupSandbox } : {}),
@@ -821,7 +821,7 @@ Use Process tool with action="kill", task_id="${result.taskId}" to terminate if 
             command: sandboxedCommand,
             cwd: workingDirectory,
             sessionId: ctx.sessionId,
-            toolCallId: ctx.currentToolCallId,
+            toolCallId: ctx.currentToolCallId, ownerAgentId: ctx.agentId, displayCommand: normalizedCommand,
             sandboxed: sandboxDecision.sandboxed,
             onExit: cleanupSandbox,
             stdout,

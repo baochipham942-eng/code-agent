@@ -35,8 +35,11 @@ async function writeTempFile(content: string | Buffer, fileName: string): Promis
   return filePath;
 }
 
-// 首帧晚于旧的固定窗口（goto 后 500+400+250+250ms）才画。修前两次采样都落在空白上，判 not_runnable。
-const SLOW_FIRST_FRAME_GAME = `
+// 首帧晚于 smoke 的无条件墙钟下限（goto 后 500+400+250+250=1400ms）才画，
+// 修前两次采样都落在空白上判 not_runnable。按用例取延迟：
+// 「晚首帧仍 runnable」用例沿用 1500ms；deadline 用例取 4000ms（双边余量见该用例注释）。
+function slowFirstFrameGame(delayMs: number): string {
+  return `
   <!doctype html>
   <html>
   <body>
@@ -58,11 +61,12 @@ const SLOW_FIRST_FRAME_GAME = `
           requestAnimationFrame(frame);
         };
         frame();
-      }, 1500);
+      }, ${delayMs});
     </script>
   </body>
   </html>
 `;
+}
 
 // 首帧在 rAF 里画完，800ms 后才抛。没有墙钟下限时，像素一出现观察就结束，抛错落在窗口外。
 const DELAYED_LOAD_ERROR_GAME = `
@@ -149,7 +153,7 @@ describe('checkGameSmoke (light contract)', () => {
   });
 
   it('judges a canvas whose first pixels arrive 1.5s after load runnable', async (ctx) => {
-    const filePath = await writeTempFile(SLOW_FIRST_FRAME_GAME, 'slow-start.html');
+    const filePath = await writeTempFile(slowFirstFrameGame(1500), 'slow-start.html');
     const result = await checkGameSmoke(filePath, SMOKE_TEST_OPTIONS);
 
     if (result.verdict === 'skipped') ctx.skip();
@@ -176,10 +180,16 @@ describe('checkGameSmoke (light contract)', () => {
   });
 
   it('honours an explicit deadline option (FB-273: 慢 CI 上测试侧放宽 deadline 的接电证明)', async (ctx) => {
-    // 晚首帧标本（1.5s 才画）：15s 下判 runnable；800ms deadline 在首帧前用完——
-    // 快机走「canvas 空白」判红、慢机走 goto 超时判红，两条路都必 not_runnable。
+    // 晚首帧标本（4s 才画首帧），双边余量都用数字钉死：
+    // - 比墙钟下限高 2600ms：smoke 无条件墙钟 500+400+250+250=1400ms，之后的采样点
+    //   （1400ms+机器开销）距 4000ms 首帧仍有约 2.6s——被压缩的 800ms 跑动无论机器
+    //   快慢都采到空白 canvas，快机走「canvas 空白」判红、极慢机走 goto 超时判红，
+    //   两条路都必 not_runnable；
+    // - 比产品默认低 2000ms：LIGHT_PLAYABILITY_SMOKE_MS=6000 > 4000，若 options.timeoutMs
+    //   不再接进 runLightPlayabilitySmoke，800ms 跑动退回 6000ms deadline、等到首帧判
+    //   runnable，本测试立刻红。
     // 判红证明 options.timeoutMs 真进了 runLightPlayabilitySmoke 的 deadline。
-    const filePath = await writeTempFile(SLOW_FIRST_FRAME_GAME, 'slow-start-deadline.html');
+    const filePath = await writeTempFile(slowFirstFrameGame(4000), 'slow-start-deadline.html');
     const probe = await checkGameSmoke(filePath, SMOKE_TEST_OPTIONS);
     if (probe.verdict === 'skipped') ctx.skip();
     expect(probe.verdict).toBe('runnable');

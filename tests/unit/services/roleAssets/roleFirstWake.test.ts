@@ -103,6 +103,7 @@ vi.mock('../../../../src/cli/bootstrap', () => ({
 import {
   enqueueFirstWake,
   skipFirstWake,
+  retryFirstWake,
   getFirstWakeSnapshot,
 } from '../../../../src/host/services/roleAssets/roleFirstWake';
 import { toRoleBoundaryRunAllowlist } from '../../../../src/host/services/roleAssets/rolePersonalization';
@@ -119,11 +120,12 @@ const CONNECT_LOCATION = `${sidebarZh.sidebar.capabilityZone.capabilityHub} → 
 
 const DENY_ALL = toRoleBoundaryRunAllowlist([]);
 
-/** 默认工具表（mock 的 getAllToolDefinitions）：read 三件 + write/execute/network 各一 + MCP 读写各一 */
+/** 默认工具表（mock 的 getAllToolDefinitions）：read 三件 + wake_noop（只读但首次醒来必须排除） + write/execute/network 各一 + MCP 读写各一 */
 const DEFAULT_TOOL_DEFINITIONS = [
   { name: 'Read', permissionLevel: 'read' },
   { name: 'Grep', permissionLevel: 'read' },
   { name: 'Glob', permissionLevel: 'read' },
+  { name: 'wake_noop', permissionLevel: 'read' },
   { name: 'Write', permissionLevel: 'write' },
   { name: 'Bash', permissionLevel: 'execute' },
   { name: 'WebSearch', permissionLevel: 'network' },
@@ -354,7 +356,7 @@ describe('工具面：TOOLSCOPE 白名单 ∩ 只读档', () => {
     expect(harness.runnerCalls[0]!.allowedToolNames).toEqual(DENY_ALL);
   });
 
-  it('角色未声明工具：默认工具表 ∩ 只读（含只读 MCP，不含写/执行/网络）', async () => {
+  it('角色未声明工具：默认工具表 ∩ 只读（含只读 MCP，不含写/执行/网络，且不暴露 wake_noop）', async () => {
     await enqueueFirstWake('undeclared-role', {
       runner: async (input) => { harness.runnerCalls.push(input); return { finalOutput: '介绍' }; },
     });
@@ -364,10 +366,22 @@ describe('工具面：TOOLSCOPE 白名单 ∩ 只读档', () => {
     expect(allowed).toContain('Grep');
     expect(allowed).toContain('Glob');
     expect(allowed).toContain('mcp__lark__docs.list');
+    expect(allowed).not.toContain('wake_noop');
     expect(allowed).not.toContain('Write');
     expect(allowed).not.toContain('Bash');
     expect(allowed).not.toContain('WebSearch');
     expect(allowed).not.toContain('mail_send');
+  });
+
+  it('A：即使角色显式声明了 wake_noop，首次醒来工具面也剔除它，禁止静默无输出收尾', async () => {
+    harness.resolveAgent.mockImplementation((roleId: string) => (
+      roleId === 'wake-noop-role' ? { id: roleId, tools: ['Read', 'wake_noop'] } : undefined
+    ));
+    await enqueueFirstWake('wake-noop-role', {
+      runner: async (input) => { harness.runnerCalls.push(input); return { finalOutput: '介绍' }; },
+    });
+    await vi.waitFor(() => { expect(harness.runnerCalls).toHaveLength(1); });
+    expect(harness.runnerCalls[0]!.allowedToolNames).toEqual(['Read']);
   });
 });
 
@@ -423,7 +437,7 @@ describe('提示词变体', () => {
     expect(harness.runnerCalls[0]!.prompt).toContain('帮我盯竞品动态');
   });
 
-  it('产出形状（返修 r1）：最多 3 次左右只读探查、恰好 3 项建议、2-3 句纯文本自介，不提轮数上限', async () => {
+  it('产出形状（返修 r2 / 2026-11-05 owner）：只讲新发现，不复述名字职责、不提第一次醒来；建议标题限长', async () => {
     harness.listCapabilities.mockResolvedValue(connectedInventory());
     await enqueueFirstWake('prompt-shape', {
       runner: async (input) => { harness.runnerCalls.push(input); return { finalOutput: suggestionsBlock([{ title: 't', prompt: 'p' }]) }; },
@@ -434,9 +448,15 @@ describe('提示词变体', () => {
     expect(prompt).toContain('看完就停');
     expect(prompt).toContain('恰好 3 件');
     expect(prompt).toContain('恰好 3 项');
-    expect(prompt).toContain('2-3 句');
+    expect(prompt).toContain('1-2 句话');
+    expect(prompt).toContain('中文不超过 10 个字');
     expect(prompt).toContain('不要任何 Markdown 标记');
     expect(prompt).toContain('不要提工具调用上限或轮数');
+    // owner 返修：确认卡已给过名字与职责，提示词禁止自报家门
+    expect(prompt).toContain('不要再提你的名字');
+    expect(prompt).toContain('不要再复述你的职责');
+    expect(prompt).not.toContain('第一次醒来');
+    expect(prompt).not.toContain('自我介绍');
     // 首次醒来用独立小预算，不许再借巡检醒来的 ROLE_PROACTIVITY.WAKE_MAX_ITERATIONS（r2 回归钉）
     expect(prompt).toContain(String(ROLE_ASSETS.FIRST_WAKE_MAX_ITERATIONS));
 
@@ -446,9 +466,39 @@ describe('提示词变体', () => {
     });
     await vi.waitFor(() => { expect(harness.runnerCalls).toHaveLength(2); });
     const promptNone = harness.runnerCalls[1]!.prompt;
-    expect(promptNone).toContain('2-3 句');
+    expect(promptNone).toContain('只有 1 句话');
     expect(promptNone).toContain('不要任何 Markdown 标记');
     expect(promptNone).toContain('不要做任何工具探查');
+    expect(promptNone).not.toContain('第一次醒来');
+    expect(promptNone).not.toContain('自我介绍');
+  });
+
+  it('输出侧防线（2026-11-05 owner）：模型仍以「我是<展示名>」开场时，含展示名的第一句整句丢弃', async () => {
+    await fs.mkdir(path.join(harness.configDir, 'agents'), { recursive: true });
+    await fs.writeFile(
+      path.join(harness.configDir, 'agents', 'self-intro-role.md'),
+      '---\ndisplay-name: 小满\n---\n\n你是日程管家。\n',
+      'utf-8',
+    );
+    harness.listCapabilities.mockResolvedValue(connectedInventory());
+    await enqueueFirstWake('self-intro-role', {
+      runner: async (input) => {
+        harness.runnerCalls.push(input);
+        return {
+          finalOutput: [
+            '我是小满，擅长整理日程，这是我的第一次醒来。',
+            '日历连上了，共 6 个。',
+            '```first_wake_suggestions',
+            '[]',
+            '```',
+          ].join('\n'),
+        };
+      },
+    });
+    await vi.waitFor(async () => {
+      await expect(readState('self-intro-role')).resolves.toMatchObject({ state: 'completed' });
+    });
+    expect(await readState('self-intro-role')).toMatchObject({ intro: '日历连上了，共 6 个。' });
   });
 });
 
@@ -480,10 +530,10 @@ describe('建议解析（经完整 run 落盘观察；解析器私有，行为�
     expect(await parseViaRun('parse-cap', suggestionsBlock(items(5)))).toEqual(items(3));
   });
 
-  it('JSON 坏 / 无块 / 非数组 → 空表且状态仍 completed（不重试不重发）', async () => {
-    expect(await parseViaRun('parse-bad-json', '```first_wake_suggestions\n{nope\n```')).toEqual([]);
+  it('JSON 坏 / 无块 / 非数组 → 空表且状态仍 completed（有 intro 时不重试不重发）', async () => {
+    expect(await parseViaRun('parse-bad-json', '这是介绍。\n```first_wake_suggestions\n{nope\n```')).toEqual([]);
     expect(await parseViaRun('parse-no-block', '没有块的回复')).toEqual([]);
-    expect(await parseViaRun('parse-not-array', '```first_wake_suggestions\n{"a":1}\n```')).toEqual([]);
+    expect(await parseViaRun('parse-not-array', '这是介绍。\n```first_wake_suggestions\n{"a":1}\n```')).toEqual([]);
   });
 
   it('超长字段截断（title 80 / prompt 500）；空字段与重复项丢弃', async () => {
@@ -658,6 +708,83 @@ describe('失败终态：runner 抛错 / 前置步骤抛错', () => {
     });
     expect(await readState('skip-fail-role')).toMatchObject({ state: 'skipped', suggestions: [] });
   });
+
+  it('B：空产出守卫——首次醒来结束时既无 intro 又无建议，不得记为 completed，转落 failed 并支持 retryFirstWake 恢复', async () => {
+    harness.listCapabilities.mockResolvedValue(connectedInventory());
+    await enqueueFirstWake('empty-output-role', {
+      runner: async (input) => {
+        harness.runnerCalls.push(input);
+        return { finalOutput: '   \n```first_wake_suggestions\n[]\n```\n' };
+      },
+    });
+    await vi.waitFor(() => { expect(harness.runnerCalls).toHaveLength(1); });
+    await vi.waitFor(async () => {
+      await expect(readState('empty-output-role')).resolves.toMatchObject({ state: 'failed' });
+    });
+    const snap = await getFirstWakeSnapshot('empty-output-role');
+    expect(snap).toMatchObject({
+      state: 'failed',
+      sourcesMode: 'connected',
+      sources: ['日历', 'Lark 文档'],
+      suggestions: [],
+      failureReason: 'empty_first_wake_output',
+    });
+    expect(harness.automationRecordEvent).toHaveBeenCalledWith(expect.objectContaining({ event: 'failed' }));
+
+    // 失败态可走既有 retryFirstWake 恢复动作重看
+    expect(await retryFirstWake('empty-output-role', {
+      runner: async (input) => {
+        harness.runnerCalls.push(input);
+        return { finalOutput: suggestionsBlock([{ title: '查本周冲突', prompt: 'p' }]) };
+      },
+    })).toEqual({ retried: true });
+    await vi.waitFor(async () => {
+      await expect(readState('empty-output-role')).resolves.toMatchObject({ state: 'completed' });
+    });
+  });
+});
+
+// ----------------------------------------------------------------------------
+// 重看（failed 复位 pending 重新排队；其余终态拒绝）
+// ----------------------------------------------------------------------------
+
+describe('retryFirstWake', () => {
+  it('failed → 复位 pending 并重新排队跑完（runner 第二次真跑，状态 completed）', async () => {
+    harness.listCapabilities.mockResolvedValue(connectedInventory());
+    await enqueueFirstWake('retry-role', {
+      runner: async (input) => {
+        harness.runnerCalls.push(input);
+        if (harness.runnerCalls.length === 1) throw new Error('Invalid API key unauthorized');
+        return { finalOutput: suggestionsBlock([{ title: '查本周冲突', prompt: 'p' }]) };
+      },
+    });
+    await vi.waitFor(async () => { await expect(readState('retry-role')).resolves.toMatchObject({ state: 'failed' }); });
+
+    expect(await retryFirstWake('retry-role', {
+      runner: async (input) => {
+        harness.runnerCalls.push(input);
+        return { finalOutput: suggestionsBlock([{ title: '查本周冲突', prompt: 'p' }]) };
+      },
+    })).toEqual({ retried: true });
+    await vi.waitFor(() => { expect(harness.runnerCalls).toHaveLength(2); });
+    await vi.waitFor(async () => { await expect(readState('retry-role')).resolves.toMatchObject({ state: 'completed' }); });
+    expect((await readState('retry-role')).failureReason).toBeUndefined();
+    // 重看清掉失败痕迹：快照不再带 failureReason
+    expect(await getFirstWakeSnapshot('retry-role')).not.toHaveProperty('failureReason');
+  });
+
+  it('completed / skipped / 无文件 → 拒绝重看（终态不洗）', async () => {
+    harness.listCapabilities.mockResolvedValue({ items: [] });
+    await enqueueFirstWake('done-role', {
+      runner: async (input) => { harness.runnerCalls.push(input); return { finalOutput: '看完了' }; },
+    });
+    await vi.waitFor(async () => { await expect(readState('done-role')).resolves.toMatchObject({ state: 'completed' }); });
+    expect(await retryFirstWake('done-role')).toEqual({ retried: false, reason: 'not_failed' });
+    expect(await retryFirstWake('never-role')).toEqual({ retried: false, reason: 'not_failed' });
+    expect(await skipFirstWake('done-role')).toEqual({ success: true });
+    expect(await retryFirstWake('done-role')).toEqual({ retried: false, reason: 'not_failed' });
+    expect(await retryFirstWake('../escape')).toEqual({ retried: false, reason: 'invalid_role' });
+  });
 });
 
 // ----------------------------------------------------------------------------
@@ -680,6 +807,8 @@ describe('getFirstWakeSnapshot', () => {
       state: 'completed',
       sessionId: harness.runnerCalls[0]!.sessionId,
       sourcesMode: 'connected',
+      // 2026-11-05 返修：已连接源名字随快照透出（failed 卡区分「你的日历/你的数据」）
+      sources: ['日历', 'Lark 文档'],
       suggestions: [{ title: 't', prompt: 'p' }],
       intro: '这是自我介绍，一共两三句。',
     });

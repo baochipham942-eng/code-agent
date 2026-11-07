@@ -43,7 +43,7 @@ import { useTeamRecipeStore } from '../../../src/renderer/stores/teamRecipeStore
 import { useAgentRegistryStore } from '../../../src/renderer/stores/agentRegistryStore';
 import { useMemberViewStore } from '../../../src/renderer/stores/memberViewStore';
 import { useBackgroundTaskStore } from '../../../src/renderer/stores/backgroundTaskStore';
-import { useRightPanelTabsStore } from '../../../src/renderer/stores/rightPanelTabsStore';
+import { useSessionStore, type SessionWithMeta } from '../../../src/renderer/stores/sessionStore';
 
 const agents: SwarmRunAgentRecord[] = [
   { runId: 'run-1', agentId: 'researcher', name: '调研员', role: 'researcher', status: 'completed', startTime: 1, endTime: 4_001, durationMs: 4_000, tokensIn: 12, tokensOut: 34, toolCalls: 5, costUsd: 0.002, error: null, failureCategory: null, filesChanged: [], dispatchedTask: '核对数据', finalOutput: `${'完整持久化产出'.repeat(40)} 收尾证据` },
@@ -87,7 +87,7 @@ describe('SessionMemberBar（折叠 chip）', () => {
     useAgentRegistryStore.setState({ entries: [], isLoaded: true });
     useMemberViewStore.setState({ viewingMemberId: null });
     useBackgroundTaskStore.setState({ tasks: [] });
-    useRightPanelTabsStore.setState({ expertsDismissedBySession: {} });
+    useSessionStore.setState({ sessions: [], currentSessionId: null });
   });
   afterEach(() => cleanup());
 
@@ -303,5 +303,47 @@ describe('SessionMemberBar（折叠 chip）', () => {
       id: 'researcher', name: '调研员', role: 'researcher', status: 'completed',
       tokenUsage: { input: 12, output: 34 }, toolCalls: 5, cost: 0.002, finalOutput: expect.stringContaining('收尾证据'),
     });
+  });
+
+  // N-UI-CRON-RUN-RECORD-CLEAR（B）：定时任务运行会话本身已有首条气泡下的状态行，
+  // 终态下的「1 个代理 · 完成 / 失败」既是内部话又重复，隐藏 chip；若有后台代理仍在跑则保留；普通会话不变。
+  it('定时任务运行记录会话（已挂状态行）：终态「1 个代理 · 完成 / 失败」隐藏，不重复报状态', async () => {
+    const cronSession = {
+      id: 'session-1',
+      title: '[Schedule] 每日日程检查',
+      origin: { kind: 'cron' as const, id: 'job-1' },
+      createdAt: 1,
+      updatedAt: 2,
+    } as Partial<SessionWithMeta> as SessionWithMeta;
+    useSessionStore.setState({ sessions: [cronSession], currentSessionId: 'session-1' });
+    const singleCompleted = { ...agents[0], status: 'completed' as const };
+    mockLedger(
+      { ...completedDetail, agents: [singleCompleted] },
+      { ...run, totalAgents: 1, completedCount: 1 },
+    );
+
+    render(<SessionMemberBar sessionId="session-1" />);
+    await waitFor(() => expect(invokeMock).toHaveBeenCalledWith(IPC_CHANNELS.SWARM_GET_TRACE_RUN_DETAIL, expect.anything()));
+    expect(screen.queryByTestId('session-member-bar-collapsed')).toBeNull();
+  });
+
+  it('定时任务运行记录会话：若确实还有超出主运行的后台代理仍在工作中，保留 chip', async () => {
+    const cronSession = {
+      id: 'session-1',
+      title: '[Schedule] 每日日程检查',
+      origin: { kind: 'cron' as const, id: 'job-1' },
+      createdAt: 1,
+      updatedAt: 2,
+    } as Partial<SessionWithMeta> as SessionWithMeta;
+    useSessionStore.setState({ sessions: [cronSession], currentSessionId: 'session-1' });
+    const singleRunning = { ...agents[0], status: 'running' as const, endTime: null, durationMs: null };
+    mockLedger(
+      { ...completedDetail, run: { ...completedDetail.run, status: 'running', endedAt: null }, agents: [singleRunning] },
+      { ...run, status: 'running', totalAgents: 1, completedCount: 0 },
+    );
+
+    render(<SessionMemberBar sessionId="session-1" />);
+    const chip = await screen.findByTestId('session-member-bar-collapsed');
+    await waitFor(() => expect(chip.textContent).toContain('1 个代理工作中'));
   });
 });

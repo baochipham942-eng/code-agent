@@ -181,6 +181,15 @@ export interface RoleDraftPendingData {
   }>;
 }
 
+/** 用户明确要求直接创建后，host 已安装角色并让聊天展示可撤销的完成卡。 */
+export interface RoleCreatedDirectData {
+  sessionId: string;
+  roleId: string;
+  displayName: string;
+  canDo: string;
+  willNotDo: string;
+}
+
 /** 对话式建团队配方草稿待确认（propose_team_recipe 工具发射，聊天弹确认卡） */
 export interface TeamRecipeDraftPendingData {
   sessionId: string;

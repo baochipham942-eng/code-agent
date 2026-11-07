@@ -25,6 +25,8 @@ const hostReasonZh = {
   [HostReasonCode.PermissionDeniedCancelled]: { summary: '本次运行已取消，{toolName}没有执行' },
   [HostReasonCode.PermissionDeniedFailClosed]: { summary: '审批链路暂时不可用，{toolName}已按安全规则拒绝' },
   [HostReasonCode.PermissionDeniedScripted]: { summary: '评测策略拒绝了{toolName}' },
+  [HostReasonCode.PermissionDeniedUserRule]: { summary: '{toolName}被你设置的权限规则拦下了，没有执行', detail: '想允许的话，请到「设置 → 权限与安全」的「用户级权限规则」里修改或删除对应规则，再重新发起。' },
+  [HostReasonCode.PermissionDeniedSafetyRule]: { summary: '{toolName}触碰了 Neo 的内置安全底线，已被拦截，没有执行', detail: '这类操作（如改系统目录、读取 SSH 密钥）Neo 不会代做。请改在工作文件夹内操作，或自己手动完成。' },
   [HostReasonCode.DecisionPolicy]: { summary: '权限策略完成检查' },
   [HostReasonCode.DecisionGuard]: { summary: '运行安全规则完成检查' },
   [HostReasonCode.DecisionClassifier]: { summary: '工具安全分类完成检查' },
@@ -68,6 +70,8 @@ const hostReasonEn: typeof hostReasonZh = {
   [HostReasonCode.PermissionDeniedCancelled]: { summary: 'This run was cancelled, so {toolName} did not run' },
   [HostReasonCode.PermissionDeniedFailClosed]: { summary: 'The approval path is unavailable, so {toolName} was denied by the safety policy' },
   [HostReasonCode.PermissionDeniedScripted]: { summary: 'The evaluation policy denied {toolName}' },
+  [HostReasonCode.PermissionDeniedUserRule]: { summary: '{toolName} was blocked by one of your permission rules and was not run', detail: 'To allow it, edit or remove that rule under Settings → Permissions & security (User-level permission rules), then ask again.' },
+  [HostReasonCode.PermissionDeniedSafetyRule]: { summary: "{toolName} hit one of Neo's built-in safety rules and was blocked; it did not run", detail: 'Neo does not perform this kind of action (such as modifying system directories or reading SSH keys). Work inside the workspace folder instead, or make the change yourself.' },
   [HostReasonCode.DecisionPolicy]: { summary: 'Permission policy check completed' },
   [HostReasonCode.DecisionGuard]: { summary: 'Runtime safety check completed' },
   [HostReasonCode.DecisionClassifier]: { summary: 'Tool safety classification completed' },
@@ -97,12 +101,33 @@ export const agentErrorZh = {
     ariaLabel: '运行失败',
     rateLimitedInline: '模型服务商限流，稍后重试',
     hostReasons: hostReasonZh,
+    // 连续同因折叠（N-UI-AGENT-ERROR-REPEAT-COLLAPSE）：早先失败轮压成的灰字行
+    // 与整卡上的「连续 N 次」说明。noRetry 只用于重试必然无效的分类。
+    mutedLine: '没有回复 · {reason}',
+    shortReasons: {
+      auth: '账号没通过授权',
+      insufficient_balance: '账号余额不足',
+      model_not_found: '模型名称或接口不匹配',
+      forbidden: '服务商拒绝了请求',
+      rate_limited: '模型服务限流',
+      usage_limit: '套餐额度已用完',
+      concurrency: '账号并发已满',
+      network: '连不上模型服务',
+      context_length: '对话超出了模型上限',
+      image_payload: '图片太多或太大',
+      interrupted: '运行被中断',
+      generic: '运行失败',
+    },
+    repeat: {
+      noRetry: '连续 {n} 次都是这个原因，再发也不会好。',
+      retryable: '连续 {n} 次都是这个原因。',
+    },
     categories: {
       auth: {
         // 401 只能证明「没通过授权」，区分不出是密钥不对还是额度耗尽（Codex 验证 2026-08-01）。
         // 把两个互斥原因并列写成确定结论，用户会照着错的那个去排查。
-        title: '这个模型暂时用不了：账号没通过授权',
-        suggestion: '可能是密钥填错、过期，或这个账号已经没有额度了。换一个模型继续，或去设置里检查这个模型的账号配置。重试无效。',
+        title: '这个模型用不了：账号没通过授权',
+        suggestion: '密钥可能填错、过期，或者额度用完了。',
       },
       insufficient_balance: {
         title: '这个账号余额不足',
@@ -119,6 +144,13 @@ export const agentErrorZh = {
       rate_limited: {
         title: '模型服务暂时限流',
         suggestion: '当前模型供应商返回限流。请稍后重试，或先切换到其他可用模型。',
+      },
+      usage_limit: {
+        title: '{window}额度已用完',
+        suggestion: '预计 {resetTime} 恢复。恢复前可以先切换到其他模型继续。',
+        titleNoWindow: '套餐额度已用完',
+        suggestionNoReset: '服务商没有给出恢复时间，请向服务商确认额度何时恢复。恢复前可以先切换到其他模型继续。',
+        windowLabel: '{window}',
       },
       concurrency: {
         title: '模型账号并发已满',
@@ -156,8 +188,8 @@ export const agentErrorZh = {
     actions: {
       retry: '重试',
       retryRunning: '会话运行中，稍后再试',
-      switchModel: '切换模型',
-      checkAccount: '检查账号设置',
+      switchModel: '换个模型',
+      checkAccount: '检查账号',
       newSession: '新开会话',
       copyReport: '复制错误报告',
       copied: '错误报告已复制',
@@ -184,10 +216,29 @@ export const agentErrorEn: typeof agentErrorZh = {
     ariaLabel: 'Run failed',
     rateLimitedInline: 'Model provider rate limit reached. Retry in a moment',
     hostReasons: hostReasonEn,
+    mutedLine: 'No reply · {reason}',
+    shortReasons: {
+      auth: 'account authorization failed',
+      insufficient_balance: 'insufficient balance',
+      model_not_found: 'model name or endpoint mismatch',
+      forbidden: 'provider rejected the request',
+      rate_limited: 'rate limited',
+      usage_limit: 'plan quota used up',
+      concurrency: 'concurrency limit reached',
+      network: 'could not reach the model service',
+      context_length: 'conversation too long for the model',
+      image_payload: 'too many or oversized images',
+      interrupted: 'run interrupted',
+      generic: 'run failed',
+    },
+    repeat: {
+      noRetry: 'The same failure has happened {n} times in a row — resending will not fix it.',
+      retryable: 'The same failure has happened {n} times in a row.',
+    },
     categories: {
       auth: {
         title: 'This model is unavailable: the account was not authorized',
-        suggestion: 'The key may be wrong or expired, or the account may be out of quota. Switch to another model, or check this model account in Settings. Retrying will not help.',
+        suggestion: 'The key may be wrong or expired, or the quota may be used up.',
       },
       insufficient_balance: {
         title: 'This account has insufficient balance',
@@ -204,6 +255,13 @@ export const agentErrorEn: typeof agentErrorZh = {
       rate_limited: {
         title: 'Model service is rate limited',
         suggestion: 'The model provider is throttling requests. Retry in a moment, or switch to another available model.',
+      },
+      usage_limit: {
+        title: 'The {window} quota is used up',
+        suggestion: 'Expected back around {resetTime}. Switch to another model to keep going until then.',
+        titleNoWindow: 'The plan quota is used up',
+        suggestionNoReset: 'The provider did not say when it resets — ask the provider for the reset time. Switch to another model to keep going until then.',
+        windowLabel: '{window}',
       },
       concurrency: {
         title: 'Model account concurrency is full',
@@ -242,7 +300,7 @@ export const agentErrorEn: typeof agentErrorZh = {
       retry: 'Retry',
       retryRunning: 'Session is running, try again later',
       switchModel: 'Switch model',
-      checkAccount: 'Check account settings',
+      checkAccount: 'Check account',
       newSession: 'New session',
       copyReport: 'Copy error report',
       copied: 'Error report copied',

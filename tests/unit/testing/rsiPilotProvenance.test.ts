@@ -35,7 +35,8 @@ describe('rsi pilot provenance contract', () => {
     expect(record.provenance.gitSha).not.toBe('unresolved');
     expect(record.error).toBeNull();
     // N-HARNESS-PROFILE-SURFACE：无 --profile 时 run 记录与汇总照样盖全表（取证），profile 为 null
-    expect(record.harness).toEqual({ profile: null, knobs: { 'subagent.compactionThreshold': 0.8 } });
+    // FU2：harness 戳额外带本 run 实际预算（stub-model 未知模型 → 默认档 600s + 无 maxTokens）
+    expect(record.harness).toEqual({ profile: null, knobs: { 'subagent.compactionThreshold': 0.8 }, budget: { timeoutMs: 600_000, maxTokens: null } });
     expect(summary.harness).toEqual(record.harness);
   });
 
@@ -64,7 +65,7 @@ describe('rsi pilot provenance contract', () => {
     });
     const record = JSON.parse((await fs.readFile(path.join(outDir, 'runs.jsonl'), 'utf8')).trim());
     expect(seenConfigs[0].harness).toEqual({ name: 'knobs-a', knobs });
-    expect(record.harness).toEqual({ profile: 'profile-a.json', knobs: { 'subagent.compactionThreshold': 0.7, 'context.persistentSystemContextTokens': 1200 } });
+    expect(record.harness).toEqual({ profile: 'profile-a.json', knobs: { 'subagent.compactionThreshold': 0.7, 'context.persistentSystemContextTokens': 1200 }, budget: { timeoutMs: 600_000, maxTokens: null } });
   });
 
   it('repair progress text carries the marker the adapter counts repairRoundsUsed by', () => {

@@ -22,9 +22,19 @@ export async function startRunPreferringDurable(
   parentRunId?: string,
 ): Promise<RunHandle> {
   if (registration === 'auxiliary') {
-    return parentRunId
-      ? registry.startAuxiliaryDurableChild(input, parentRunId)
-      : registry.startAuxiliary(input);
+    if (!parentRunId) return registry.startAuxiliary(input);
+    // 父 run 自己是非 durable（如后台任务终态唤醒轮、父轮已终态后才出队启动的任务）时没有 owner lease，
+    // startAuxiliaryDurableChild 会抛 "no live owner lease" 把整个子任务弄死。回落成普通 auxiliary 并留痕。
+    if (!registry.hasDurableOwner(parentRunId)) {
+      logger.warn('Parent run has no live owner lease, starting auxiliary run without durable parent link', {
+        sessionId: input.sessionId,
+        runId: input.runId,
+        parentRunId,
+        reason: 'parent_run_not_durable',
+      });
+      return registry.startAuxiliary(input);
+    }
+    return registry.startAuxiliaryDurableChild(input, parentRunId);
   }
   try {
     return await registry.startDurable(input);

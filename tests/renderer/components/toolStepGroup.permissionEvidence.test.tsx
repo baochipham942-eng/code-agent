@@ -22,6 +22,8 @@ vi.mock('../../../src/renderer/stores/appStore', () => ({
     pendingPermissionRequest: state.pending,
     pendingPermissionSessionId: state.pending ? 'session-1' : null,
     queuedPermissionRequests: {},
+    // 真实 store 必有此字段（FB-595 起 ToolStepGroup 读它判会话在线）；桩里补齐。
+    processingSessionIds: new Set<string>(),
     openPreview: vi.fn(),
     openSettingsTab: vi.fn(),
   }),

@@ -22,16 +22,16 @@ import type { SwarmAgentState } from '@shared/contract/swarm';
 import type { SwarmRunAgentRecord } from '@shared/contract/swarmTrace';
 import { readPersistedTeamLead, teamRecipeMemberKey } from '@shared/contract/teamRecipe';
 import { useMemberViewStore } from '../../../stores/memberViewStore';
+import { useSwarmStore } from '../../../stores/swarmStore';
 import { RoleInitialAvatar } from './RoleInitialAvatar';
 import { useDurableSwarmRunDetail } from '../../../hooks/useDurableSwarmRunDetail';
 import { useSessionAgentRows } from '../../../hooks/useSessionAgentRows';
 import { deriveAgentMergeState } from '../../../utils/agentMergeState';
+import { memberProgressAnchor } from '../../../utils/memberProgressAnchor';
 import type { AgentRow } from '../../../utils/agentRows';
-import { useRightPanelTabsStore } from '../../../stores/rightPanelTabsStore';
 
 /** 打开右侧「专家」一级页签。 */
-function openSessionAgentsPanel(sessionId: string | null): void {
-  if (sessionId) useRightPanelTabsStore.getState().setExpertsDismissed(sessionId, false);
+function openSessionAgentsPanel(): void {
   useAppStore.getState().openWorkbenchTab('experts', { source: 'user' });
 }
 
@@ -67,6 +67,8 @@ export interface MemberPill {
   /** standby 成员的排除键（member 的 id ?? roleId；lead 用 roleId），× 掉时写进 composerStore */
   standbyKey?: string;
   filesChanged?: string[];
+  /** 最近可见进展的活锚点（contextSnapshot.lastUpdated，只从活源取；见 memberProgressAnchor）。 */
+  lastActivityAt?: number;
   agent?: SwarmAgentState;
   record?: SwarmRunAgentRecord;
 }
@@ -92,6 +94,10 @@ export function useSessionMembers(sessionId: string | null): MemberPill[] {
     return readPersistedTeamLead(session?.metadata)?.roleId ?? null;
   });
   const durableDetail = useDurableSwarmRunDetail(sessionId);
+  // 活锚点来源（只读订阅，不改 store）：同 id 的流状态带 contextSnapshot.lastUpdated，
+  // 账本记录里没有——成员在干活时它随真实进展前进（r4：startTime 不是进展）。
+  const liveAgents = useSwarmStore((state) => state.agents);
+  const liveAgentById = useMemo(() => new Map(liveAgents.map((agent) => [agent.id, agent])), [liveAgents]);
   // 账本必须自证属于本会话再采信。原先靠「至少 2 个成员」间接挡住外会话的 run
   // （单 agent 的陈旧 run 挤进来会把别人的成员画到这条上，e2e 实测过：
   // swarm-chain 的 e2e-scout 出现在 workbench-overview 新建的会话里）。
@@ -125,6 +131,7 @@ export function useSessionMembers(sessionId: string | null): MemberPill[] {
         status: pillStatusOf(agent.status),
         isLead: roleId === teamLeadRoleId,
         filesChanged: agent.filesChanged,
+        lastActivityAt: memberProgressAnchor(agent, liveAgentById.get(agent.id)),
         agent,
         record: records?.[index],
       } satisfies MemberPill;
@@ -152,7 +159,7 @@ export function useSessionMembers(sessionId: string | null): MemberPill[] {
         isLead: entry.roleId === teamLeadRoleId,
         standbyKey: entry.standbyKey,
       }));
-  }, [persistedAgents, selectedTeamRecipeId, standbyExcludedMemberKeys, recipes, professionOf, iconOf, teamLeadRoleId]);
+  }, [persistedAgents, liveAgentById, selectedTeamRecipeId, standbyExcludedMemberKeys, recipes, professionOf, iconOf, teamLeadRoleId]);
 
   return pills;
 }
@@ -181,6 +188,15 @@ export const SessionMemberBar: React.FC<{ sessionId: string | null }> = ({ sessi
   const text = t.expert.memberBar;
   const setViewingMemberId = useMemberViewStore((state) => state.setViewingMemberId);
   const { rows, conflicts } = useSessionAgentRows(sessionId);
+  // 定时任务运行记录会话（origin cron/heartbeat 且带 origin.id → CronRunSessionStatusBar 已挂载）：
+  // 终态下的「1 个代理 · 完成/失败」与第一条气泡下的运行状态行重复，且带内部术语，隐藏 chip；
+  // 若确实还有超出主运行的后台代理仍在工作/等待，保留 chip。普通会话不改动。
+  const hasCronRunStatusLine = useSessionStore((state) => {
+    if (!sessionId) return false;
+    const session = state.sessions?.find((item) => item.id === sessionId);
+    const kind = session?.origin?.kind;
+    return (kind === 'cron' || kind === 'heartbeat') && Boolean(session?.origin?.id?.trim());
+  });
 
   // 换会话必须退出成员视图，否则会拿上一个会话的成员去渲染这一个
   useEffect(() => { setViewingMemberId(null); }, [sessionId, setViewingMemberId]);
@@ -193,6 +209,7 @@ export const SessionMemberBar: React.FC<{ sessionId: string | null }> = ({ sessi
   const mergeState = standby ? null : deriveAgentMergeState(rows, conflicts);
 
   if (rows.length === 0) return null;
+  if (hasCronRunStatusLine && working.length === 0 && waiting.length === 0) return null;
 
   // 「N 个代理工作中 · 名字」。名字说明谁在干活；工具步人话不进折叠条。
   const firstWorking = working[0];
@@ -221,7 +238,7 @@ export const SessionMemberBar: React.FC<{ sessionId: string | null }> = ({ sessi
     <button /* ds-allow:button: 折叠 chip 是整行摘要入口（头像叠+两行信息），Button primitive 无此形态 */
       type="button"
       data-testid="session-member-bar-collapsed"
-      onClick={() => openSessionAgentsPanel(sessionId)}
+      onClick={openSessionAgentsPanel}
       className="mb-1.5 flex w-full items-center gap-1.5 px-2 text-left text-[11px] text-zinc-500 hover:text-zinc-300"
     >
       <span className="flex -space-x-1.5">

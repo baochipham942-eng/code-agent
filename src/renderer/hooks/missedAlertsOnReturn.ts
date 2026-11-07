@@ -18,6 +18,12 @@ export function createMissedAlertQueue() {
       if (queue.some((e) => e.id === event.id)) return;
       queue.push(event);
     },
+    /** 审批裁决后 host 广播 retract：按 dedupeKey 把还没补提醒的 needs-input 事件移出队列。 */
+    remove(dedupeKey: string | undefined): void {
+      if (!dedupeKey) return;
+      const index = queue.findIndex((entry) => entry.dedupeKey === dedupeKey);
+      if (index !== -1) queue.splice(index, 1);
+    },
     /** 清空队列；回来时已经在看的会话不再提醒。 */
     flush(currentSessionId: string | null): MissedAlertToastSpec | null {
       const pending = queue.splice(0).filter((e) => !e.sessionId || e.sessionId !== currentSessionId);

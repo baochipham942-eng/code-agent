@@ -14,7 +14,7 @@ type VoiceInputContextValue = {
 export interface UseChatInputComposerActionsParams {
   processFile: (file: File) => Promise<MessageAttachment | null>;
   inputAreaRef: React.RefObject<InputAreaRef | null>;
-  setIsUploading: React.Dispatch<React.SetStateAction<boolean>>;
+  setIsUploading: (uploading: boolean) => void;
   setAttachments: React.Dispatch<React.SetStateAction<MessageAttachment[]>>;
   setValue: React.Dispatch<React.SetStateAction<string>>;
   setVoiceInputContext: React.Dispatch<React.SetStateAction<VoiceInputContextValue>>;

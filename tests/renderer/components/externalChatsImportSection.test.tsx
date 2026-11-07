@@ -13,7 +13,7 @@
 import React from 'react';
 import { promises as fs } from 'node:fs';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import type { RecentExternalChatImportResult } from '../../../src/shared/contract/agentEngine';
 import type { ImportHistoryEntry } from '../../../src/shared/contract/importHistory';
 import { IPC_DOMAINS } from '../../../src/shared/ipc/domains';
@@ -301,6 +301,65 @@ describe('保持聊天同步 三态', () => {
     fireEvent.click(screen.getByRole('switch'));
     await screen.findByTestId('external-chats-sync-error');
     expect(document.body.textContent ?? '').not.toContain('/Users/x');
+  });
+});
+
+describe('保持聊天同步 首次点击反馈', () => {
+  const switchState = () => screen.getByRole('switch').getAttribute('aria-checked');
+  const statusText = () => screen.getByTestId('external-chats-sync-status').textContent;
+
+  it('(a) setChatsSync 未返回时：开关与状态立即显示目标态，失败后回退并出固定文案', async () => {
+    let settle!: (v: unknown) => void;
+    let fail!: (e: Error) => void;
+    syncInvoke.mockImplementation((action: string) => (
+      action === 'setChatsSync'
+        ? new Promise((resolve, reject) => { settle = resolve; fail = reject; })
+        : Promise.resolve({ mode: 'off' })
+    ));
+    render(<ExternalChatsImportSection />);
+    await waitFor(() => expect(syncInvoke).toHaveBeenCalledWith('getChatsSync', undefined));
+    fireEvent.click(screen.getByRole('switch'));
+    await waitFor(() => expect(syncInvoke).toHaveBeenCalledWith('setChatsSync', { mode: 'on' }));
+    expect(switchState()).toBe('true');
+    expect(statusText()).not.toBe('未开启');
+
+    fail(new Error('boom'));
+    await screen.findByTestId('external-chats-sync-error');
+    expect(switchState()).toBe('false');
+    expect(statusText()).toBe('未开启');
+    expect(settle).toBeTypeOf('function');
+  });
+
+  it('(a) setChatsSync 成功返回后以宿主返回值为准', async () => {
+    let settle!: (v: unknown) => void;
+    syncInvoke.mockImplementation((action: string) => (
+      action === 'setChatsSync'
+        ? new Promise((resolve) => { settle = resolve; })
+        : Promise.resolve({ mode: 'off' })
+    ));
+    render(<ExternalChatsImportSection />);
+    await waitFor(() => expect(syncInvoke).toHaveBeenCalledWith('getChatsSync', undefined));
+    fireEvent.click(screen.getByRole('switch'));
+    await waitFor(() => expect(syncInvoke).toHaveBeenCalledWith('setChatsSync', { mode: 'on' }));
+    settle({ mode: 'on', lastRun: { at: Date.now(), imported: 2 } });
+    await waitFor(() => expect(statusText()).toContain('新增 2 条'));
+    expect(switchState()).toBe('true');
+  });
+
+  it('(b) 初始 getChatsSync 晚于用户点击返回：不得用过期的 off 覆盖新状态', async () => {
+    let lateInitial!: (v: unknown) => void;
+    syncInvoke.mockImplementation((action: string, payload?: { mode: string }) => (
+      action === 'getChatsSync'
+        ? new Promise((resolve) => { lateInitial = resolve; })
+        : Promise.resolve({ mode: payload?.mode })
+    ));
+    render(<ExternalChatsImportSection />);
+    fireEvent.click(screen.getByRole('switch'));
+    await waitFor(() => expect(statusText()).not.toBe('未开启'));
+    expect(switchState()).toBe('true');
+    await act(async () => { lateInitial({ mode: 'off' }); });
+    expect(switchState()).toBe('true');
+    expect(statusText()).not.toBe('未开启');
   });
 });
 

@@ -17,14 +17,10 @@ import { createLogger } from '../../../../utils/logger';
 import ipcService from '../../../../services/ipcService';
 import { buildArchiveManifest, buildPresentationSummary } from './attachmentSummaries';
 import { useI18n } from '../../../../hooks/useI18n';
+import { formatFileSize } from './formatFileSize';
+import { useComposerRejectedUploadsStore } from '../../../../stores/composerRejectedUploadsStore';
 
 const logger = createLogger('useFileUpload');
-
-function formatFileSize(bytes: number): string {
-  if (bytes >= 1024 * 1024) return `${(bytes / (1024 * 1024)).toFixed(1)}MB`;
-  if (bytes >= 1024) return `${(bytes / 1024).toFixed(0)}KB`;
-  return `${bytes}B`;
-}
 
 function readFileAsDataUrl(file: File): Promise<string | null> {
   return new Promise((resolve) => {
@@ -69,6 +65,7 @@ export function useFileUpload() {
     // 非 PDF 文件超限时 toast 提示
     if (file.size > MAX_FILE_SIZE) {
       logger.warn('File is too large (max 10MB)', { fileName: file.name, size: file.size });
+      useComposerRejectedUploadsStore.getState().add({ name: displayName, size: file.size });
       showToast('warning', t.chatInput.uploadFileTooLarge.replace('{name}', file.name).replace('{size}', formatFileSize(file.size)));
       return null;
     }

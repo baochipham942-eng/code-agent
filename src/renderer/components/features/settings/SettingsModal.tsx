@@ -382,6 +382,22 @@ export const SettingsModal: React.FC = () => {
     pending?.();
   }, [pendingNavigation]);
 
+  // 折叠组头点击（FB-572）：组头本身也是导航入口（Docusaurus link-less category 语义）——
+  // 折叠时点它 = 展开 + 落到组内第一个可见 tab（首项取自 buildSettingsTabGroups 的实际
+  // 可见列表，plugins 这类 admin-only 项天然排除）；已展开时点它 = 只收起，activeTab 不动。
+  // 切 tab 的那半步统一走 guardWhileModelDirty，别丢「通用模型」表单的未保存修改。
+  const handleCollapsedGroupHeaderClick = useCallback((group: SettingsTabGroupConfig) => {
+    if (expandedCollapsedGroups.has(group.id)) {
+      toggleCollapsedGroup(group.id);
+      return;
+    }
+    const firstTabId = group.tabs[0]?.id;
+    guardWhileModelDirty(() => {
+      toggleCollapsedGroup(group.id);
+      if (firstTabId !== undefined) setActiveTab(firstTabId);
+    });
+  }, [expandedCollapsedGroups, guardWhileModelDirty, toggleCollapsedGroup]);
+
   // 搜到的条目落点未必还在设置页（自动化 / 能力中心那几项已搬走），交给同一个判定函数分流
   const handleSearchNavigate = useCallback((tab: SettingsTab) => {
     guardWhileModelDirty(() => {
@@ -504,6 +520,7 @@ export const SettingsModal: React.FC = () => {
                 onNavigate={handleSearchNavigate}
                 access={accessSubject}
                 installedCapabilities={installedCapabilities}
+                externalImportAvailable={externalImportStatus === 'available'}
               />
             </div>
           </div>
@@ -512,14 +529,21 @@ export const SettingsModal: React.FC = () => {
             {tabGroups.map((group) => {
               const isCollapsible = COLLAPSED_SETTINGS_TAB_GROUPS.has(group.id);
               const isCollapsed = isCollapsible && !expandedCollapsedGroups.has(group.id);
+              // 折叠但 activeTab 在组内（如在组内 tab 上收起了组）：组头要顶替子项标出「你在这里」
+              const highlightCollapsedHeader = isCollapsed && group.tabs.some((tab) => tab.id === activeTab);
               return (
                 <div key={group.id} className="space-y-1">
                   {isCollapsible ? (
                     <button /* ds-allow:button: 设置分组折叠头，11px 微字号纯文本行头样式，primitive 无对应变体（同款豁免见 SidebarProjectDrawer） */
                       type="button"
-                      onClick={() => toggleCollapsedGroup(group.id)}
+                      onClick={() => handleCollapsedGroupHeaderClick(group)}
                       aria-expanded={!isCollapsed}
-                      className="flex w-full items-center gap-1 rounded-lg px-3 pb-1 pt-2 text-left text-[11px] font-medium tracking-wide text-zinc-500 transition-colors hover:text-zinc-300"
+                      aria-current={highlightCollapsedHeader ? 'true' : undefined}
+                      className={`flex w-full items-center gap-1 rounded-lg px-3 pb-1 pt-2 text-left text-[11px] font-medium tracking-wide transition-colors ${
+                        highlightCollapsedHeader
+                          ? 'bg-zinc-800/60 text-zinc-200'
+                          : 'text-zinc-500 hover:text-zinc-300'
+                      }`}
                     >
                       {isCollapsed
                         ? <ChevronRight className="h-3 w-3 shrink-0" />

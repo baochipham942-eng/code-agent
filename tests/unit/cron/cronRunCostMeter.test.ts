@@ -3,13 +3,15 @@ import { recordScopedCost } from '../../../src/host/services/core/scopedCostLimi
 import { runWithCronJobBudget } from '../../../src/host/cron/cronExecutionPolicy';
 import {
   attachCronRunCost,
-  createCronRunCostMeter,
+  createCronRunCostMeterForExecution,
   readCronRunCostUsd,
 } from '../../../src/host/cron/cronRunCostMeter';
 
-describe('createCronRunCostMeter', () => {
+// 统一走公开入口 createCronRunCostMeterForExecution（executionId 缺席 = 纯计量，
+// 与生产无执行行时的退路同一条路径）；模块内构造器不导出，knip production 棘轮不允许 test-only 导出。
+describe('createCronRunCostMeterForExecution（executionId 缺席 = 纯计量）', () => {
   it('无预算：纯计量，run 结束读出真实 usage 成本', async () => {
-    const meter = createCronRunCostMeter(undefined);
+    const meter = createCronRunCostMeterForExecution(undefined, undefined);
     const value = await meter.run(async () => {
       recordScopedCost(0.0123);
       return 'ok';
@@ -19,7 +21,7 @@ describe('createCronRunCostMeter', () => {
   });
 
   it('带预算：越线仍由 runWithCronJobBudget 转成既有预算超限消息（措辞归 cronExecutionPolicy）', async () => {
-    const meter = createCronRunCostMeter(0.5);
+    const meter = createCronRunCostMeterForExecution(0.5, undefined);
     await expect(
       runWithCronJobBudget(0.5, () =>
         meter.run(async () => {
@@ -32,7 +34,7 @@ describe('createCronRunCostMeter', () => {
   });
 
   it('同一次 run 内多段调用累计', async () => {
-    const meter = createCronRunCostMeter(null);
+    const meter = createCronRunCostMeterForExecution(null, undefined);
     await meter.run(async () => {
       recordScopedCost(0.01);
       recordScopedCost(0.02);
@@ -41,7 +43,7 @@ describe('createCronRunCostMeter', () => {
   });
 
   it('带预算且未越线：行为与无预算一致（计量不改变成功路径）', async () => {
-    const meter = createCronRunCostMeter(1);
+    const meter = createCronRunCostMeterForExecution(1, undefined);
     const value = await runWithCronJobBudget(1, () =>
       meter.run(async () => {
         recordScopedCost(0.02);
@@ -82,14 +84,14 @@ describe('readCronRunCostUsd', () => {
 
 describe('attachCronRunCost', () => {
   it('零成本不挂（失败早于任何模型调用）', () => {
-    const meter = createCronRunCostMeter(undefined);
+    const meter = createCronRunCostMeterForExecution(undefined, undefined);
     const error = new Error('infra down');
     attachCronRunCost(error, meter);
     expect((error as Error & { cronRunCostUsd?: number }).cronRunCostUsd).toBeUndefined();
   });
 
   it('有读数时挂到 Error 上，供失败路径记账', async () => {
-    const meter = createCronRunCostMeter(undefined);
+    const meter = createCronRunCostMeterForExecution(undefined, undefined);
     let caught: unknown;
     try {
       await meter.run(async () => {
@@ -104,7 +106,7 @@ describe('attachCronRunCost', () => {
   });
 
   it('不覆盖已有读数', async () => {
-    const meter = createCronRunCostMeter(undefined);
+    const meter = createCronRunCostMeterForExecution(undefined, undefined);
     const error = new Error('boom');
     (error as Error & { cronRunCostUsd?: number }).cronRunCostUsd = 0.01;
     try {

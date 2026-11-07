@@ -3,15 +3,24 @@ import { chromium, type Browser } from 'playwright';
 import { expect as playwrightExpect } from '@playwright/test';
 import { createServer, type ViteDevServer } from 'vite';
 import path from 'path';
+import { mkdtempSync, rmSync } from 'node:fs';
+import os from 'node:os';
 
 describe('media asset lightbox browser behavior', () => {
   let server: ViteDevServer;
   let browser: Browser;
   let baseUrl: string;
+  let cacheDir: string;
 
   beforeAll(async () => {
+    // 这台开发机多个工人共用同一个 node_modules（软链主仓），默认 cacheDir
+    // `node_modules/.vite/deps` 会被并发 vitest 的 dep 优化器互相换底，
+    // 正在 fetch 的 chunk 失效后浏览器报 "Failed to fetch dynamically imported
+    // module"。harness 用一次性私有 cacheDir，与共享缓存完全隔离。
+    cacheDir = mkdtempSync(path.join(os.tmpdir(), 'media-lightbox-vite-'));
     server = await createServer({
       configFile: path.resolve(process.cwd(), 'vite.config.ts'),
+      cacheDir,
       server: {
         host: '127.0.0.1',
         port: 0,
@@ -56,6 +65,7 @@ describe('media asset lightbox browser behavior', () => {
   afterAll(async () => {
     await browser?.close();
     await server?.close();
+    if (cacheDir) rmSync(cacheDir, { recursive: true, force: true });
   });
 
   it('opens and closes markdown image media lightbox with ownership attributes', async () => {

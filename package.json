@@ -14,7 +14,7 @@
   "scripts": {
     "scenario": "node scripts/scenario/run.mjs",
     "dev": "npm run dev:cleanup && concurrently -k --kill-others-on-fail \"WEB_PORT=8180 npm run dev:web:server\" \"npm run dev:renderer\"",
-    "dev:cleanup": "lsof -ti:5173 -ti:8180 | xargs kill -9 2>/dev/null || true",
+    "dev:cleanup": "lsof -ti:5173 -ti:8180 -sTCP:LISTEN | xargs kill -9 2>/dev/null || true",
     "dev:renderer": "vite",
     "build": "npm run build:worker && npm run build:web && npm run build:cli && npm run build:renderer",
     "build:renderer": "vite build",

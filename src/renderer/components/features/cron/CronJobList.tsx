@@ -161,7 +161,7 @@ export const CronJobList: React.FC<CronJobListProps> = ({ awaitingByJobId }) => 
                       </div>
                       {job.enabled && job.nextRunAt != null && (
                         <div className="mt-0.5 text-xs text-zinc-500" data-testid="cron-job-next-run">
-                          {cc.nextRun.replace('{time}', formatDateTime(job.nextRunAt))}
+                          {cc.nextRun.replace('{time}', formatDateTime(job.nextRunAt, language))}
                         </div>
                       )}
                     </div>

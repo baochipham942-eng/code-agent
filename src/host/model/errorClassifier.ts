@@ -2,8 +2,9 @@
 // Error Classifier - Categorise API and runtime errors into known classes
 // ============================================================================
 
-import type { ModelAuthFailureMarker, ModelQuotaFailureMarker, ModelUnavailableMarker } from '../../shared/contract/model';
+import type { ModelAuthFailureMarker, ModelQuotaFailureMarker, ModelUnavailableMarker, ModelUsageLimitFailureMarker } from '../../shared/contract/model';
 import { hasInsufficientBalanceSignal } from '../../shared/utils/providerError';
+import { detectUsageLimit } from '../../shared/utils/usageLimitDetection';
 import { getModelErrorStatus } from '../../shared/modelErrorDiagnostics';
 
 /** 引擎侧「本地就没有 key」的自有错误码，与上游 401/403 归同一类。 */
@@ -160,6 +161,23 @@ export function getModelQuotaFailureMarker(error: unknown): ModelQuotaFailureMar
   }
   if (classifyError(error) === 'quota_exhaustion') return { code: 'MODEL_QUOTA' };
   return undefined;
+}
+
+/**
+ * 套餐用量窗口用尽（429 + 「已达到 N 小时使用上限」等）。必须排在 getModelQuotaFailureMarker 之前，
+ * 否则 429 只会被当成普通限流、正文里的重置时间丢掉。
+ */
+export function getModelUsageLimitFailureMarker(error: unknown): ModelUsageLimitFailureMarker | undefined {
+  const info = detectUsageLimit(error);
+  if (!info) return undefined;
+  let identity: { provider?: string; model?: string } = {};
+  let cursor = error;
+  for (let depth = 0; depth < 4 && cursor && typeof cursor === 'object'; depth += 1) {
+    const found = identityFields(cursor as { provider?: unknown; model?: unknown });
+    if (found.provider || found.model) { identity = found; break; }
+    cursor = (cursor as { cause?: unknown }).cause;
+  }
+  return { code: 'MODEL_USAGE_LIMIT', ...identity, ...info };
 }
 
 export type AvailabilityKind = 'model' | 'auth' | 'network' | 'quota';

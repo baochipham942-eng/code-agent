@@ -4,8 +4,7 @@ import { isCoreToolName, resolveToolAlias } from '../../../services/toolSearch/d
 import { createLogger } from '../../../services/infra/logger';
 import { CONNECTOR_TOOL_NAMES } from '../../../../shared/contract/workbenchTools';
 import { needsArtifactTaskBrief } from '../../../prompts/builder';
-import { getConnectorRegistry } from '../../../connectors/registry';
-import { getConfigService } from '../../../services/core/configService';
+import { getNativeConnectorToolNamesForIntent } from '../../../connectors/nativeConnectorIntent';
 
 const logger = createLogger('ContextAssembly');
 
@@ -41,58 +40,12 @@ const MCP_MANAGEMENT_INTENT_RE =
 // 简报/用户直接点名 spawn_agent（组队主理人首轮的固定脚手架就是这样）——不预载会白花一个 ToolSearch 来回。
 const SPAWN_AGENT_INTENT_RE = /\bspawn_agent\b/i;
 
-// 原生连接器（提醒/邮件/日历）写工具的意图词。用户在设置里启用了连接器但这一轮没在输入框里手选时，
-// toolScope.allowedConnectorIds 是空的，这些 deferred 工具只能靠 tool_search 才拿得到，
-// 模型常直接绕 Bash osascript（FB-498）。命中意图才预载，避免每轮多挂 3 个连接器的 schema 打掉前缀缓存。
-const NATIVE_CONNECTOR_INTENT_RES: ReadonlyArray<readonly [string, RegExp]> = [
-  ['reminders', /提醒(?:事项|我)?|待办|\breminders?\b|\bto-?do\b|\bremind\s+me\b/i],
-  ['mail', /邮件|邮箱|草稿|\be-?mails?\b|\bmail\b|\bdraft\b/i],
-  ['calendar', /日程|日历|\bcalendar\b|\bschedule\s+(?:a|an|the)\s+(?:meeting|event)\b/i],
-];
-
-function getNativeConnectorToolsForIntent(
-  runtime: RuntimeForDeferredToolPreload,
-  userText: string,
-): string[] {
-  const matched = NATIVE_CONNECTOR_INTENT_RES.filter(([, re]) => re.test(userText)).map(([id]) => id);
-  if (matched.length === 0) return [];
-
-  let enabledNative: readonly string[] = [];
-  try {
-    enabledNative = getConfigService().getSettings().connectors?.enabledNative ?? [];
-  } catch (error) {
-    logger.warn('[ContextAssembly] Native connector preload skipped (reason: config-unavailable)', {
-      error: error instanceof Error ? error.message : String(error),
-    });
-  }
-  const scoped = runtime.toolScope?.allowedConnectorIds ?? [];
-  const registry = getConnectorRegistry();
-  const tools: string[] = [];
-  for (const connectorId of matched) {
-    if (!enabledNative.includes(connectorId)) {
-      logger.warn(`[ContextAssembly] Native connector not preloaded (reason: not-enabled): ${connectorId}`);
-      continue;
-    }
-    // 用户本轮手选了别的连接器 = 显式收窄，不替他加。
-    if (scoped.length > 0 && !scoped.includes(connectorId)) continue;
-    const connector = registry.get(connectorId);
-    if (!connector) {
-      logger.warn(`[ContextAssembly] Enabled native connector not preloaded (reason: not-registered): ${connectorId}`);
-      continue;
-    }
-    // unchecked = 重启后尚未探测（cron.ipc / cronMailPoller 同口径：按需探测，已授权用户不该被逼去再点一次），
-    // 执行时若 TCC 被拒由 handler 明确报错。failed / unavailable 才排除。
-    const readiness = connector.getCachedStatus?.().readiness;
-    if (readiness === 'failed' || readiness === 'unavailable') {
-      logger.warn(`[ContextAssembly] Enabled native connector not preloaded (reason: readiness-${readiness}): ${connectorId}`);
-      continue;
-    }
-    for (const toolName of CONNECTOR_TOOL_NAMES[connectorId] ?? []) {
-      if (!isCoreToolName(toolName)) tools.push(toolName);
-    }
-  }
-  return tools;
-}
+// 原生连接器（提醒/邮件/日历）写工具的意图判据已抽到 connectors/nativeConnectorIntent.ts
+// （单一真源，N-FG-CONNECTOR-TOOLS）：deferred 预载与文字前台 per-turn allowlist 扩展
+// 共用同一份「意图 × 启用 × 就绪」判据。用户在设置里启用了连接器但这一轮没在输入框里
+// 手选时，toolScope.allowedConnectorIds 是空的，这些 deferred 工具只能靠 tool_search
+// 才拿得到，模型常直接绕 Bash osascript（FB-498）。命中意图才预载，避免每轮多挂
+// 3 个连接器的 schema 打掉前缀缓存。
 
 function getLatestUserText(runtime: RuntimeForDeferredToolPreload): string {
   for (let index = runtime.messages.length - 1; index >= 0; index -= 1) {
@@ -160,7 +113,10 @@ export function getDeferredToolsToPreloadForTurn(
     }
   }
 
-  for (const toolName of getNativeConnectorToolsForIntent(runtime, userText)) {
+  for (const toolName of getNativeConnectorToolNamesForIntent({
+    userText,
+    allowedConnectorIds: runtime.toolScope?.allowedConnectorIds,
+  })) {
     tools.add(toolName);
   }
 

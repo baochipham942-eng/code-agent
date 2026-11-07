@@ -32,6 +32,7 @@ import {
   type AgentEngineHistoryPreviewRequest,
 } from '../services/agentEngine/agentEngineHistoryImport';
 import { getSessionManager } from '../services/infra/sessionManager';
+import { getSkillsSyncState, setSkillsSyncMode } from '../externalImport/skillsAutoSync';
 import { getChatsSyncState, importRecentChatsSingleFlight, setChatsSyncMode } from '../externalImport/chatsAutoSync';
 import * as fsp from 'node:fs/promises';
 import { getDefaultWorkDirectory } from '../config/configPaths';
@@ -124,6 +125,19 @@ const agentEngineHandlers: RawDomainRouteHandlers<AgentEngineDomainRequest, void
       };
     }
     return { success: true, data: await setChatsSyncMode(mode) };
+  },
+  getSkillsSync: async (_ctx, _requestPayload) => {
+    return { success: true, data: getSkillsSyncState() };
+  },
+  setSkillsSync: async (_ctx, requestPayload) => {
+    const mode = (requestPayload as { mode?: unknown } | undefined)?.mode;
+    if (mode !== 'off' && mode !== 'on' && mode !== 'paused') {
+      return {
+        success: false,
+        error: { code: 'INVALID_PAYLOAD', message: 'setSkillsSync requires mode off | on | paused.' },
+      };
+    }
+    return { success: true, data: await setSkillsSyncMode(mode) };
   },
   listModels: async (_ctx, _requestPayload) => {
     const data = await getRemoteAgentEngineModelCatalogService().readCatalog();

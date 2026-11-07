@@ -69,3 +69,20 @@ export function splitCronRunMessage(source: string): CronRunMessageSegment[] {
   if (cursor < source.length) pushText(segments, source.slice(cursor));
   return segments;
 }
+
+// buildCronAgentPrompt（src/host/cron/cronAgentPrompt.ts）在用户任务后面追加的
+// 机器尾段以「空行 + 【当前时间】+ ISO 时间戳 + （UTC）。」开头。这个开头是
+// host 侧拼出来的固定结构（toISOString 无空格），用户手打不出来；按它切割只可能
+// 命中 cron 注入的尾段。事件触发 run 的事件载荷块拼在尾段之后，一起被切掉。
+const CRON_PROMPT_TAIL_PATTERN = /\n\n【当前时间】\d{4}-\d{2}-\d{2}T[\d:.]+Z（UTC）。/;
+
+/**
+ * 用户气泡只显示任务本身：去掉 cron host 注入的时间锚点 / 快照 / 摘要指令尾段。
+ * 只动展示，不动存储——发给模型的消息内容逐字节保持原样（含 fork 出的续聊子会话
+ * 复制到的前缀）。没有尾段（普通会话、手输消息）时原样返回。
+ */
+export function stripCronPromptDecoration(source: string): string {
+  const match = CRON_PROMPT_TAIL_PATTERN.exec(source);
+  if (!match) return source;
+  return source.slice(0, match.index).trimEnd();
+}

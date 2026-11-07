@@ -81,21 +81,21 @@ describe('listBoundCronJobs reads the newest execution from the real database', 
       name: '晨报',
       scheduleType: 'cron',
       schedule: { type: 'cron', expression: '0 9 * * *', timezone: 'UTC' },
-      action: { type: 'agent', agentType: 'general', prompt: '看竞品', roleId: ROLE_ID },
+      action: { type: 'agent', agentType: 'default', prompt: '看竞品', roleId: ROLE_ID },
       enabled: true,
     });
     const neverRun = await service.createJob({
       name: '周报',
       scheduleType: 'cron',
       schedule: { type: 'cron', expression: '0 10 * * 1', timezone: 'UTC' },
-      action: { type: 'agent', agentType: 'general', prompt: '写周报', roleId: ROLE_ID },
+      action: { type: 'agent', agentType: 'default', prompt: '写周报', roleId: ROLE_ID },
       enabled: true,
     });
     const other = await service.createJob({
       name: '别人的晨报',
       scheduleType: 'cron',
       schedule: { type: 'cron', expression: '0 11 * * *', timezone: 'UTC' },
-      action: { type: 'agent', agentType: 'general', prompt: '别的角色', roleId: OTHER_ROLE_ID },
+      action: { type: 'agent', agentType: 'default', prompt: '别的角色', roleId: OTHER_ROLE_ID },
       enabled: true,
     });
     jobIds.push(failed.id, neverRun.id, other.id);

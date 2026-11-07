@@ -2,7 +2,8 @@
 // cronRunCostMeter —— 单次 cron 运行的成本计量器（N-CRON-RUN-LEDGER-VISIBLE）。
 // 用 scoped cost limit 充当纯计量：BudgetService 每落一条真实 usage 就记入当前
 // scoped 上下文（budgetService.recordUsage → recordScopedUsage/recordScopedCost），
-// run 结束后读 getCostUsd() 写进执行记录的 cost 字段。
+// run 结束后读 getCostUsd() 写进执行记录的 cost 字段。onCost 监听器把同一读数在
+// 运行中增量窄写进 cost_usd（N-CRON-RUN-LEDGER-VISIBLE-FU1），进程中途被杀也留得下账。
 //
 // 任务声明了单次预算（maxRunBudget）时，计量器直接以该预算为上限——与
 // runWithCronJobBudget 同阈值、同 in-flight 失败语义：越线抛 ScopedCostLimitExceededError，
@@ -15,7 +16,8 @@
 // 计量器与 job budget 用同一上限，越线仍抛 ScopedCostLimitExceededError，外层
 // 原样转成既有措辞；计量器放在外层会让本次成本读成 $0。
 // ============================================================================
-import { createScopedCostLimit } from '../services/core/scopedCostLimit';
+import { createScopedCostLimit, type ScopedCostListener } from '../services/core/scopedCostLimit';
+import { createCronExecutionCostWriter } from './cronPersistence';
 import { isCronAgentActionResult, isRecord } from './cronNormalizers';
 
 /** 纯计量档的上限：高到永不触顶；若真越过，说明预算体系整体失守，fail-loud 合理。 */
@@ -29,17 +31,41 @@ export interface CronRunCostMeter {
 }
 
 /**
+ * 模块内构造器（不走 export：生产入口一律经 createCronRunCostMeterForExecution，
+ * 导出即 dead export，knip production 棘轮必报）。
  * @param maxRunBudget 任务的单次预算。传 undefined = 只计量不设闸（role-wake 历史上
  * 无预算闸，本单不扩权）。
+ * @param options.onCost 每记一笔真实 usage 后收到本次尝试的累计成本（N-CRON-RUN-LEDGER-VISIBLE-FU1：
+ * 运行中增量落库用；监听器抛错由 scoped 层吞掉，不影响计量与越线语义）。
  */
-export function createCronRunCostMeter(maxRunBudget: number | null | undefined): CronRunCostMeter {
+function createCronRunCostMeter(
+  maxRunBudget: number | null | undefined,
+  options?: { onCost?: ScopedCostListener },
+): CronRunCostMeter {
   const scoped = createScopedCostLimit(
     maxRunBudget != null && maxRunBudget > 0 ? maxRunBudget : METER_ONLY_CAP_USD,
+    options,
   );
   return {
     run: (operation) => scoped.run(operation),
     getCostUsd: () => scoped.getCostUsd(),
   };
+}
+
+/**
+ * 入口接线（N-CRON-RUN-LEDGER-VISIBLE-FU1）：构建接好增量成本窄写的计量器——
+ * 每笔真实 usage 落账时把累计成本窄写进仍处于 running 的执行行 cost_usd，进程
+ * 中途被杀/挂死，interrupted 行也带真实花费。executionId 缺席（无执行行可写）时
+ * 退回纯计量；收尾的整行写入不受影响、天然赢过增量写。
+ */
+export function createCronRunCostMeterForExecution(
+  maxRunBudget: number | null | undefined,
+  executionId: string | undefined,
+): CronRunCostMeter {
+  return createCronRunCostMeter(
+    maxRunBudget,
+    executionId === undefined ? undefined : { onCost: createCronExecutionCostWriter(executionId) },
+  );
 }
 
 /**

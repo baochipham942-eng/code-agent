@@ -185,3 +185,39 @@ describe('AgentRunController 断流后的 surface 终态兜底', () => {
     expect(broadcastSSE).toHaveBeenCalledTimes(1);
   });
 });
+
+// ============================================================================
+// N-RUN-CONCURRENT-PERSIST-FAIL-FU1 —— 终态写失败必须照旧 WARN，不许吞
+//
+// kickoff 的 running 写挪到建行后（新会话不再每会话一条 persist-fail WARN），
+// 但这只豁免那一笔 opening 写：completed / error / interrupted 的终态写失败
+// 仍要走 catch 的 logger.warn，否则落库异常被静默、侧栏终态挂在旧值没人知道。
+// 失败时也不广播——广播在写成功之后才发。
+// ============================================================================
+describe('AgentRunController 终态写失败照旧 WARN', () => {
+  beforeEach(() => {
+    broadcastSSE.mockClear();
+    sendSSE.mockClear();
+  });
+
+  it.each(['completed', 'error', 'interrupted'] as const)('updateSessionStatus(%s) 写失败要 WARN 且不广播', async (status) => {
+    const warn = vi.fn();
+    const controller = new AgentRunController({
+      res: createSink(false),
+      runId: `run-term-fail-${status}`,
+      sessionId: 'session-1',
+      logger: { info: vi.fn(), warn, error: vi.fn(), debug: vi.fn() },
+      tryGetSessionManager: async () => ({
+        updateSession: async () => { throw new Error('Session session-1 not found'); },
+      }),
+      mirrorToBroadcast: false,
+    });
+
+    await controller.updateSessionStatus(status);
+
+    expect(warn).toHaveBeenCalledTimes(1);
+    expect(warn.mock.calls[0][0]).toBe(`[AgentRouter] Failed to persist session status ${status} for session-1:`);
+    // 广播只发生在写成功之后；写失败时不能把「状态已更新」的假消息广播出去
+    expect(broadcastSSE).not.toHaveBeenCalled();
+  });
+});

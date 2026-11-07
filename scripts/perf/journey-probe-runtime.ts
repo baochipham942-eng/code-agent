@@ -11,6 +11,7 @@ export const JOURNEY_HARNESS: Record<JourneyId, string> = {
   'cold-start': '/scripts/perf/journey-cold-start-harness.tsx',
   'first-token': '/scripts/perf/journey-first-token-harness.tsx',
   'long-session': '/scripts/perf/journey-long-session-harness.tsx',
+  'long-session-scroll': '/scripts/perf/journey-long-session-scroll-harness.tsx',
   'session-switch': '/scripts/perf/journey-session-switch-harness.tsx',
 };
 

@@ -19,6 +19,7 @@ import type {
   SessionAutomationType,
 } from '../../shared/contract/sessionAutomation';
 import { isCronUrgency } from '../../shared/cronUrgency';
+import { readCronPermissionDenied } from './cronNormalizers';
 import { cronSourceSessionIdFromDefinition } from '../../shared/cronWriteScope';
 import { resolveCronArtifactsForReview } from '../../shared/cronArtifactPath';
 import { formatCronExpressionLabel } from '../../shared/cronHumanize';
@@ -273,6 +274,9 @@ export async function recordCronAutomationExecution(
       resultRecord?.digest,
       readRunSessionWorkingDirectory(execution.sessionId),
     );
+    // 需处理标记透传（N-CRON-RUN-COMPLETED-BUT-DENIED）：agent 结果由 cronAgentAction
+    // 扫工具结果打上；收件箱据此把「成功」卡片换成琥珀色「需处理」。
+    const permissionDenied = readCronPermissionDenied(execution.result);
     const recordStatus: SessionAutomationStatus = keepActive
       ? 'active'
       : reviewable
@@ -291,6 +295,7 @@ export async function recordCronAutomationExecution(
           ...(urgency ? { urgency } : {}),
           ...(urgencyRaw ? { urgencyRaw } : {}),
           ...(digest ? { digest } : {}),
+          ...(permissionDenied ? { permissionDenied } : {}),
         } } }
         : loginWall
           ? { configPatch: { loginWall: { siteOrigin: loginWall.siteOrigin, at: execution.completedAt ?? Date.now() } } }

@@ -1,6 +1,5 @@
 import {
   getAllBackgroundTasks,
-  getBackgroundTask,
   onBackgroundTaskLifecycleEvent,
   type BackgroundTaskLifecycleEvent,
   type TaskInfo,
@@ -18,10 +17,6 @@ export {
   onBackgroundTaskLifecycleEvent,
   onPtySessionLifecycleEvent,
 };
-
-export function getBackgroundTaskPid(taskId: string): number | undefined {
-  return getBackgroundTask(taskId)?.process.pid;
-}
 
 export type {
   BackgroundTaskLifecycleEvent,

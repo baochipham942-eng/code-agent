@@ -9,7 +9,7 @@ import { createLogger } from '../services/infra/logger';
 import {
   getAllBackgroundTasks,
   getBackgroundTaskPid,
-} from '../tools/modules/shell/backgroundTaskSources';
+} from '../tools/modules/shell/backgroundTaskLedger';
 
 const logger = createLogger('SubagentLeftoverShells');
 const MAX_COMMAND_SUMMARY_LENGTH = 80;

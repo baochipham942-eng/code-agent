@@ -58,7 +58,20 @@ function createController(sessionId = 'session-fg-1') {
   });
 }
 
-function permissionRequest(overrides: Record<string, unknown> = {}): AgentEvent {
+// 控制器对 permission_request.data 做防御性宽读（顶层 id/tool/command/resolved），
+// 测试 payload 按同样的松形状构造，但保留 data 的必需成员（details/timestamp）：
+// 断言 as AgentEvent 要求 payload 与联合成员可比，缺必需的 details 会让两个方向
+// 都不可比（tsc-tests 棘轮 TS2352）。overrides 用具体可选字段而非
+// Record<string, unknown>——展开后者会把 data.type 撑宽成 string 并注入 unknown
+// 索引签名，同样破坏可比性。
+type PermissionRequestOverrides = {
+  id?: string;
+  command?: string;
+  resolved?: boolean;
+  decision?: string;
+};
+
+function permissionRequest(overrides: PermissionRequestOverrides = {}): AgentEvent {
   return {
     type: 'permission_request',
     data: {
@@ -67,6 +80,7 @@ function permissionRequest(overrides: Record<string, unknown> = {}): AgentEvent 
       tool: 'bash',
       command: 'npm test',
       timestamp: 1,
+      details: { command: 'npm test' },
       ...overrides,
     },
   } as AgentEvent;

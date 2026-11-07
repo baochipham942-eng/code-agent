@@ -419,10 +419,10 @@ describe('ExpertPanel', () => {
     render(<RoleDetailPage roleId="牧之" />);
     fireEvent.click(screen.getByTestId('role-detail-tab-records'));
 
-    const start = await screen.findByTestId('role-quiet-hours-start');
-    const end = screen.getByTestId('role-quiet-hours-end');
-    fireEvent.change(start, { target: { value: '23:00' } });
-    fireEvent.change(end, { target: { value: '07:30' } });
+    await screen.findByTestId('role-quiet-hours-start');
+    fireEvent.change(screen.getByTestId('role-quiet-hours-start-hour'), { target: { value: '23' } });
+    fireEvent.change(screen.getByTestId('role-quiet-hours-end-hour'), { target: { value: '07' } });
+    fireEvent.change(screen.getByTestId('role-quiet-hours-end-minute'), { target: { value: '30' } });
     fireEvent.click(screen.getByTestId('role-quiet-hours-save'));
 
     await waitFor(() => {
@@ -452,7 +452,12 @@ describe('ExpertPanel', () => {
     render(<RoleDetailPage roleId="牧之" />);
     fireEvent.click(screen.getByTestId('role-detail-tab-records'));
 
-    fireEvent.click(await screen.findByTestId('role-quiet-hours-clear'));
+    await screen.findByTestId('role-quiet-hours-clear');
+    expect(screen.getByTestId('role-quiet-hours-start-hour')).toHaveProperty('value', '22');
+    expect(screen.getByTestId('role-quiet-hours-start-minute')).toHaveProperty('value', '00');
+    expect(screen.getByTestId('role-quiet-hours-end-hour')).toHaveProperty('value', '08');
+    expect(screen.getByTestId('role-quiet-hours-end-minute')).toHaveProperty('value', '00');
+    fireEvent.click(screen.getByTestId('role-quiet-hours-clear'));
 
     await waitFor(() => {
       expect(invokeDomain).toHaveBeenCalledWith(

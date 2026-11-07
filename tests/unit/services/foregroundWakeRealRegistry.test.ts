@@ -82,7 +82,6 @@ describe('background task settlement wake with a real RunRegistry', () => {
   let center: SessionCommandCenter;
   let warn: ReturnType<typeof vi.fn>;
   let info: ReturnType<typeof vi.fn>;
-  let wakeTurns: Array<() => Promise<void>>;
   let queued: boolean;
   let wakeBody: (options: AgentRunOptions) => Promise<void>;
   let wakeSends: number;
@@ -94,7 +93,6 @@ describe('background task settlement wake with a real RunRegistry', () => {
     manager = new FakeTaskManager(registry);
     warn = vi.fn();
     info = vi.fn();
-    wakeTurns = [];
     queued = false;
     wakeSends = 0;
     wakeBody = async () => undefined;

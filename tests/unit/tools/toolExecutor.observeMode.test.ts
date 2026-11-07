@@ -105,6 +105,13 @@ describe('ToolExecutor observe-mode interception (N-TRIGGER-OBSERVE-MODE ②)', 
       requiresPermission: true,
       permissionLevel: 'network',
     }],
+    ['Browser', {
+      name: 'Browser',
+      description: 'browser test tool',
+      inputSchema: { type: 'object', properties: {}, required: [] },
+      requiresPermission: true,
+      permissionLevel: 'execute',
+    }],
     ['Read', {
       name: 'Read',
       description: 'read test tool',
@@ -173,6 +180,31 @@ describe('ToolExecutor observe-mode interception (N-TRIGGER-OBSERVE-MODE ②)', 
       await executor.execute('Read', { file_path: '/tmp/workbench/a.txt' }, { sessionId: 'cron-session-obs-2' });
       expect(resolverState.execute).toHaveBeenCalledTimes(1);
       expect(resolverState.execute.mock.calls[0][0]).toBe('Read');
+      expect(rows).toHaveLength(1);
+    } finally {
+      leave();
+    }
+  });
+
+  it('observe: Browser upload_file is intercepted, Browser click still runs', async () => {
+    const { rows, store } = memoryStore();
+    const leave = enterObserveModeForCronRun(eventJob('observe'), 'cron-session-obs-3', 'run-5', store);
+    try {
+      const requestPermission = vi.fn(async (_req: unknown) => true);
+      const executor = new ToolExecutor({ requestPermission, workingDirectory: '/tmp/workbench' });
+      executor.setAuditEnabled(false);
+
+      const upload = await executor.execute(
+        'Browser',
+        { action: 'upload_file', selector: '#f', uploadFilePath: '/tmp/a.pdf' },
+        { sessionId: 'cron-session-obs-3' },
+      );
+      expect(upload.output).toContain('recorded, not executed (observe mode)');
+      expect(resolverState.execute).not.toHaveBeenCalled();
+      expect(rows).toHaveLength(1);
+
+      await executor.execute('Browser', { action: 'click', selector: '#d' }, { sessionId: 'cron-session-obs-3' });
+      expect(resolverState.execute).toHaveBeenCalledTimes(1);
       expect(rows).toHaveLength(1);
     } finally {
       leave();

@@ -10,6 +10,7 @@ import {
   nextFrame,
   publishJourneyError,
   publishJourneyResult,
+  waitForCommitSettlement,
 } from './journey-probe-instrument';
 
 const instrument = createJourneyInstrument();
@@ -77,20 +78,30 @@ function LongSessionSurface(): React.ReactElement {
     const run = async () => {
       try {
         const scroller = await waitForScroller();
-        const mountedBefore = await waitForMountedTurns();
+        const mountedTurns = await waitForMountedTurns();
+        // The wheel fires right after the first turn mounts, before Virtuoso's
+        // first rangeChanged: it marks a user interaction, so
+        // useSessionEntryScroll aborts the session-entry settlement before its
+        // bottom jump and 60-frame re-pin loop start. Letting the settlement
+        // run instead is not measurable: its re-pin loop overlaps the
+        // progressive height-measurement phase and self-sustains a
+        // 2-commits-per-frame oscillation whose last frame batch-merges +-1
+        // (130/131/132 across runs of one commit).
+        // No scripted scrollTop jump follows the wheel: every window-swap
+        // scroll mounts rows whose heights are still estimates, and the
+        // estimate->measured correction tail lands ~300ms later in most runs
+        // but not all (18/19/20 across runs). The deterministic surface is the
+        // entry itself - mount cascade plus the user-scroll-start signal -
+        // which holds a single count across runs.
         scroller.dispatchEvent(new WheelEvent('wheel', { deltaY: -240, bubbles: true }));
-        scroller.scrollTop = Math.min(240, Math.max(0, scroller.scrollHeight - scroller.clientHeight));
-        scroller.dispatchEvent(new Event('scroll', { bubbles: true }));
-        await nextFrame();
-        scroller.scrollTop = 0;
-        scroller.dispatchEvent(new Event('scroll', { bubbles: true }));
-        await nextFrame();
-        const mountedTurns = Math.max(mountedBefore, document.querySelectorAll('[data-trace-turn-id]').length);
-        if (mountedTurns < 1) throw new Error('long-session: no turns mounted after scroll');
+        // Publishing at a fixed frame read this cascade mid-flight (the
+        // historical 18/19 flake); publish only once commits fall silent.
+        await waitForCommitSettlement(instrument);
+        const settledTurns = Math.max(mountedTurns, document.querySelectorAll('[data-trace-turn-id]').length);
         if (!cancelled) {
           publishJourneyResult('long-session', instrument, {
             turnCount: TURN_COUNT,
-            mountedTurns,
+            mountedTurns: settledTurns,
             scrollTop: Math.round(scroller.scrollTop),
           });
         }

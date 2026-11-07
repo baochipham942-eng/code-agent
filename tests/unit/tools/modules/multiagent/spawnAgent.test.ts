@@ -126,6 +126,83 @@ describe('spawn_agent five-link gates', () => {
     if (!result.ok) expect(result.code).toBe('NOT_INITIALIZED');
     expect(executeSpawnAgentMock).not.toHaveBeenCalled();
   });
+
+  // N-CAP-NOTICE-LEAK：派发入口输入校验。空/缺 task 的后台 spawn 修复前会先
+  // 注册一个注定失败的占位子 agent（真机：模型把注入块当任务派「跳过占位」，
+  // 占位子代理失败、主会话整轮失败）；agents 数组缺 task 会在 service 层炸裸
+  // TypeError。入口提前返回可读 INVALID_ARGS，模型立刻能自我纠正。
+  it('run_in_background + 空 task → 入口 INVALID_ARGS，不注册占位后台子代理', async () => {
+    const before = getBackgroundSubagentRegistry().list().length;
+    const handler = await spawnAgentModule.createHandler();
+    const result = await handler.execute(
+      { role: 'coder', run_in_background: true },
+      makeCtx(),
+      allowAll,
+    );
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.code).toBe('INVALID_ARGS');
+      expect(result.error).toContain('task');
+    }
+    expect(executeSpawnAgentMock).not.toHaveBeenCalled();
+    expect(getBackgroundSubagentRegistry().list().length).toBe(before);
+  });
+
+  it('task 为空白字符串 → 同样 INVALID_ARGS（空白不当作有效任务）', async () => {
+    const handler = await spawnAgentModule.createHandler();
+    const result = await handler.execute(
+      { role: 'coder', task: '   ', run_in_background: true },
+      makeCtx(),
+      allowAll,
+    );
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.code).toBe('INVALID_ARGS');
+    expect(executeSpawnAgentMock).not.toHaveBeenCalled();
+  });
+
+  it('parallel agents 缺 task → 入口 INVALID_ARGS，可读错误指明是第几项', async () => {
+    const handler = await spawnAgentModule.createHandler();
+    const result = await handler.execute(
+      { parallel: true, agents: [{ role: 'coder', task: 'ok' }, { role: 'explorer' }] },
+      makeCtx(),
+      allowAll,
+    );
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.code).toBe('INVALID_ARGS');
+      expect(result.error).toContain('agents[1].task');
+    }
+    expect(executeSpawnAgentMock).not.toHaveBeenCalled();
+  });
+
+  it('parallel agents 缺 role → 入口 INVALID_ARGS', async () => {
+    const handler = await spawnAgentModule.createHandler();
+    const result = await handler.execute(
+      { parallel: true, agents: [{ task: '做点什么' }] },
+      makeCtx(),
+      allowAll,
+    );
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.code).toBe('INVALID_ARGS');
+      expect(result.error).toContain('agents[0].role');
+    }
+    expect(executeSpawnAgentMock).not.toHaveBeenCalled();
+  });
+
+  it('合法后台 spawn 不受入口校验影响：照常注册后台子代理', async () => {
+    executeSpawnAgentMock.mockResolvedValue({ success: true, output: 'bg done' });
+    const handler = await spawnAgentModule.createHandler();
+    const result = await handler.execute(
+      { role: 'coder', task: 'background work', run_in_background: true },
+      makeCtx(),
+      allowAll,
+    );
+    expect(result.ok).toBe(true);
+    await vi.waitFor(() => {
+      expect(executeSpawnAgentMock).toHaveBeenCalled();
+    });
+  });
 });
 
 describe('spawn_agent dispatch to protocol-native service', () => {

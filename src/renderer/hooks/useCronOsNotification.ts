@@ -46,11 +46,15 @@ export function useCronOsNotification(
       if (siteOrigin) openCronLoginWallSite(siteOrigin, event?.jobId);
       const sessionId = event?.sessionId;
       if (sessionId) onOpenSessionRef.current(sessionId);
-      // 云端调度器不可用的失败没有本地会话：点击落 Cron Center 并选中该任务，
-      // 详情里就是这句人话和「立即重跑」——不然这次点击只是把 app 带到前台。
-      const cloudDownJobId = cronFailureCloudDownJobId(event);
-      if (cloudDownJobId) {
-        useCronStore.getState().selectJob(cloudDownJobId);
+      // 无会话失败没有本地会话可跳：点击落 Cron Center 并选中该任务，详情里就是
+      // 这句人话和「立即重跑/重新启用」——不然这次点击只是把 app 带到前台。
+      // 两类：云端调度器不可用（报文分类 cloud_unavailable）与最终停用（jobId、无 code，
+      // 停用执行可能根本没有 session，如云端 run）；登录墙走上面的同意路径，不落这里。
+      const cronCenterJobId = sessionId || siteOrigin
+        ? undefined
+        : cronFailureCloudDownJobId(event) ?? event?.jobId;
+      if (cronCenterJobId) {
+        useCronStore.getState().selectJob(cronCenterJobId);
         useAppStore.getState().setShowCronCenter(true);
       }
     };
@@ -58,6 +62,12 @@ export function useCronOsNotification(
     const unsubscribe = ipcService.on(
       IPC_CHANNELS.NOTIFICATION_SHOW,
       (event: NotificationShowEvent) => {
+        // 审批已裁决的撤回：只把「离开期间的提醒」队列里那条 needs-input 移掉，
+        // 不弹 OS 通知、不作点击目标（retract 本身没有任何用户可见动作）。
+        if (event.retract) {
+          missedRef.current.remove(event.dedupeKey);
+          return;
+        }
         // 预算窗口折起弹窗时单独送达的未读标记：只供侧栏圆点，不弹 OS 通知、不作点击目标。
         if (event.attentionOnly) return;
         lastEventRef.current = event;

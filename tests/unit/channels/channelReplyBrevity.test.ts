@@ -3,6 +3,7 @@ import type { ChannelMessage } from '../../../src/shared/contract/channel';
 import type { ChannelResponseCallback } from '../../../src/host/channels/channelInterface';
 import { ChannelAgentBridge } from '../../../src/host/channels/channelAgentBridge';
 import {
+  CHANNEL_REPLY_STYLE_INSTRUCTION as REAL_STYLE_INSTRUCTION,
   buildChannelAckText,
   resolveChannelReplyLimit,
   softLimitChannelReply,
@@ -124,5 +125,62 @@ describe('N-CHANNEL-REPLY-BREVITY', () => {
     harness.busyHintedSessions.add(sessionId);
     await harness.handleSyncMessage('acc', message, orchestrator, undefined, cb);
     expect(sendText.mock.calls.map((call) => (call as unknown[])[0])).toEqual(['later']);
+  });
+});
+
+describe('N-CHANNEL-REPLY-BREVITY-FU2 overflow instruction', () => {
+  const overflowLine = REAL_STYLE_INSTRUCTION.split('\n').find((line) => line.includes('内容较长')) ?? '';
+
+  it('keeps the header and the other two rules', () => {
+    expect(REAL_STYLE_INSTRUCTION.startsWith('[IM 回复纪律]')).toBe(true);
+    expect(REAL_STYLE_INSTRUCTION).toContain('不超过 150 个汉字：先给结论，再用一行写依据');
+    expect(REAL_STYLE_INSTRUCTION).toContain('不要在 IM 里输出进度播报');
+  });
+
+  it('puts the full content in the same reply and forbids writing files', () => {
+    expect(overflowLine).toContain('第一段');
+    expect(overflowLine).toContain('同一条回复');
+    expect(overflowLine).toContain('不要为此写文件');
+    expect(overflowLine).toContain('不要提工具失败或权限');
+  });
+
+  it('mentions 文件/交付物 only inside the explicit-request exception', () => {
+    const [beforeException, exception] = overflowLine.split('用户明确要求');
+    expect(exception).toBeDefined();
+    expect(beforeException.replace('不要为此写文件或创建交付物', '')).not.toMatch(/文件|交付物/);
+  });
+});
+
+describe('N-CHANNEL-REPLY-BREVITY-FU2-FU2 dangling heading drop', () => {
+  const note = CHANNEL_REPLY_FULL_TEXT_NOTE;
+
+  it('① drops the trailing heading whose table body was truncated away', () => {
+    const summary = '两个方案各有取舍。';
+    const heading = '## 详细对比表';
+    const table = Array.from({ length: 20 }, (_, i) => `| 行${i} | 内容${i} |`).join('\n');
+    // limit 刚好让摘要＋标题进得来、表格进不来
+    const limit = summary.length + 2 + heading.length + 1;
+    expect(softLimitChannelReply(`${summary}\n\n${heading}\n\n${table}`, limit)).toBe(`${summary}\n\n${note}`);
+  });
+
+  it('① keeps a heading whose body fits and truncates only a later paragraph', () => {
+    const summary = '结论先行。';
+    const heading = '## 关键数字';
+    const smallTable = '| A | B |\n| 1 | 2 |';
+    const fit = `${summary}\n\n${heading}\n\n${smallTable}`;
+    const out = softLimitChannelReply(`${fit}\n\n${'后续说明很长。'.repeat(50)}`, fit.length);
+    expect(out).toBe(`${fit}\n\n${note}`);
+  });
+
+  it('① drops two consecutive trailing headings in one go', () => {
+    const summary = '总结。';
+    const kept = `${summary}\n\n## 小节一\n\n## 小节二`;
+    const out = softLimitChannelReply(`${kept}\n\n${'超长表格'.repeat(100)}`, kept.length);
+    expect(out).toBe(`${summary}\n\n${note}`);
+  });
+
+  it('① heading-only first paragraph still goes through the old first-paragraph fallback', () => {
+    const out = softLimitChannelReply(`## 结论速览\n\n${'数据'.repeat(300)}`, 150);
+    expect(out).toBe(`## 结论速览\n\n${note}`);
   });
 });

@@ -48,8 +48,9 @@ vi.mock('../../../src/renderer/hooks/useI18n', async () => {
 import { getToolCache } from '../../../src/host/services/infra/toolCache';
 import { getProtocolRegistry } from '../../../src/host/tools/protocolRegistry';
 import { ToolExecutor } from '../../../src/host/tools/toolExecutor';
+import type { ToolExecutionResult } from '../../../src/host/tools/types';
 import { HostReasonCode } from '../../../src/shared/contract/permission';
-import type { ToolCall, ToolExecutionResult } from '../../../src/shared/contract/tool';
+import type { ToolCall } from '../../../src/shared/contract/tool';
 import { en } from '../../../src/renderer/i18n/en';
 import { zh } from '../../../src/renderer/i18n/zh';
 import { ToolDetails } from '../../../src/renderer/components/features/chat/MessageBubble/ToolCallDisplay/ToolDetails';

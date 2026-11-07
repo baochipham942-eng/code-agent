@@ -14,6 +14,7 @@ const ROUNDS = 3;
 const TEMPERATURE = 0;
 const MAX_OUTPUT_TOKENS = 2048;
 const CALL_TIMEOUT_MS = 180_000;
+const MAX_MODEL_STEPS = 4;
 
 const PROMPTS = [
   {
@@ -49,10 +50,18 @@ interface AssistantMessage {
   tool_calls?: ToolCall[];
 }
 
+interface ChatMessage {
+  role: 'system' | 'user' | 'assistant' | 'tool';
+  content: string | null;
+  tool_calls?: ToolCall[];
+  tool_call_id?: string;
+}
+
 interface RoundResult {
   disabledWording: boolean;
   disabledMatches: string[];
   delegateTaskCalls: number;
+  connectorCalls: number;
   remindersCreateCalls: number;
   backgroundNotice: boolean;
 }
@@ -60,6 +69,7 @@ interface RoundResult {
 interface PromptTotals {
   disabledWording: number;
   delegateTaskCalls: number;
+  connectorCalls: number;
   remindersCreateCalls: number;
   backgroundNotice: number;
 }
@@ -75,6 +85,7 @@ const DISABLED_WORDING = [
   ['无法使用', /无法使用|不能使用/],
   ['没有权限', /没有权限|无权限|权限不足/],
   ['环境受限', /环境受限|环境限制/],
+  ['缺少 Bash', /没有[^。.!！?？\n]{0,16}Bash[^。.!！?？\n]{0,8}工具|Bash[^。.!！?？\n]{0,8}工具[^。.!！?？\n]{0,16}没有/i],
 ] as const;
 
 let getSessionCommandCenterBrainContextForPrompt: typeof import('../../src/host/app/sessionCommandCenterBrain').getSessionCommandCenterBrainContextForPrompt;
@@ -134,11 +145,15 @@ function toWireTool(schema: ToolSchema): Record<string, unknown> {
   };
 }
 
-function score(message: AssistantMessage): RoundResult {
-  const text = typeof message.content === 'string'
-    ? message.content
-    : message.content == null ? '' : JSON.stringify(message.content);
-  const toolCalls = Array.isArray(message.tool_calls) ? message.tool_calls : [];
+function score(messages: AssistantMessage[]): RoundResult {
+  const text = messages.map((message) => (
+    typeof message.content === 'string'
+      ? message.content
+      : message.content == null ? '' : JSON.stringify(message.content)
+  )).join('\n');
+  const toolCalls = messages.flatMap((message) => (
+    Array.isArray(message.tool_calls) ? message.tool_calls : []
+  ));
   const disabledMatches = DISABLED_WORDING
     .filter(([, pattern]) => pattern.test(text))
     .map(([label]) => label);
@@ -146,6 +161,8 @@ function score(message: AssistantMessage): RoundResult {
     disabledWording: disabledMatches.length > 0,
     disabledMatches,
     delegateTaskCalls: toolCalls.filter((call) => call.function?.name === 'delegate_task').length,
+    connectorCalls: toolCalls.filter((call) => call.function?.name === 'reminders'
+      || call.function?.name?.startsWith('reminders_')).length,
     remindersCreateCalls: toolCalls.filter((call) => call.function?.name === 'reminders_create').length,
     backgroundNotice: /后台(?:任务)?[^。.!！?？\n]{0,32}(?:运行|执行|开始|处理)|(?:正在|已经|已)[^。.!！?？\n]{0,32}后台/.test(text),
   };
@@ -154,18 +171,16 @@ function score(message: AssistantMessage): RoundResult {
 async function chatCall(
   apiKey: string,
   tier: ReplayTier,
-  prompt: string,
+  messages: ChatMessage[],
+  tools: Array<Record<string, unknown>>,
 ): Promise<AssistantMessage> {
   const response = await fetch(`${tier.baseUrl}/chat/completions`, {
     method: 'POST',
     headers: { Authorization: `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
     body: JSON.stringify({
       model: tier.model,
-      messages: [
-        { role: 'system', content: getSessionCommandCenterBrainContextForPrompt(prompt).join('\n') },
-        { role: 'user', content: prompt },
-      ],
-      tools: wireTools(prompt),
+      messages,
+      tools,
       tool_choice: 'auto',
       temperature: TEMPERATURE,
       max_tokens: MAX_OUTPUT_TOKENS,
@@ -182,6 +197,52 @@ async function chatCall(
   return message;
 }
 
+function replayToolOutput(call: ToolCall): string {
+  const name = call.function?.name;
+  if (name === 'delegate_task') {
+    return 'accepted：后台任务「回放」(replay-task) 已开始。accepted 不等于完成；结果只以后续任务终态回流为准。';
+  }
+  if (name === 'reminders') {
+    return JSON.stringify({ ok: true, lists: ['提醒事项'], reminders: [] });
+  }
+  if (name === 'reminders_create') {
+    return JSON.stringify({ ok: true, list: '提醒事项', title: '交报告', status: 'created' });
+  }
+  return JSON.stringify({ ok: false, code: 'REPLAY_UNSUPPORTED_TOOL', tool: name ?? 'unknown' });
+}
+
+async function runRound(
+  apiKey: string,
+  tier: ReplayTier,
+  prompt: string,
+  tools: Array<Record<string, unknown>>,
+): Promise<AssistantMessage[]> {
+  const messages: ChatMessage[] = [
+    { role: 'system', content: getSessionCommandCenterBrainContextForPrompt(prompt).join('\n') },
+    { role: 'user', content: prompt },
+  ];
+  const assistantMessages: AssistantMessage[] = [];
+  for (let step = 0; step < MAX_MODEL_STEPS; step += 1) {
+    const message = await chatCall(apiKey, tier, messages, tools);
+    assistantMessages.push(message);
+    const toolCalls = Array.isArray(message.tool_calls) ? message.tool_calls : [];
+    if (toolCalls.length === 0) break;
+    messages.push({
+      role: 'assistant',
+      content: typeof message.content === 'string' ? message.content : null,
+      tool_calls: toolCalls,
+    });
+    for (const [index, call] of toolCalls.entries()) {
+      messages.push({
+        role: 'tool',
+        content: replayToolOutput(call),
+        tool_call_id: call.id ?? `replay-${step}-${index}`,
+      });
+    }
+  }
+  return assistantMessages;
+}
+
 async function runPrompt(
   apiKey: string,
   provider: Provider,
@@ -191,14 +252,17 @@ async function runPrompt(
   const totals: PromptTotals = {
     disabledWording: 0,
     delegateTaskCalls: 0,
+    connectorCalls: 0,
     remindersCreateCalls: 0,
     backgroundNotice: 0,
   };
+  const tools = wireTools(prompt.text);
   for (let round = 1; round <= ROUNDS; round += 1) {
-    const message = await chatCall(apiKey, tier, prompt.text);
-    const result = score(message);
+    const messages = await runRound(apiKey, tier, prompt.text, tools);
+    const result = score(messages);
     totals.disabledWording += Number(result.disabledWording);
     totals.delegateTaskCalls += result.delegateTaskCalls;
+    totals.connectorCalls += result.connectorCalls;
     totals.remindersCreateCalls += result.remindersCreateCalls;
     totals.backgroundNotice += Number(result.backgroundNotice);
     console.log([
@@ -209,13 +273,14 @@ async function runPrompt(
       `disabled_wording=${Number(result.disabledWording)}`,
       `disabled_matches=${JSON.stringify(result.disabledMatches)}`,
       `delegate_task_calls=${result.delegateTaskCalls}`,
+      `connector_calls=${result.connectorCalls}`,
       `reminders_create_calls=${result.remindersCreateCalls}`,
       `background_notice=${Number(result.backgroundNotice)}`,
-      `assistant_text=${JSON.stringify(message.content ?? '')}`,
-      `tool_calls=${JSON.stringify(message.tool_calls ?? [])}`,
+      `assistant_messages=${JSON.stringify(messages)}`,
+      `tool_calls=${JSON.stringify(messages.flatMap((message) => message.tool_calls ?? []))}`,
     ].join(' '));
   }
-  console.log(`SUMMARY provider=${provider} prompt=${prompt.id} rounds=${ROUNDS} disabled_wording=${totals.disabledWording} delegate_task=${totals.delegateTaskCalls} reminders_create=${totals.remindersCreateCalls} background_notice=${totals.backgroundNotice}`);
+  console.log(`SUMMARY provider=${provider} prompt=${prompt.id} rounds=${ROUNDS} disabled_wording=${totals.disabledWording} delegate_task=${totals.delegateTaskCalls} connector_calls=${totals.connectorCalls} reminders_create=${totals.remindersCreateCalls} background_notice=${totals.backgroundNotice}`);
   return totals;
 }
 
@@ -236,7 +301,9 @@ function afterFailures(results: Record<PromptId, PromptTotals>): string[] {
   for (const id of ['P1', 'P2'] as const) {
     if (results[id].disabledWording !== 0) failures.push(`${id}: disabled wording`);
     if (results[id].delegateTaskCalls !== ROUNDS) failures.push(`${id}: delegate_task ${results[id].delegateTaskCalls}/${ROUNDS}`);
+    if (results[id].backgroundNotice !== ROUNDS) failures.push(`${id}: background notice ${results[id].backgroundNotice}/${ROUNDS}`);
   }
+  if (results.P3.connectorCalls < ROUNDS) failures.push(`P3: connector calls ${results.P3.connectorCalls}/${ROUNDS}`);
   if (results.P3.remindersCreateCalls !== ROUNDS) failures.push(`P3: reminders_create ${results.P3.remindersCreateCalls}/${ROUNDS}`);
   if (results.P3.delegateTaskCalls !== 0) failures.push(`P3: delegate_task ${results.P3.delegateTaskCalls}`);
   return failures;

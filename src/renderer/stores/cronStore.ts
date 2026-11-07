@@ -139,14 +139,18 @@ export const useCronStore = create<CronState>()((set, get) => ({
   loadExecutions: async (jobId, limit = 20) => {
     try {
       const executions = await cronClient.getExecutions(jobId, limit);
+      // host 契约返回旧→新（cronPersistence LIMIT+reverse），store 统一归一成新→旧（FB-591）。
+      const sorted = [...executions].sort(
+        (a, b) => b.scheduledAt - a.scheduledAt || (b.startedAt ?? 0) - (a.startedAt ?? 0)
+      );
       set((state) => ({
         executionsByJobId: {
           ...state.executionsByJobId,
-          [jobId]: executions,
+          [jobId]: sorted,
         },
         latestExecutions: {
           ...state.latestExecutions,
-          [jobId]: executions[0] || executions[executions.length - 1] || null,
+          [jobId]: sorted[0] ?? null,
         },
       }));
     } catch (error) {

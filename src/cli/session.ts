@@ -32,6 +32,8 @@ export interface SessionCreateOptions {
   title?: string;
   modelConfig: ModelConfig;
   workingDirectory?: string;
+  /** 建行时写入的归属用户；缺省 NULL（纯 CLI 无登录）。 */
+  userId?: string | null;
 }
 
 export interface SessionScopedMessageOptions extends SessionCreateOptions {
@@ -114,6 +116,7 @@ export class CLISessionManager {
     const now = Date.now();
     db.createSession({
       id: sessionId,
+      ...(options.userId ? { userId: options.userId } : {}),
       title: options.title || this.generateSessionTitle(),
       modelConfig: options.modelConfig,
       workingDirectory: options.workingDirectory,

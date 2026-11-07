@@ -104,6 +104,12 @@ export interface UseChatInputSubmitParams {
   artifactReferences?: ConversationArtifactReference[];
   currentSessionId: string | null;
   isProcessing?: boolean;
+  /**
+   * 定时任务运行记录会话（readOnly + origin cron/heartbeat）：发送永远走 onSend
+   * （fork 出新对话投递），绝不排进本会话的 queued_inputs——运行记录一行不改。
+   * 运行中在记录会话里发话也一样：排队会把消息写进记录会话。
+   */
+  neverQueueToSession?: boolean;
   disabled?: boolean;
   isUploading: boolean;
   onSend: (envelope: ConversationEnvelope) => boolean | Promise<boolean>;
@@ -193,6 +199,7 @@ export function useChatInputSubmit(params: UseChatInputSubmitParams) {
     artifactReferences = [],
     currentSessionId,
     isProcessing,
+    neverQueueToSession,
     disabled,
     isUploading,
     onSend,
@@ -732,7 +739,7 @@ export function useChatInputSubmit(params: UseChatInputSubmitParams) {
           generateMessageId,
         );
         const stamped: ConversationEnvelope = { ...envelope, clientMessageId };
-        if (isProcessing && !opts?.steer && !opts?.toBackground) {
+        if (isProcessing && !neverQueueToSession && !opts?.steer && !opts?.toBackground) {
           if (!currentSessionId) return false;
           const queuedEnvelope: ConversationEnvelope = {
             ...stamped,

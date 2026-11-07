@@ -64,6 +64,7 @@ import { openSideChat as openSideChatLayer } from '../sideChatFloaterState';
 import { parseBtwCommand } from './parseBtwCommand';
 import { shouldClearComposerAfterSend } from './utils';
 import type { ComposerDraftSendOutcome } from './composerDraftStore';
+import { useComposerRejectedUploadsStore } from '../../../../stores/composerRejectedUploadsStore';
 
 type VoiceInputContextValue = {
   anchor: string;
@@ -716,6 +717,7 @@ export function useChatInputSubmit(params: UseChatInputSubmitParams) {
       setValue('');
       setVoiceInputContext(null);
       setAttachments([]);
+      useComposerRejectedUploadsStore.getState().clear();
       setPendingPromptCommand(null);
       setPendingAgentSelection(null);
       if (typeof setSessionReferences === 'function') setSessionReferences([]);

@@ -73,8 +73,11 @@ export const AppshotsSettings: React.FC = () => {
     pollUntilRef.current = hotkeyPollUntil;
     if (hotkeyPollUntil === 0) return;
     const interval = setInterval(() => {
+      if (Date.now() >= pollUntilRef.current) {
+        setHotkeyPollUntil(0);
+        return;
+      }
       void refreshHotkeyStatus();
-      if (Date.now() >= pollUntilRef.current) setHotkeyPollUntil(0);
     }, 2000);
     return () => clearInterval(interval);
   }, [hotkeyPollUntil, refreshHotkeyStatus]);
@@ -83,13 +86,13 @@ export const AppshotsSettings: React.FC = () => {
   const handleEnableHotkey = async () => {
     if (!isNativeCommandRuntimeAvailable()) return;
     setHotkeyRequesting(true);
+    setHotkeyPollUntil(Date.now() + 60_000);
     try {
       setHotkeyStatus(await invokeNativeCommandAction('requestAppshotsHotkeyAccess'));
     } catch (error) {
       logger.error('Failed to request appshots hotkey access', error);
     } finally {
       setHotkeyRequesting(false);
-      setHotkeyPollUntil(Date.now() + 60_000);
     }
   };
 

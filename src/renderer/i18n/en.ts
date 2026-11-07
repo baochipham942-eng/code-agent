@@ -604,12 +604,7 @@ export const en = {
       simple: {
         name: 'Simple',
         description: 'Clean interface for beginners',
-        features: [
-          'Basic chat interface',
-          'Essential tools only',
-          'Minimal configuration',
-          'Auto-generated prompts',
-        ],
+        features: ['Basic chat interface', 'Essential tools only', 'Minimal configuration', 'Auto-generated prompts'],
       },
       standard: {
         name: 'Standard',

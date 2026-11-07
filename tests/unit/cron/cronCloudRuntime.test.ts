@@ -1,7 +1,10 @@
 import { describe, expect, it, vi } from 'vitest';
 import { CronCloudRuntime } from '../../../src/host/cron/cronCloudRuntime';
 import type { CronJobDefinition, CronJobExecution } from '../../../src/shared/contract/cron';
-import { CRON_CLOUD_UNAVAILABLE_MESSAGE_ZH } from '../../../src/shared/utils/cronCloudUnavailable';
+import {
+  CRON_CLOUD_UNAVAILABLE_MESSAGE_EN,
+  CRON_CLOUD_UNAVAILABLE_MESSAGE_ZH,
+} from '../../../src/shared/utils/cronCloudUnavailable';
 
 function cloudJob(): CronJobDefinition {
   return {
@@ -161,6 +164,68 @@ describe('CronCloudRuntime.recordFailure 失败钩子', () => {
 
     expect(executions).toHaveLength(1);
     expect(executions[0]?.status).toBe('failed');
+  });
+});
+
+// N-CRON-CLOUD-DOWN-NOTICE-MIXED-LANG：runJob 失败的落库报文只剩语言固定句，英文底因
+// （'Cloud cron API is not configured.' 等）必须先进日志（recordFailure 同款格式），
+// 否则中英混排修好的同时排查线索也丢了（FB-547）。
+describe('CronCloudRuntime.runJob 失败留痕', () => {
+  it('未配置：抛语言固定句，英文底因以 recordFailure 同款格式进 console.warn', async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    try {
+      const runtime = new CronCloudRuntime(
+        () => undefined,
+        {
+          getJobs: () => [{ definition: cloudJob(), cloudJobId: 'remote-1' }],
+          persistJob: async () => {},
+          persistExecution: async () => {},
+          loadExecutionStatus: () => undefined,
+          onCompleted: async () => {},
+          unavailableMessage: () => CRON_CLOUD_UNAVAILABLE_MESSAGE_ZH,
+        },
+      );
+
+      const caught = await runtime.runJob(cloudJob()).then(
+        () => { throw new Error('runJob should have rejected'); },
+        (error: unknown) => error,
+      );
+      expect(caught).toBeInstanceOf(Error);
+      expect((caught as Error).message).toBe(CRON_CLOUD_UNAVAILABLE_MESSAGE_ZH);
+      expect(warn).toHaveBeenCalledTimes(1);
+      expect(warn).toHaveBeenCalledWith(
+        '[CronService] Cloud job operation failed for local-job-1:',
+        'Cloud cron API is not configured.',
+      );
+    } finally {
+      warn.mockRestore();
+    }
+  });
+
+  it('fetch 打不通：同样抛固定句、底因进日志（真实断网的 cause 链形状）', async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    try {
+      const runtime = new CronCloudRuntime(
+        () => ({ baseUrl: 'https://cron.example.test', token: 'secret-token' }),
+        {
+          getJobs: () => [{ definition: cloudJob(), cloudJobId: 'remote-1' }],
+          persistJob: async () => {},
+          persistExecution: async () => {},
+          loadExecutionStatus: () => undefined,
+          onCompleted: async () => {},
+          unavailableMessage: () => CRON_CLOUD_UNAVAILABLE_MESSAGE_EN,
+        },
+        vi.fn(async () => { throw new Error('fetch failed'); }) as unknown as typeof fetch,
+      );
+
+      await expect(runtime.runJob(cloudJob())).rejects.toThrow(CRON_CLOUD_UNAVAILABLE_MESSAGE_EN);
+      expect(warn).toHaveBeenCalledWith(
+        '[CronService] Cloud job operation failed for local-job-1:',
+        'Cloud cron API is unavailable.',
+      );
+    } finally {
+      warn.mockRestore();
+    }
   });
 });
 

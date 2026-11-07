@@ -16,7 +16,7 @@ const logger = createLogger('ContextCompressor');
 /**
  * Compression strategy types
  */
-export type CompressionStrategyType =
+type CompressionStrategyType =
   | 'truncate'
   | 'ai_summary'
   | 'code_extract'

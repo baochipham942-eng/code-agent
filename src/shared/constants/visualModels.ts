@@ -6,8 +6,8 @@ export type ImageCap = 't2i' | 'maskEdit' | 'expand' | 'annotEdit';
 export type StaticImageEngineId = 'wanx' | 'cogview' | 'flux' | 'gptimage';
 // 'openai-compat'：用户自填的 OpenAI 兼容生图端点（借鉴项①）。仅 t2i，不进任何静态 helper
 // （imageEngineForModel 只认内置表且对 openai-compat 显式抛错，custom id 走 IPC 独立分支）。
-export type ImageEngineId = StaticImageEngineId | 'openai-compat';
-export type VisualProviderId = 'dashscope' | 'zhipu' | 'openrouter' | 'gptimage' | 'minimax' | 'google' | 'ark' | 'custom';
+type ImageEngineId = StaticImageEngineId | 'openai-compat';
+type VisualProviderId = 'dashscope' | 'zhipu' | 'openrouter' | 'gptimage' | 'minimax' | 'google' | 'ark' | 'custom';
 
 export interface VisualImageModel {
   /** 切换器/持久化用的稳定选择键。 */

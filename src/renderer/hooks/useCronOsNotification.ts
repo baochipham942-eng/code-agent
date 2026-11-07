@@ -3,6 +3,7 @@ import { IPC_CHANNELS, type NotificationShowEvent } from '@shared/ipc';
 import { useAppStore } from '../stores/appStore';
 import { useSessionStore } from '../stores/sessionStore';
 import { isSecondaryPageActive } from '../utils/secondaryPageActive';
+import { useWorkbenchFocusStore } from '../stores/workbenchFocusStore';
 import { useCronStore } from '../stores/cronStore';
 import { toast } from './useToast';
 import { createMissedAlertQueue } from './missedAlertsOnReturn';
@@ -80,6 +81,9 @@ export function useCronOsNotification(
         const viewingSession = needsInput
           && !!event.sessionId
           && !isSecondaryPageActive(useAppStore.getState())
+          // 专注模式收起聊天列，审批卡不在屏幕上（App.tsx 只在 !workbenchFocusActive
+          // 时渲染聊天列，且右栏不可见时 store 会被复位）——不能算「正看着该会话」。
+          && !useWorkbenchFocusStore.getState().workbenchFocused
           && useSessionStore.getState().currentSessionId === event.sessionId;
         void postOsNotification(translateCronOsNotification(
           event,

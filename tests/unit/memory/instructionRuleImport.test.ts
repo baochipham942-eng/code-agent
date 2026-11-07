@@ -189,11 +189,12 @@ describe('instruction rule import（用户级说明文件拆条）', () => {
 
     const rerun = await dryRunMemoryHarnessImport(db, { homeDir, adapterIds: ['codex-local-custom'] });
     expect(rerun.instructions.map((item) => item.content)).not.toContain('每条回复结尾都带一行 —— 已收到');
-    expect(rerun.skipped).toContainEqual({
+    expect(rerun.skipped).toContainEqual(expect.objectContaining({
       adapterId: 'codex-local-custom',
       sourcePath: path.join(homeDir, '.codex', 'AGENTS.md'),
       reason: 'directive-already-imported',
-    });
+      contentHash: target.contentHash,
+    }));
     expect(rerun.instructions).toHaveLength(3);
   });
 

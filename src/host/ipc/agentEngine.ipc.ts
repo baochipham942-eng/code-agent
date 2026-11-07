@@ -33,6 +33,11 @@ import {
 } from '../services/agentEngine/agentEngineHistoryImport';
 import { getSessionManager } from '../services/infra/sessionManager';
 import { getSkillsSyncState, setSkillsSyncMode } from '../externalImport/skillsAutoSync';
+import {
+  confirmInstructionsSyncItem,
+  getInstructionsSyncState,
+  setInstructionsSyncMode,
+} from '../externalImport/instructionsAutoSync';
 import { getChatsSyncState, importRecentChatsSingleFlight, setChatsSyncMode } from '../externalImport/chatsAutoSync';
 import * as fsp from 'node:fs/promises';
 import { getDefaultWorkDirectory } from '../config/configPaths';
@@ -138,6 +143,29 @@ const agentEngineHandlers: RawDomainRouteHandlers<AgentEngineDomainRequest, void
       };
     }
     return { success: true, data: await setSkillsSyncMode(mode) };
+  },
+  getInstructionsSync: async (_ctx, _requestPayload) => {
+    return { success: true, data: await getInstructionsSyncState() };
+  },
+  setInstructionsSync: async (_ctx, requestPayload) => {
+    const mode = (requestPayload as { mode?: unknown } | undefined)?.mode;
+    if (mode !== 'off' && mode !== 'on' && mode !== 'paused') {
+      return {
+        success: false,
+        error: { code: 'INVALID_PAYLOAD', message: 'setInstructionsSync requires mode off | on | paused.' },
+      };
+    }
+    return { success: true, data: await setInstructionsSyncMode(mode) };
+  },
+  confirmInstructionsSyncItem: async (_ctx, requestPayload) => {
+    const instructionId = (requestPayload as { instructionId?: unknown } | undefined)?.instructionId;
+    if (typeof instructionId !== 'string' || !instructionId) {
+      return {
+        success: false,
+        error: { code: 'INVALID_PAYLOAD', message: 'confirmInstructionsSyncItem requires instructionId.' },
+      };
+    }
+    return { success: true, data: await confirmInstructionsSyncItem(instructionId) };
   },
   listModels: async (_ctx, _requestPayload) => {
     const data = await getRemoteAgentEngineModelCatalogService().readCatalog();

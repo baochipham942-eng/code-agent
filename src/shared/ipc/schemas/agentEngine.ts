@@ -11,9 +11,11 @@ import { channelSchema } from './core';
 
 const AgentEngineDomainRequestSchema = z.object({
   action: z.enum([
+    'confirmInstructionsSyncItem',
     'detect',
     'get',
     'getChatsSync',
+    'getInstructionsSync',
     'getSkillsSync',
     'importHistory',
     'importRecentChats',
@@ -26,6 +28,7 @@ const AgentEngineDomainRequestSchema = z.object({
     'select',
     'selectModel',
     'setChatsSync',
+    'setInstructionsSync',
     'setSkillsSync',
     'undoImportHistory',
   ]),

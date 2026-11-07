@@ -16,6 +16,9 @@ import {
   type ImportHistoryUndone,
 } from '../../shared/contract/importHistory';
 import { getSkillsDir } from '../config';
+import { archiveMemoryFile, readMemoryFile } from '../lightMemory/lightMemoryIpc';
+import { rebuildMemoryMirrorFromLightFiles } from '../memory/memoryEntryRuntime';
+import { contentHash } from '../memory/importers/markdown';
 import { createLogger } from '../services/infra/logger';
 import { listImportHistory, updateImportHistoryEntry } from './importHistory';
 import { digestSkillDir } from './skillDirDigest';
@@ -61,6 +64,19 @@ async function undoSkill(item: ImportHistoryItem): Promise<Outcome> {
   return { removed: true };
 }
 
+async function undoInstruction(item: ImportHistoryItem): Promise<Outcome> {
+  const current = await readMemoryFile(item.memoryFilename as string);
+  if (!current || current.status === 'archived') return { removed: false, reason: 'missing' };
+  if (contentHash(current.content) !== item.contentHash) return { removed: false, reason: 'edited' };
+  const archived = await archiveMemoryFile(item.memoryFilename as string);
+  return archived ? { removed: true } : { removed: false, reason: 'missing' };
+}
+
+async function refreshInstructionMirror(): Promise<void> {
+  const { getDatabase } = await import('../services/core/databaseService');
+  await rebuildMemoryMirrorFromLightFiles(getDatabase(), { journal: { actor: 'import' } });
+}
+
 async function refreshSkillDiscovery(): Promise<void> {
   try {
     const { getSkillDiscoveryService } = await import('../services/skills/skillDiscoveryService');
@@ -86,7 +102,11 @@ export async function undoImportHistoryEntry(entryId: string): Promise<ImportHis
     if (!isUndoableImportItem(entry, item)) continue;
     let outcome: Outcome;
     try {
-      outcome = entry.category === 'chats' ? await undoChat(entry, item) : await undoSkill(item);
+      outcome = entry.category === 'chats'
+        ? await undoChat(entry, item)
+        : entry.category === 'skills'
+          ? await undoSkill(item)
+          : await undoInstruction(item);
     } catch (error) {
       logger.warn('import undo item failed; keeping it', {
         category: entry.category,
@@ -103,6 +123,7 @@ export async function undoImportHistoryEntry(entryId: string): Promise<ImportHis
     }
   }
   if (entry.category === 'skills' && removed > 0) await refreshSkillDiscovery();
+  if (entry.category === 'instructions' && removed > 0) await refreshInstructionMirror();
 
   const undone: ImportHistoryUndone = { at: Date.now(), removed, kept };
   const updated = await updateImportHistoryEntry(entryId, (current) => ({ ...current, undone }));

@@ -145,6 +145,7 @@ export async function dryRunMemoryHarnessImport(
           adapterId: item.adapterId,
           sourcePath: item.sourcePath,
           reason: 'directive-already-imported',
+          contentHash: hash,
         });
         continue;
       }

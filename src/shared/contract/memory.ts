@@ -117,6 +117,8 @@ interface MemoryImportSkippedItem {
   adapterId: MemoryImportAdapterId;
   sourcePath: string;
   reason: string;
+  /** Present for content-dedupe skips so sync ledgers can suppress them without paths. */
+  contentHash?: string;
 }
 
 interface MemoryImportDryRunCandidate {

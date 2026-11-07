@@ -78,6 +78,36 @@ describe('RunFinalizer 失败事件', () => {
     expect(buildCompletionSummaryRecord).toHaveBeenCalledWith(expect.objectContaining({ status: 'failed' }));
   });
 
+  it.each([
+    ['纯问答模型连续空输出（L3 续接用尽）', [] as never[], '模型这次没有返回任何内容'],
+    ['跑过工具但没有总结', [{ id: 'tc1', name: 'bash', arguments: {} }] as never[], '请直接查看上面的工具结果'],
+  ])('%s：空终态只发一次人话 RUN_FAILED，文案按原因区分且不落空助手消息', async (_name, toolCalls, expected) => {
+    const events: AgentEvent[] = [];
+    const addAndPersistMessage = vi.fn();
+    const finalizer = new RunFinalizer({
+      sessionId: 'empty-reason', persistLongTermMemory: false,
+      nudgeManager: { getModifiedFiles: () => new Set() },
+      onEvent: (event: AgentEvent) => events.push(event),
+      modelConfig: { provider: 'claude', model: 'test' },
+      messages: [
+        { id: 'u1', role: 'user', content: '只回答两个字：收到', timestamp: 1 },
+        ...(toolCalls.length ? [{ id: 'a0', role: 'assistant', content: '', timestamp: 2, toolCalls }] : []),
+      ],
+      maxIterations: 10,
+      stats: { traceId: 'empty-reason', totalInputTokens: 0, totalOutputTokens: 0, queueDiagnostic: vi.fn() },
+      control: { isCancelled: false, isInterrupted: false },
+      circuitBreaker: { isTripped: () => false, reset: vi.fn() },
+      turn: { currentTurnId: null },
+    } as never);
+    finalizer.setModules({ generateId: () => 'a1', addAndPersistMessage } as never,
+      { runPostRun: vi.fn(), runSessionEndLearning: vi.fn() } as never);
+    await finalizer.finalizeRun(1, 'q', { endTrace: vi.fn(), flush: vi.fn(async () => undefined) } as never, 1, { status: 'completed' });
+    const errors = events.filter((e) => e.type === 'error');
+    expect(errors).toHaveLength(1);
+    expect(errors[0].data).toEqual(expect.objectContaining({ code: 'RUN_FAILED', message: expect.stringContaining(expected) }));
+    expect(addAndPersistMessage).not.toHaveBeenCalled();
+  });
+
   it('无人值守轮允许空最终说明保持 completed', async () => {
     const events: AgentEvent[] = [];
     const finalizer = new RunFinalizer({

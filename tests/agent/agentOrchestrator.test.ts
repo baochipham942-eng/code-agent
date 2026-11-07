@@ -351,6 +351,7 @@ import type { PendingApprovalRepository } from '../../src/host/services/core/rep
 import { SteerRejectedError } from '../../src/host/agent/runtime/conversationRuntime';
 import type { ConfigService } from '../../src/host/services/core/configService';
 import type { AgentEvent, Message, MessageAttachment, PermissionAskResult, PermissionRequest } from '../../src/shared/contract';
+import { PARKED_APPROVAL_CLOSURE_SENTENCES } from '../../src/shared/parkedApprovalClosure';
 import type { AgentRunOptions } from '../../src/host/research/types';
 import { getAllToolDefinitions } from '../../src/host/tools/dispatch/toolDefinitions';
 import { getToolSearchService } from '../../src/host/services/toolSearch/toolSearchService';
@@ -2032,7 +2033,7 @@ describe('AgentOrchestrator', () => {
         const promise = parkRequest(unattendedSid);
         const requestId = fake.insert.mock.calls[0][0].id as string;
         vi.advanceTimersByTime(86_400_000);
-        expect(await promise).toEqual({ approved: false, denialSource: 'timeout', message: 'parked approval expired' });
+        expect(await promise).toEqual({ approved: false, denialSource: 'timeout', message: PARKED_APPROVAL_CLOSURE_SENTENCES.expiredAfterRestart24h });
         expect(fake.rows.get(requestId)?.status).toBe('rejected');
       } finally {
         vi.useRealTimers();

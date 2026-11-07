@@ -32,7 +32,7 @@ const scriptPath = fileURLToPath(import.meta.url);
 const repoRoot = path.resolve(path.dirname(scriptPath), '..');
 
 export const SCAN_ROOTS = ['src/host/tools', 'src/host/memory'];
-export const BASELINE_MAX = 152;
+export const BASELINE_MAX = 151;
 
 const SOURCE_EXTENSIONS = new Set(['.ts', '.tsx']);
 const HAN_RE = /[\u3400-\u4dbf\u4e00-\u9fff\uf900-\ufaff]/u;

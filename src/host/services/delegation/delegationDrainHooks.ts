@@ -15,7 +15,7 @@ import {
 } from '../core/repositories/SessionDelegationRepository';
 import { getDatabase } from '../core/databaseService';
 import { getPermissionModeManager } from '../../permissions/modes';
-import { evaluateFolderTrust } from '../../security/folderTrustService';
+import { evaluateFolderTrustForDelegation } from './delegationFolderTrust';
 import {
   evaluateDelegationDelivery,
   isDeliveryFailedAbort,
@@ -83,10 +83,7 @@ export function createHostDelegationRuntime(input: {
         return 'unresolved';
       }
     },
-    evaluateFolderTrust: async (workingDirectory) => {
-      const evaluation = await evaluateFolderTrust(workingDirectory);
-      return { state: evaluation.state, blockedItems: evaluation.blockedItems.length };
-    },
+    evaluateFolderTrust: (workingDirectory) => evaluateFolderTrustForDelegation(workingDirectory),
     getActiveRunId: input.getActiveRunId,
     logger: input.logger,
   };

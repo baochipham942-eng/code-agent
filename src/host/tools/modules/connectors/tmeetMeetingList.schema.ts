@@ -39,5 +39,8 @@ Optional filters:
   category: 'mcp',
   permissionLevel: 'read',
   readOnly: true,
+  // Meeting subject/creator/note are written by the meeting creator — an
+  // arbitrary external Tencent account, not a workspace member.
+  readsUntrustedContent: 'block',
   allowInPlanMode: true,
 };

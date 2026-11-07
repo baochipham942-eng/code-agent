@@ -1253,6 +1253,9 @@ export class ToolExecutor {
       return {
         success: false,
         error: guardFabricGate.deny.error,
+        metadata: guardFabricGate.deny.hostReason
+          ? { hostReason: guardFabricGate.deny.hostReason }
+          : undefined,
       };
     }
     if (guardFabricGate.forceApproval) {

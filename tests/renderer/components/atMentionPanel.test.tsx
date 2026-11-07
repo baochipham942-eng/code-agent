@@ -271,6 +271,65 @@ describe('useAtMentionPanel', () => {
     expect(mocks.setSessionPin).not.toHaveBeenCalled();
   });
 
+  // FB-586：工作区文件列表拉取失败时 catch 也会 setIsOpen(true)，面板开着但 0 行。
+  // 此时裸 Enter 曾一路漏给提交链路，发出一条只有 "@" 的消息。
+  function mockEmptySources(): void {
+    mocks.listLibraryItems.mockResolvedValue([]);
+    mocks.listProjects.mockResolvedValue([]);
+    mocks.getProjectArtifacts.mockResolvedValue([]);
+    (window as { domainAPI?: unknown }).domainAPI = {
+      invoke: vi.fn().mockResolvedValue({ success: true, data: [] }),
+    };
+  }
+
+  it('空面板（0 行）时裸 Enter 被吞掉并关面板：不再漏给提交链路发出裸 @（FB-586）', async () => {
+    mockEmptySources();
+    const { result } = setup();
+    await openPanel(result);
+
+    expect(result.current.isOpen).toBe(true);
+    expect(result.current.flatRows).toHaveLength(0);
+    const enter = keyEvent('Enter');
+    let handled = false;
+    act(() => { handled = result.current.handleKeyDown(enter); });
+    expect(handled).toBe(true);
+    expect(enter.preventDefault).toHaveBeenCalled();
+    expect(result.current.isOpen).toBe(false);
+  });
+
+  it('空面板 ArrowDown 被吞掉（光标不跳出），随后 Enter 也不再返回 false 漏给提交', async () => {
+    mockEmptySources();
+    const { result } = setup();
+    await openPanel(result);
+
+    const down = keyEvent('ArrowDown');
+    let downHandled = false;
+    act(() => { downHandled = result.current.handleKeyDown(down); });
+    expect(downHandled).toBe(true);
+    expect(down.preventDefault).toHaveBeenCalled();
+    const enter = keyEvent('Enter');
+    let enterHandled: boolean | undefined = true;
+    act(() => { enterHandled = result.current.handleKeyDown(enter); });
+    expect(enterHandled).not.toBe(false);
+    expect(enter.preventDefault).toHaveBeenCalled();
+  });
+
+  it('空面板时 IME 组合中的 Enter 仍返回 false：不关面板、不选中、不 preventDefault', async () => {
+    mockEmptySources();
+    const { result } = setup();
+    await openPanel(result);
+
+    const imeEnter = {
+      key: 'Enter',
+      preventDefault: vi.fn(),
+      nativeEvent: { isComposing: true, keyCode: 229 },
+    } as unknown as React.KeyboardEvent<HTMLTextAreaElement>;
+    expect(result.current.handleKeyDown(imeEnter)).toBe(false);
+    expect(imeEnter.preventDefault).not.toHaveBeenCalled();
+    expect(result.current.isOpen).toBe(true);
+    expect(mocks.setSessionPin).not.toHaveBeenCalled();
+  });
+
   it('Esc 关闭后面板不因同一段文本再次弹开', async () => {
     const { result } = setup();
     await openPanel(result);

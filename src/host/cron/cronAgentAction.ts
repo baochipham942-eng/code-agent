@@ -35,6 +35,21 @@ import type { CronPermissionDeniedMarker } from '../../shared/contract/sessionAu
 
 const logger = createLogger('CronAgentAction');
 
+/** 包月（价表 0 元）模型上设了美元单次上限：上限永不触发，留痕但不改闸门行为。 */
+function warnIfBudgetCapCannotTrigger(
+  definition: CronJobDefinition,
+  modelConfig: { provider: string; model: string } | undefined,
+): void {
+  if ((definition.maxRunBudget ?? 0) <= 0 || !modelConfig) return;
+  if (!isZeroPricedModel(modelConfig.provider, modelConfig.model)) return;
+  logger.warn('Run budget cap cannot trigger on a zero-priced model', {
+    jobId: definition.id,
+    model: modelConfig.model,
+    maxRunBudget: definition.maxRunBudget,
+    reason: 'cap cannot trigger on a zero-priced model',
+  });
+}
+
 export interface CronAgentActionHost {
   /** 从内存 job 表取该任务当前定义（快照写回与常设刷新结算都要最新底稿）。 */
   loadJob: (jobId: string) => CronJobDefinition | undefined;
@@ -125,19 +140,7 @@ export async function executeCronAgentAction(
   // 常设刷新（metadata.artifactRefresh）：跑前建快照记基线；非刷新任务返回 undefined 零扰动
   // N-CRON-RUN-LEDGER-VISIBLE：单次运行成本计量（maxRunBudget 有值时计量器兼任预算闸，见 cronRunCostMeter 头注）。
   const costMeter = createCronRunCostMeterForExecution(definition.maxRunBudget, executionId);
-  const runModel = cronSession.modelConfig;
-  if (
-    (definition.maxRunBudget ?? 0) > 0
-    && runModel
-    && isZeroPricedModel(runModel.provider, runModel.model)
-  ) {
-    logger.warn('Run budget cap cannot trigger on a zero-priced model', {
-      jobId: definition.id,
-      model: runModel.model,
-      maxRunBudget: definition.maxRunBudget,
-      reason: 'cap cannot trigger on a zero-priced model',
-    });
-  }
+  warnIfBudgetCapCannotTrigger(definition, cronSession.modelConfig);
   const artifactRefresh = beginArtifactRefresh(definition);
   // 观察档（N-TRIGGER-OBSERVE-MODE）：本会话的对外副作用调用由 ToolExecutor 拦下记 would_act。
   const leaveObserveMode = enterObserveModeForCronRun(definition, cronSession.id, executionId);

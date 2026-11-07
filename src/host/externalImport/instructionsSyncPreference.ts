@@ -23,7 +23,7 @@ export interface InstructionsSyncLastRun {
   keptNeo: number;
 }
 
-export interface InstructionsSyncPreferenceState {
+interface InstructionsSyncPreferenceState {
   mode: InstructionsSyncMode;
   lastRun?: InstructionsSyncLastRun;
 }

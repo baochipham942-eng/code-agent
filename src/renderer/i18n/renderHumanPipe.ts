@@ -28,6 +28,9 @@ export const renderHumanPipeZh = {
       copied: '已复制',
       copyError: '复制错误',
       retryFromHere: '从此重试',
+      globEmpty: '没有匹配的文件。',
+      directoryEmpty: '这个文件夹是空的。',
+      moreResultsAvailable: '还有更多结果可查看。',
       recovery: {
         launchBrowserTitle: '启动隔离浏览器',
         launchBrowserDetail: '只启动受管浏览器，不执行点击或输入。',
@@ -153,6 +156,9 @@ export const renderHumanPipeEn: typeof renderHumanPipeZh = {
       copied: 'Copied',
       copyError: 'Copy error',
       retryFromHere: 'Retry from here',
+      globEmpty: 'No matching files.',
+      directoryEmpty: 'This folder is empty.',
+      moreResultsAvailable: 'More results are available.',
       recovery: {
         launchBrowserTitle: 'Start isolated browser',
         launchBrowserDetail: 'Starts the managed browser without clicking or typing.',

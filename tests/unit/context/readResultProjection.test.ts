@@ -5,6 +5,7 @@ import {
   projectReadSubagentMessages,
   projectReadTranscriptEntries,
 } from '../../../src/host/context/readResultProjection';
+import { RAW_READ_RESULT } from '../../fixtures/toolResultDisplayText';
 
 function readCall(id: string, offset = 1, limit = 2, extra: Record<string, unknown> = {}) {
   return { id, name: 'Read', arguments: { file_path: '/tmp/example.ts', offset, limit, ...extra } };
@@ -44,6 +45,21 @@ function structuredMessages(
 }
 
 describe('Read model-facing projection', () => {
+  it('still recognizes the digest in the raw production-shaped display fixture', () => {
+    const entries = [
+      { role: 'assistant', content: '', toolCalls: [readCall('raw-1')] },
+      { role: 'tool', content: RAW_READ_RESULT, toolCallId: 'raw-1' },
+      { role: 'assistant', content: '', toolCalls: [readCall('raw-2')] },
+      { role: 'tool', content: RAW_READ_RESULT, toolCallId: 'raw-2' },
+    ];
+
+    const projected = projectReadTranscriptEntries(entries);
+    expect(projected[1].content).toBe(RAW_READ_RESULT);
+    expect(projected[3].content).toContain('[Read already shown');
+    expect(projected[3].content).toContain('digest=0123456789abcdef');
+    expect(entries[3].content).toBe(RAW_READ_RESULT);
+  });
+
   it('projects only the second same-range Read and leaves persisted results untouched', () => {
     const output = 'Read version digest: abc123\n  1\talpha\n  2\tbeta';
     const messages = structuredMessages(output);

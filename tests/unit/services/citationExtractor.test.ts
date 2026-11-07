@@ -4,12 +4,24 @@
 
 import { describe, it, expect } from 'vitest';
 import { extractCitations } from '../../../src/host/services/citation/citationExtractor';
+import { RAW_READ_RESULT } from '../../fixtures/toolResultDisplayText';
 
 describe('CitationExtractor', () => {
   // --------------------------------------------------------------------------
   // read_file
   // --------------------------------------------------------------------------
   describe('read_file', () => {
+    it('still recognizes the raw production-shaped display fixture', () => {
+      const citations = extractCitations(
+        'Read',
+        'tc-raw-display-fixture',
+        { file_path: '/tmp/notes.txt' },
+        RAW_READ_RESULT,
+      );
+      expect(citations).toHaveLength(1);
+      expect(citations[0]).toMatchObject({ type: 'file', source: '/tmp/notes.txt' });
+    });
+
     it('should extract file citation', () => {
       const citations = extractCitations(
         'read_file',

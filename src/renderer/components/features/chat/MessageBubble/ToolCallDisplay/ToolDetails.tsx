@@ -34,6 +34,7 @@ import {
   isToolInterruptionPlaceholder,
 } from '../../../../../utils/toolExecutionPresentation';
 import { readHostReasonFromMetadata } from '../../../../../utils/hostReasonPresentation';
+import { cleanToolResultDisplayText } from '../../../../../utils/toolResultDisplayText';
 import { useI18n } from '../../../../../hooks/useI18n';
 import type { Translations } from '../../../../../i18n';
 import { useMessageActionStore } from '../../../../../stores/messageActionStore';
@@ -406,7 +407,7 @@ export function ToolDetails({ toolCall, compact, mediaContext }: Props) {
                       : result.error
                         ? stripAnsiCodes(result.error)
                         : typeof result.output === 'string'
-                          ? stripAnsiCodes(result.output)
+                          ? cleanToolResultDisplayText(name, stripAnsiCodes(result.output), copy)
                           : JSON.stringify(result.output, null, 2)
                   }
                   lineCap={isShellTool(name) ? SHELL_RESULT_BODY_LINE_CAP : RESULT_BODY_LINE_CAP}

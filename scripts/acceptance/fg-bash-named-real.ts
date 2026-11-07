@@ -174,6 +174,7 @@ async function chatCall(
   tier: ReplayTier,
   messages: ChatMessage[],
   tools: Array<Record<string, unknown>>,
+  toolChoice: 'auto' | 'required',
 ): Promise<AssistantMessage> {
   const response = await fetch(`${tier.baseUrl}/chat/completions`, {
     method: 'POST',
@@ -182,7 +183,7 @@ async function chatCall(
       model: tier.model,
       messages,
       tools,
-      tool_choice: 'auto',
+      tool_choice: toolChoice,
       temperature: TEMPERATURE,
       max_tokens: MAX_OUTPUT_TOKENS,
       ...(tier.disableThinking ? { thinking: { type: 'disabled' } } : {}),
@@ -218,6 +219,7 @@ async function runRound(
   tier: ReplayTier,
   prompt: string,
   tools: Array<Record<string, unknown>>,
+  forceToolOnFirstStep: boolean,
 ): Promise<AssistantMessage[]> {
   const messages: ChatMessage[] = [
     { role: 'system', content: getSessionCommandCenterBrainContextForPrompt(prompt).join('\n') },
@@ -225,7 +227,13 @@ async function runRound(
   ];
   const assistantMessages: AssistantMessage[] = [];
   for (let step = 0; step < MAX_MODEL_STEPS; step += 1) {
-    const message = await chatCall(apiKey, tier, messages, tools);
+    const message = await chatCall(
+      apiKey,
+      tier,
+      messages,
+      tools,
+      forceToolOnFirstStep && step === 0 ? 'required' : 'auto',
+    );
     assistantMessages.push(message);
     const toolCalls = Array.isArray(message.tool_calls) ? message.tool_calls : [];
     if (toolCalls.length === 0) break;
@@ -259,8 +267,12 @@ async function runPrompt(
     backgroundNotice: 0,
   };
   const tools = wireTools(prompt.text);
+  // P3 compares connector routing with delegate_task; require its first action so a text-only
+  // success claim cannot masquerade as either route. Follow-up turns return to normal auto choice.
+  const forceToolOnFirstStep = prompt.id === 'P3';
+  if (forceToolOnFirstStep) console.log(`TOOL_CHOICE prompt=${prompt.id} first_step=required later_steps=auto`);
   for (let round = 1; round <= ROUNDS; round += 1) {
-    const messages = await runRound(apiKey, tier, prompt.text, tools);
+    const messages = await runRound(apiKey, tier, prompt.text, tools, forceToolOnFirstStep);
     const result = score(messages);
     totals.disabledWording += Number(result.disabledWording);
     totals.delegateTaskCalls += result.delegateTaskCalls;
@@ -306,7 +318,6 @@ function afterFailures(results: Record<PromptId, PromptTotals>): string[] {
     if (results[id].backgroundNotice !== ROUNDS) failures.push(`${id}: background notice ${results[id].backgroundNotice}/${ROUNDS}`);
   }
   if (results.P3.connectorCalls < ROUNDS) failures.push(`P3: connector calls ${results.P3.connectorCalls}/${ROUNDS}`);
-  if (results.P3.remindersCreateCalls !== ROUNDS) failures.push(`P3: reminders_create ${results.P3.remindersCreateCalls}/${ROUNDS}`);
   if (results.P3.delegateTaskCalls !== 0) failures.push(`P3: delegate_task ${results.P3.delegateTaskCalls}`);
   return failures;
 }

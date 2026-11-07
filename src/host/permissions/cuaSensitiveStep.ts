@@ -14,7 +14,8 @@
 import type { ComputerTargetApp } from './computerAppTarget';
 import type { PermissionRequestData } from '../tools/types';
 import { PermissionRequestReason } from '../../shared/contract/permission';
-import { readCuaWindowSecureField } from '../mcp/cuaNarration';
+import { readCuaClickTargets, readCuaWindowSecureField } from '../mcp/cuaNarration';
+import { CUA_SENSITIVE_BUTTON_WORDS, type CuaSensitiveButtonKind } from '../../shared/constants';
 import { parseCuaToolName } from './cuaAppTarget';
 import { createLogger } from '../services/infra/logger';
 
@@ -22,6 +23,30 @@ const logger = createLogger('CuaSensitiveStep');
 
 /** 一期覆盖的文本输入工具；type_text_chars 是驱动 invoke 期别名（不进 tools/list，mod.rs:698-706）。 */
 const SENSITIVE_INPUT_CUA_TOOLS = new Set(['type_text', 'set_value', 'type_text_chars']);
+
+/** 二期点击类工具（element_index 路径 + 像素窗口级兜底）。 */
+const SENSITIVE_CLICK_CUA_TOOLS = new Set(['click', 'double_click', 'right_click']);
+
+const escapeRegExp = (w: string): string => w.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+
+/** 词表编译一次：cjk 子串 + latin 单词边界（repay / payload 不命中），大小写不敏感。 */
+const SENSITIVE_BUTTON_MATCHERS = CUA_SENSITIVE_BUTTON_WORDS.map(({ kind, cjk, latin }) => ({
+  kind,
+  re: new RegExp(
+    [
+      ...cjk.map(escapeRegExp),
+      ...latin.map((w) => `(?<![A-Za-z0-9])${escapeRegExp(w)}(?![A-Za-z0-9])`),
+    ].join('|'),
+    'i',
+  ),
+}));
+
+function matchSensitiveButtonKind(label: string): CuaSensitiveButtonKind | null {
+  for (const { kind, re } of SENSITIVE_BUTTON_MATCHERS) {
+    if (re.test(label)) return kind;
+  }
+  return null;
+}
 
 /** hotkey 粘贴主修饰键（macOS cmd / 跨平台 ctrl 及其常见别名，大小写不敏感）。 */
 const PASTE_PRIMARY_MODIFIERS = new Set(['cmd', 'command', 'ctrl', 'control', 'meta', 'super']);
@@ -101,7 +126,7 @@ function isSensitiveCandidateCuaCall(
 }
 
 export interface CuaSensitiveStep {
-  kind: 'password';
+  kind: 'password' | CuaSensitiveButtonKind;
   /** 目标 secure 字段的 label（公开界面元数据，非秘密本体），供交回卡与回话模板点名。 */
   elementLabel?: string;
 }
@@ -115,6 +140,7 @@ export function classifyCuaSensitiveStep(
   params: Record<string, unknown> | null | undefined,
 ): CuaSensitiveStep | null {
   const tool = parseCuaToolName(executionToolName);
+  if (tool !== null && SENSITIVE_CLICK_CUA_TOOLS.has(tool)) return classifyClick(executionToolName, params ?? {});
   if (tool === null || !isSensitiveCandidateCuaCall(tool, params)) return null;
   const signal = readCuaWindowSecureField(params ?? {});
   if (signal === null) {
@@ -128,6 +154,31 @@ export function classifyCuaSensitiveStep(
   }
   if (!signal.secure) return null;
   return { kind: 'password', ...(signal.label ? { elementLabel: signal.label } : {}) };
+}
+
+/** 点击类：element_index 先 join 目标 label；像素点击退到窗口里是否有命中词表的可点击元素。 */
+function classifyClick(executionToolName: string, params: Record<string, unknown>): CuaSensitiveStep | null {
+  const snapshot = readCuaClickTargets(params);
+  if (snapshot === null) {
+    logger.debug('cua sensitive click: no window snapshot cached, no signal (gap)', {
+      tool: executionToolName,
+      pid: typeof params.pid === 'number' ? params.pid : undefined,
+      windowId: typeof params.window_id === 'number' ? params.window_id : undefined,
+    });
+    return null;
+  }
+  if (typeof params.element_index === 'number') {
+    const label = snapshot.target?.label;
+    if (!label) return null; // 索引未命中缓存 / 无 label（图标按钮）：已知缺口，规格 §8
+    const kind = matchSensitiveButtonKind(label);
+    return kind ? { kind, elementLabel: label } : null;
+  }
+  if (typeof params.x !== 'number' || typeof params.y !== 'number') return null;
+  for (const el of snapshot.clickables) {
+    const kind = matchSensitiveButtonKind(el.label);
+    if (kind) return { kind, elementLabel: el.label };
+  }
+  return null;
 }
 
 /**

@@ -10,9 +10,28 @@
 // 不许各自再抄一份判定，防止两侧展示与实际授权漂移。
 // ============================================================================
 
-import { dirname, isAbsolute } from 'path';
 import type { CronJobAction, CronJobDefinition } from './contract/cron';
 import { getArtifactRefreshMetadata } from './artifactStandingRefresh';
+
+// 本模块同时进 renderer bundle（任务详情写授权面板），node:path 会被打成裸 'path'
+// 说明符，真浏览器加载 chunk 即 TypeError（node/jsdom 运行时测不出；Rework r1 真跑
+// 实证 automation center 整块 ErrorBoundary）。照 cronArtifactPath 的先例用可移植
+// 判定：POSIX 绝对路径、UNC 与 Windows 盘符绝对路径都认，dirname 对齐 node 语义
+// （盘符根 'C:\x' → 'C:\'；根路径原样返回触发调用方的 fallback 护栏）。
+const IS_ABSOLUTE_PATH_RE = /^(?:\/|\\\\|[A-Za-z]:[\\/])/;
+
+function isAbsolutePath(value: string): boolean {
+  return IS_ABSOLUTE_PATH_RE.test(value);
+}
+
+function parentDirectoryOf(value: string): string {
+  const trimmed = value.replace(/[/\\]+$/, '');
+  const slash = Math.max(trimmed.lastIndexOf('/'), trimmed.lastIndexOf('\\'));
+  if (slash < 0) return value;
+  const head = trimmed.slice(0, Math.max(slash, 1));
+  if (/^[A-Za-z]:$/.test(head)) return head + (trimmed[slash] || '\\');
+  return head || value;
+}
 
 /** 授权目标文件夹在任务 metadata 上的键；只有专用授权 IPC 能写（updateJob 会剥掉）。 */
 export const CRON_WRITE_GRANT_METADATA_KEY = 'writeGrantRoot';
@@ -30,8 +49,8 @@ export function cronWriteScopeFolder(
   sourceSessionWorkingDirectory: string | undefined,
 ): string | undefined {
   const refresh = getArtifactRefreshMetadata(definition.metadata);
-  if (!refresh || !isAbsolute(refresh.path)) return sourceSessionWorkingDirectory;
-  const parent = dirname(refresh.path);
+  if (!refresh || !isAbsolutePath(refresh.path)) return sourceSessionWorkingDirectory;
+  const parent = parentDirectoryOf(refresh.path);
   if (!parent || parent === refresh.path) return sourceSessionWorkingDirectory;
   return parent;
 }
@@ -58,5 +77,5 @@ export function writeGrantRootFromMetadata(
   metadata: Record<string, unknown> | undefined,
 ): string | undefined {
   const candidate = metadata?.[CRON_WRITE_GRANT_METADATA_KEY];
-  return typeof candidate === 'string' && isAbsolute(candidate) ? candidate : undefined;
+  return typeof candidate === 'string' && isAbsolutePath(candidate) ? candidate : undefined;
 }

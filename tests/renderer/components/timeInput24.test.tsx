@@ -53,6 +53,9 @@ describe('TimeInput24', () => {
 
     const hour = screen.getByTestId('time-hour') as HTMLSelectElement;
     const minute = screen.getByTestId('time-minute') as HTMLSelectElement;
+    expect(hour.value).toBe('00');
+    expect(minute.value).toBe('00');
+    expect(onChange).not.toHaveBeenCalled();
     expect(Array.from(hour.options, (option) => option.textContent)).toEqual(
       Array.from({ length: 24 }, (_, value) => String(value).padStart(2, '0')),
     );

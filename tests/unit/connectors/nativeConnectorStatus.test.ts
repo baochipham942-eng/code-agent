@@ -4,7 +4,11 @@ const osascriptMocks = vi.hoisted(() => ({
   runAppleScript: vi.fn(async () => 'Work\nPersonal'),
 }));
 
-vi.mock('../../../src/host/connectors/native/osascript', () => ({
+vi.mock('../../../src/host/connectors/native/osascript', async (importOriginal) => ({
+  ...(await (async () => {
+    const real = await importOriginal<typeof import('../../../src/host/connectors/native/osascript')>();
+    return { describeAppleScriptFailure: real.describeAppleScriptFailure, isAppleScriptFailure: real.isAppleScriptFailure };
+  })()),
   runAppleScript: osascriptMocks.runAppleScript,
   escapeAppleScriptString: (value: string) => value,
   parseAppleScriptDate: () => null,
@@ -164,5 +168,23 @@ describe('native office connector lazy status', () => {
       readiness: 'ready',
       noAccessibleItems: false,
     });
+  });
+
+  it.runIf(process.platform === 'darwin')('keeps script text out of the failed status detail (session_1793802444569_5eb4b15b shape)', async () => {
+    const script = 'tell application "Calendar"\nset outputLines to {}\nreturn my joinLines(outputLines)\nend tell';
+    const raw = Object.assign(
+      new Error(`Command failed: osascript -e ${script}\n0:5: execution error: Calendar got an error: Not authorized to send Apple events to Calendar. (-1743)`),
+      { code: 1 },
+    );
+    for (const connector of [calendarConnector, mailConnector, remindersConnector]) {
+      osascriptMocks.runAppleScript.mockRejectedValueOnce(raw);
+      await expect(connector.execute('repair_permissions', {})).rejects.toBe(raw);
+      const status = await connector.getStatus();
+      expect(status.readiness).toBe('failed');
+      const text = `${status.detail}\n${status.error}`;
+      expect(text).not.toMatch(/osascript|Command failed|tell application|outputLines/);
+      expect(status.detail).toContain('检查失败');
+      expect(status.detail).toContain('自动化');
+    }
   });
 });

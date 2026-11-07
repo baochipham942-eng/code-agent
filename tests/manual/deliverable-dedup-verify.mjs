@@ -13,8 +13,9 @@ import { chromium } from 'playwright';
 
 // 任务书的两个硬断言：同文件连写 5 次 → 1 张卡；同名不同目录 → 2 张卡。
 // FU1 追加：单轮里 ./report.html 与同一文件的绝对路径 → 1 张卡（键对齐工作目录）。
-// twoturns 只观察不断言——跨轮合并是 N-DELIVERABLE-DEDUP-VERIFY-FU2 的 owner 决策。
-export const EXPECTED_CARDS = { repeated: 1, samebase: 2, relabs: 1 };
+// FU2 追加（owner 决策，11-06）：每轮一张卡、不做跨轮合并——卡片随聊天时间线出现，
+// 轮内去重已防刷屏，合并会让早先轮次的产物消失；twoturns 断言每轮各出一张卡（共 2 张）。
+export const EXPECTED_CARDS = { repeated: 1, samebase: 2, relabs: 1, twoturns: 2 };
 
 // seed fixtures：与 src/renderer/utils/artifactOwnership.ts 消费的真实 Message/toolCalls 形状一致。
 export function buildSeedCases(work, t0 = Date.now() - 600_000) {
@@ -156,7 +157,7 @@ async function main() {
     stop();
   }
   if (failed) process.exit(1);
-  console.log('PASS: repeated=1 card, samebase=2 cards');
+  console.log('PASS: repeated=1 card, samebase=2 cards, relabs=1 card, twoturns=2 cards (one card per turn)');
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(path.resolve(process.argv[1])).href) {

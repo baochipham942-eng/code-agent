@@ -243,7 +243,8 @@ describe('sandbox escalation approval card', () => {
         metadata: { code: 'FS_ERROR' },
       },
     };
-    expect(humanizeToolFailureReason(plainFsError, zh)).toBe('错误码 FS_ERROR');
+    // FB-746：裸 FS_ERROR 现在翻成一句人话 + 下一步（rawFailureCodes 表），不再是「错误码 FS_ERROR」。
+    expect(humanizeToolFailureReason(plainFsError, zh)).toBe(zh.toolStepHumanize.rawFailureCodes.FS_ERROR);
   });
 });
 
@@ -311,5 +312,50 @@ describe('other approval cards stay word-for-word', () => {
     expect(html).not.toContain('沙盒拦截了这一步');
     expect(html).not.toContain('允许仅这一次');
     expect(html).not.toContain(GENERIC_CONSEQUENCE);
+  });
+});
+
+describe('sandbox-degraded-unsandboxable card shows a plain-language exception label (FB-746)', () => {
+  afterEach(() => {
+    storeState.language = 'zh';
+    storeState.request = null;
+  });
+
+  function unsandboxableRequest(exception?: string): ContractPermissionRequest {
+    return baseRequest({
+      id: 'req-unsandboxable',
+      details: {
+        command: 'open /tmp/neo-report.pdf',
+        sandbox: { applied: false, degraded: true, code: 'OS_SANDBOX_DEGRADED_UNSANDBOXABLE', exception },
+      },
+    });
+  }
+
+  it('macos_launch_services 显示「macOS 应用启动」，原始 id 不上卡（zh）', () => {
+    const html = render(unsandboxableRequest('macos_launch_services'));
+    expect(html).toContain('macOS 应用启动');
+    expect(html).not.toContain('macos_launch_services');
+  });
+
+  it('docker_engine 显示「容器引擎」，原始 id 不上卡（zh）', () => {
+    const html = render(unsandboxableRequest('docker_engine'));
+    expect(html).toContain('容器引擎');
+    expect(html).not.toContain('docker_engine');
+  });
+
+  it('未知 / 缺失 exception 不带括号注释，也不漏原始 code', () => {
+    const unknownHtml = render(unsandboxableRequest('weird_engine'));
+    expect(unknownHtml).toContain(zh.decisionCard.permission.sandboxDegradedUnsandboxableNoLabel);
+    expect(unknownHtml).not.toContain('weird_engine');
+    const missingHtml = render(unsandboxableRequest());
+    expect(missingHtml).toContain(zh.decisionCard.permission.sandboxDegradedUnsandboxableNoLabel);
+    expect(missingHtml).not.toContain('OS_SANDBOX_DEGRADED_UNSANDBOXABLE');
+  });
+
+  it('en 同样给映射过的人话', () => {
+    storeState.language = 'en';
+    const html = render(unsandboxableRequest('docker_engine'));
+    expect(html).toContain(en.decisionCard.permission.sandboxExceptionLabels.docker_engine);
+    expect(html).not.toContain('docker_engine');
   });
 });

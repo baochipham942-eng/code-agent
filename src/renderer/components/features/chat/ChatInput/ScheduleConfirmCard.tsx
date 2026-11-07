@@ -3,6 +3,7 @@ import { Check, Clock3, Pencil, X } from 'lucide-react';
 import { Button } from '../../../primitives/Button';
 import { Input } from '../../../primitives/Input';
 import { Select } from '../../../primitives/Select';
+import { TimeInput24 } from '../../../primitives/TimeInput24';
 import { useI18n } from '../../../../hooks/useI18n';
 import { CRON_URGENCY_CRITERIA } from '@shared/constants';
 import { validateEventScheduleConstraints } from '@shared/cronEventValidation';
@@ -146,7 +147,12 @@ export const ScheduleConfirmCard: React.FC<ScheduleConfirmCardProps> = ({
     chatName: '',
   }));
   const eventEditRef = useRef(eventEdit);
+  // 用户是否显式选了「任意会话」：点名了群却没选群时，确认按钮默认拦着，显式选过才放行。
+  const [anyChatChosen, setAnyChatChosen] = useState(false);
   // mail 草案编辑态同款：accountId + mailbox（空 = 缺省 INBOX，写回不落键）。
+  const groupNamedUnresolved = Boolean(
+    eventSchedule && draft.eventGroupName?.trim() && !eventEdit.chatId && !anyChatChosen,
+  );
   const [mailEdit, setMailEdit] = useState(() => ({
     accountId: mailSchedule?.accountId ?? '',
     mailbox: mailSchedule?.mailbox ?? '',
@@ -167,6 +173,7 @@ export const ScheduleConfirmCard: React.FC<ScheduleConfirmCardProps> = ({
       chatName: '',
     };
     setEventEdit(eventEditRef.current);
+    setAnyChatChosen(false);
     mailEditRef.current = {
       accountId: mailSchedule?.accountId ?? '',
       mailbox: mailSchedule?.mailbox ?? '',
@@ -333,9 +340,12 @@ export const ScheduleConfirmCard: React.FC<ScheduleConfirmCardProps> = ({
         {eventSchedule && (
           <div data-schedule-event-fields className="rounded-md bg-indigo-500/5 px-2.5 py-2">
             <CronEventScheduleFields
+              key={draftId}
+              autoPreselect
+              onAnyChatChosen={() => setAnyChatChosen(true)}
               accountId={eventEdit.accountId}
               chatId={eventEdit.chatId}
-              onAccountChange={(accountId, accountName) => writeEventEdit({ accountId, accountName: accountName ?? '', chatId: '', chatName: '' })}
+              onAccountChange={(accountId, accountName) => { setAnyChatChosen(false); writeEventEdit({ accountId, accountName: accountName ?? '', chatId: '', chatName: '' }); }}
               onChatChange={(chatId, chatName) => writeEventEdit({ chatId, chatName: chatName ?? '' })}
               maxRunBudget={budgetEdit}
               onBudgetChange={handleEventBudgetChange}
@@ -374,14 +384,13 @@ export const ScheduleConfirmCard: React.FC<ScheduleConfirmCardProps> = ({
               onChange={(event) => setWhenEdit({ ...whenEdit, freq: event.target.value as EditableFrequency })}
             />
             {(whenEdit.freq === 'daily' || whenEdit.freq === 'weekdays' || whenEdit.freq === 'weekly') && (
-              <Input
-                type="time"
-                inputSize="sm"
-                fullWidth={false}
-                className="!w-auto"
-                aria-label={labels.timeLabel}
+              <TimeInput24
+                testId="schedule-confirm-time"
                 value={whenEdit.time}
-                onChange={(event) => setWhenEdit({ ...whenEdit, time: event.target.value })}
+                onChange={(time) => setWhenEdit({ ...whenEdit, time })}
+                hourLabel={labels.hourLabel}
+                minuteLabel={labels.minuteLabel}
+                size="sm"
               />
             )}
             {whenEdit.freq === 'weekly' && (
@@ -470,7 +479,7 @@ export const ScheduleConfirmCard: React.FC<ScheduleConfirmCardProps> = ({
           size="sm"
           onClick={() => void onConfirm()}
           loading={confirming}
-          disabled={Boolean(eventViolation)}
+          disabled={Boolean(eventViolation) || groupNamedUnresolved}
           leftIcon={<Check className="h-3 w-3" />}
         >
           {labels.confirm}

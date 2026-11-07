@@ -17,6 +17,7 @@ interface Fixture {
   channelMediaRoot: string;
   screenshotRoot: string;
   appshotsRoot: string;
+  toolShotsRoot: string;
   dbPath: string;
   db: InstanceType<typeof Database>;
 }
@@ -28,11 +29,12 @@ function makeFixture(): Fixture {
   const channelMediaRoot = path.join(root, 'channel-media');
   const screenshotRoot = path.join(root, 'screenshots');
   const appshotsRoot = path.join(root, 'appshots');
+  const toolShotsRoot = path.join(root, 'tool-screenshots');
   const dbPath = path.join(root, 'code-agent.db');
   // 引用扫描要读的表全走生产 applySchema；缺任何一张（如 DROP TABLE 用例）都会被当成扫描失败
   const db = new Database(dbPath);
   applyTestSessionSchema(db);
-  return { root, channelMediaRoot, screenshotRoot, appshotsRoot, dbPath, db };
+  return { root, channelMediaRoot, screenshotRoot, appshotsRoot, toolShotsRoot, dbPath, db };
 }
 
 /** 写一个缓存文件并把 mtime 钉到指定时刻（age 判定只看 mtime） */
@@ -55,14 +57,9 @@ function insertRow(table: string, row: Record<string, string | number | null>): 
 
 /** 落一条引用了 given 文本的会话消息（messages.content 是引用扫描的主源） */
 function insertMessageReferencing(text: string): void {
-  insertRow('sessions', {
-    id: 's1',
-    title: 'fixture',
-    model_provider: 'test',
-    model_name: 'test',
-    created_at: NOW,
-    updated_at: NOW,
-  });
+  fixture!.db
+    .prepare('INSERT OR IGNORE INTO sessions (id, title, model_provider, model_name, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)')
+    .run('s1', 'fixture', 'test', 'test', NOW, NOW);
   insertRow('messages', {
     id: 'm1',
     session_id: 's1',
@@ -72,11 +69,30 @@ function insertMessageReferencing(text: string): void {
   });
 }
 
+/** 落一条 result 文本引用该文件的 tool_executions 行（工具结果的落库形状） */
+function insertToolExecutionReferencing(toolName: string, resultText: string): void {
+  fixture!.db
+    .prepare('INSERT OR IGNORE INTO sessions (id, title, model_provider, model_name, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)')
+    .run('s1', 'fixture', 'test', 'test', NOW, NOW);
+  insertRow('tool_executions', {
+    id: `te-${toolName}`,
+    session_id: 's1',
+    tool_name: toolName,
+    arguments: '{}',
+    arguments_hash: 'hash',
+    result: resultText,
+    success: 1,
+    duration: 1,
+    created_at: NOW,
+  });
+}
+
 function allDirs(overrides?: Partial<Record<AppCacheDirSpec['kind'], { maxAgeMs?: number; maxTotalBytes?: number }>>): AppCacheDirSpec[] {
   const base: AppCacheDirSpec[] = [
     { kind: 'channel-media', root: fixture!.channelMediaRoot },
     { kind: 'screenshots', root: fixture!.screenshotRoot },
     { kind: 'appshots', root: fixture!.appshotsRoot },
+    { kind: 'tool-screenshots', root: fixture!.toolShotsRoot },
   ];
   if (!overrides) return base;
   return base.map((spec) => ({ ...spec, ...(overrides[spec.kind] ?? {}) }));
@@ -301,8 +317,112 @@ describe('app cache retention sweep', () => {
   });
 });
 
+// ============================================================================
+// tool-screenshots kind（N-RETENTION-APP-CACHES-REST1）
+// 写入方：screenshot（*.png）、screenshot_page（*.png|*.jpg）、
+// PPT visualReview convertToScreenshots 缺省根（ppt-*/ 下 *.jpg）。
+// ============================================================================
+describe('tool-screenshots retention', () => {
+  it('超龄未引用的 png/jpg 都回收；被消息引用、24h 地板内的不动；删空的会话目录连目录一起回收', async () => {
+    const stalePng = writeFile(path.join(fixture!.toolShotsRoot, 'sess-a', 'screenshot_1800000000000.png'), { ageMs: 31 * DAY_MS });
+    const staleJpg = writeFile(path.join(fixture!.toolShotsRoot, 'ppt-abc123', 'deck-3.jpg'), { ageMs: 31 * DAY_MS });
+    const referencedPng = writeFile(path.join(fixture!.toolShotsRoot, 'sess-b', 'screenshot_1800000000001.png'), { ageMs: 31 * DAY_MS });
+    const freshJpg = writeFile(path.join(fixture!.toolShotsRoot, 'sess-b', 'screenshot_host_1800000000002.jpg'), { ageMs: 12 * HOUR_MS });
+    insertMessageReferencing(`看这张 ${referencedPng}`);
+
+    const summary = await sweepAppCacheRetention({
+      dirs: allDirs(),
+      dbPath: fixture!.dbPath,
+      now: NOW,
+    });
+
+    expect(summary).toEqual({ deleted: 2, failed: 0 });
+    expect(fs.existsSync(stalePng)).toBe(false);
+    expect(fs.existsSync(staleJpg)).toBe(false);
+    expect(fs.existsSync(referencedPng)).toBe(true);
+    expect(fs.existsSync(freshJpg)).toBe(true);
+    // 删空的会话目录 / per-call 目录回收；仍有文件的会话目录与根本身保留
+    expect(fs.existsSync(path.join(fixture!.toolShotsRoot, 'sess-a'))).toBe(false);
+    expect(fs.existsSync(path.join(fixture!.toolShotsRoot, 'ppt-abc123'))).toBe(false);
+    expect(fs.existsSync(path.join(fixture!.toolShotsRoot, 'sess-b'))).toBe(true);
+    expect(fs.existsSync(fixture!.toolShotsRoot)).toBe(true);
+  });
+
+  it('三个写入方真实返回形状（screenshot / screenshot_page / visualReview）的路径文本引用的文件超龄也保留', async () => {
+    // 形状逐字取自写入方源码（证据档 ③ 贴行）：
+    //   screenshot.ts: `- Path: ${outputPath}`，outputPath = getToolScreenshotDir(sessionId)/screenshot_<ts>.png
+    //   screenshotPage.ts: `📄 文件: ${finalPath}`，finalPath = getToolScreenshotDir(ctx.sessionId)/screenshot_<host>_<ts>.<format>
+    //   visualReview.ts: convertToScreenshots 返回 <root>/ppt-*/<deck>-<n>.jpg（消费方落 artifact/结果 JSON）
+    const shotPng = writeFile(path.join(fixture!.toolShotsRoot, 'sess-a', 'screenshot_1800000000000.png'), { ageMs: 40 * DAY_MS });
+    const pageJpg = writeFile(path.join(fixture!.toolShotsRoot, 'sess-a', 'screenshot_example_com_1800000000001.jpg'), { ageMs: 40 * DAY_MS });
+    const reviewJpg = writeFile(path.join(fixture!.toolShotsRoot, 'ppt-xyz9', '季度汇报-2.jpg'), { ageMs: 40 * DAY_MS });
+    const staleSameShape = writeFile(path.join(fixture!.toolShotsRoot, 'sess-a', 'screenshot_1800000000003.png'), { ageMs: 40 * DAY_MS });
+    insertToolExecutionReferencing('screenshot', `✅ 截图完成！\n\n- Path: ${shotPng}\n- Size: 12345`);
+    insertToolExecutionReferencing('screenshot_page', `✅ 网页截图完成！\n\n📄 文件: ${pageJpg}\n📦 大小: 99 KB`);
+    insertMessageReferencing(`PPT 逐页截图已生成：["${reviewJpg}","/other/季度汇报-3.jpg"]`);
+
+    const summary = await sweepAppCacheRetention({
+      dirs: allDirs(),
+      dbPath: fixture!.dbPath,
+      now: NOW,
+    });
+
+    expect(summary).toEqual({ deleted: 1, failed: 0 });
+    expect(fs.existsSync(shotPng)).toBe(true);
+    expect(fs.existsSync(pageJpg)).toBe(true);
+    expect(fs.existsSync(reviewJpg)).toBe(true);
+    expect(fs.existsSync(staleSameShape)).toBe(false);
+  });
+
+  it('超总量上限时从未引用的最旧删到 ≤ 上限；被引用与 24h 内的文件超量也保留', async () => {
+    const oldest = writeFile(path.join(fixture!.toolShotsRoot, 'sess-a', 'screenshot_1.png'), { ageMs: 5 * DAY_MS, bytes: 100 });
+    const newer = writeFile(path.join(fixture!.toolShotsRoot, 'sess-a', 'screenshot_2.png'), { ageMs: 4 * DAY_MS, bytes: 100 });
+    const referenced = writeFile(path.join(fixture!.toolShotsRoot, 'sess-a', 'screenshot_3.png'), { ageMs: 3 * DAY_MS, bytes: 100 });
+    const young = writeFile(path.join(fixture!.toolShotsRoot, 'sess-a', 'screenshot_4.png'), { ageMs: 12 * HOUR_MS, bytes: 100 });
+    insertMessageReferencing(`引用 ${referenced}`);
+
+    // 年龄路径（30 天）一个不删，全靠超量路径：cap=250 → 删 oldest+newer 后 200 ≤ 250 停
+    const summary = await sweepAppCacheRetention({
+      dirs: allDirs({ 'tool-screenshots': { maxTotalBytes: 250 } }),
+      dbPath: fixture!.dbPath,
+      now: NOW,
+    });
+
+    expect(summary).toEqual({ deleted: 2, failed: 0 });
+    expect(fs.existsSync(oldest)).toBe(false);
+    expect(fs.existsSync(newer)).toBe(false);
+    expect(fs.existsSync(referenced)).toBe(true);
+    expect(fs.existsSync(young)).toBe(true);
+  });
+
+  it('引用扫描失败（表被拆）时 tool-screenshots 一个文件都不删，恰好记 1 次失败', async () => {
+    const stale = writeFile(path.join(fixture!.toolShotsRoot, 'sess-a', 'screenshot_1800000000000.png'), { ageMs: 90 * DAY_MS });
+    fixture!.db.exec('DROP TABLE workflow_run_calls;');
+
+    const summary = await sweepAppCacheRetention({
+      dirs: allDirs(),
+      dbPath: fixture!.dbPath,
+      now: NOW,
+    });
+
+    expect(summary).toEqual({ deleted: 0, failed: 1, lastError: expect.any(String) });
+    expect(fs.existsSync(stale)).toBe(true);
+  });
+
+  it('非图片扩展名（_pdf 中间产物）不是候选，即使超龄+超量也不动', async () => {
+    const pdf = writeFile(path.join(fixture!.toolShotsRoot, 'ppt-abc', '_pdf', 'deck.pdf'), { ageMs: 90 * DAY_MS, bytes: 10 });
+    const summary = await sweepAppCacheRetention({
+      dirs: allDirs({ 'tool-screenshots': { maxTotalBytes: 1 } }),
+      dbPath: fixture!.dbPath,
+      now: NOW,
+    });
+    expect(summary).toEqual({ deleted: 0, failed: 0 });
+    expect(fs.existsSync(pdf)).toBe(true);
+  });
+});
+
 describe('app cache retention 写入点覆盖（缺省根 = 写入方根）', () => {
-  it('三个写入点的目录常量/函数都被 sweep 的缺省根覆盖（CODE_AGENT_DATA_DIR 通道）', async () => {
+  it('四个写入点的目录常量/函数都被 sweep 的缺省根覆盖（CODE_AGENT_DATA_DIR 通道）', async () => {
     const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'app-cache-defaults-'));
     process.env.CODE_AGENT_DATA_DIR = dataDir;
     // 防呆：sweep 前先证明 fresh 模块的 data-dir 解析已指到 tmp——
@@ -323,8 +443,11 @@ describe('app cache retention 写入点覆盖（缺省根 = 写入方根）', ()
     const appshotsRs = fs.readFileSync(path.join(process.cwd(), 'src-tauri/src/appshots.rs'), 'utf8');
     expect(appshotsRs).toContain('.join("appshots")');
     expect(appshotsRs).toContain('format!("appshot-{}", now_ms())');
+    // 写入点 4：toolScreenshotDir.getToolScreenshotsRoot()（screenshot / screenshot_page / visualReview 缺省根）
+    const { getToolScreenshotsRoot } = await import('../../../../src/host/tools/utils/toolScreenshotDir');
+    expect(getToolScreenshotsRoot()).toBe(path.join(dataDir, 'tool-screenshots'));
 
-    // 三个缺省根各放一个超龄未引用文件：不传 dirs 走缺省根，应各删一个
+    // 四个缺省根各放一个超龄未引用文件：不传 dirs 走缺省根，应各删一个
     const dbPath = path.join(dataDir, 'code-agent.db');
     const db = new Database(dbPath);
     applyTestSessionSchema(db);
@@ -333,10 +456,11 @@ describe('app cache retention 写入点覆盖（缺省根 = 写入方根）', ()
         writeFile(path.join(channelMediaRoot, 'feishu', 'acc1', 'om_c-file_c.png'), { ageMs: 90 * DAY_MS }),
         writeFile(path.join(dataDir, 'screenshots', 'screenshot_cover.png'), { ageMs: 90 * DAY_MS }),
         writeFile(path.join(dataDir, 'appshots', 'appshot-1777777777777.png'), { ageMs: 120 * DAY_MS }),
+        writeFile(path.join(dataDir, 'tool-screenshots', 'sess-default-root', 'screenshot_1777777777778.png'), { ageMs: 40 * DAY_MS }),
       ];
       const summary = await freshSweep({ dbPath, now: NOW });
-      expect(summary).toEqual({ deleted: 3, failed: 0 });
-      expect(markers.map((marker) => fs.existsSync(marker))).toEqual([false, false, false]);
+      expect(summary).toEqual({ deleted: 4, failed: 0 });
+      expect(markers.map((marker) => fs.existsSync(marker))).toEqual([false, false, false, false]);
     } finally {
       db.close();
     }

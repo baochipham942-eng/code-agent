@@ -35,6 +35,7 @@ import {
 import { maybeExecuteBrowserSurfaceInteraction } from './browserActionSurfaceInteractions';
 import { executeKeepResultPage } from './browserKeepResultPage';
 import { enforceBrowserCaptchaTakeoverGate } from './browserCaptchaGate';
+import { enforceBrowserJevHandbackRiskGate } from './browserRiskGate';
 import { enforceBrowserLoginWallStop } from './browserLoginWallGate';
 import {
   jevBrowserStepEmptyTaskResult,
@@ -437,6 +438,8 @@ storageState file path: export_storage_state / import_storage_state for CI/scrip
         if (captchaGate) {
           return captchaGate;
         }
+        const riskGate = await enforceBrowserJevHandbackRiskGate({ action, params, browserService, tabId, context });
+        if (riskGate) return riskGate;
         const surfaceInteractionResult = await maybeExecuteBrowserSurfaceInteraction({
           action,
           browserService,

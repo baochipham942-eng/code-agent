@@ -1,4 +1,5 @@
 import type { Message } from '../../../shared/contract';
+import type { SystemEventMessageMetadata } from '../../../shared/contract/systemEventRegistry';
 import {
   MAX_CONSECUTIVE_WAKES,
   SESSION_COMMAND_CENTER_WAKE_MAX_ITERATIONS,
@@ -35,6 +36,10 @@ interface WakeTaskManager {
   getOrCreateCurrentOrchestrator(sessionId: string): AgentOrchestrator | undefined;
   setSessionContext(sessionId: string, messages: Message[]): void;
   setWorkingDirectory(sessionId: string, directory: string): void;
+  /** TaskManager 的 state_change：会话回到 idle 是延后唤醒的投递信号之一（不另起轮询） */
+  on(event: 'state_change', listener: (event: { sessionId: string; data?: unknown }) => void): unknown;
+  /** RunRegistry 有 run 退场（前台轮结束）：延后唤醒的另一个投递信号，web 入口的轮不经 state_change */
+  onRunIdle(listener: () => void): unknown;
 }
 
 interface WakeLogger {
@@ -47,6 +52,12 @@ export interface ForegroundWakeDependencies {
   loadSession(sessionId: string): Promise<SessionWithMessages | null>;
   hasQueuedUserInput(sessionId: string): boolean;
   isVoiceSession(sessionId: string): boolean;
+  /** 唤醒轮失败时给用户的一句人话（任务结果本身已由 projectTerminalResult 落在会话里） */
+  recordWakeFailureNote(
+    sessionId: string,
+    content: string,
+    detail: { taskId: string; reason: 'owner_missing' | 'wake_failed' },
+  ): Promise<void>;
   logger: WakeLogger;
 }
 
@@ -81,6 +92,19 @@ const defaultDependencies: ForegroundWakeDependencies = {
   loadSession: (sessionId) => getSessionManager().getSession(sessionId, Number.MAX_SAFE_INTEGER),
   hasQueuedUserInput,
   isVoiceSession: (sessionId) => getPermissionModeManager().isLiveVoiceSession(sessionId),
+  recordWakeFailureNote: async (sessionId, content, detail) => {
+    // 必须带登记键：渲染端按 systemEventRegistry 放行，无 metadata 的 system 消息一律被投影层跳过
+    const message: Message = {
+      id: `session-wake-note-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+      role: 'system',
+      content,
+      timestamp: Date.now(),
+      metadata: { backgroundWakeFailed: detail } satisfies SystemEventMessageMetadata,
+    };
+    await getSessionManager().addMessageToSession(sessionId, message);
+    // 在线会话立即可见（该 system 'message' 事件只广播、不会被 TaskManager 二次落库）
+    getTaskManager().emitAgentEventForSession(sessionId, { type: 'message', data: message });
+  },
   logger,
 };
 
@@ -95,7 +119,9 @@ function wakePrompt(task: SessionCommandTask, status: Extract<WakeStatus, 'compl
   const outcome = status === 'completed' ? '完成' : '失败';
   // 用户绕过团长直接给这个任务补过话（N-SUBAGENT-INPUT）：收工汇总要知道，免得漏掉用户改过的要求
   const supplement = task.userInputCount ? `期间用户直接给它补了 ${task.userInputCount} 句。` : '';
-  return `后台任务 ${task.shortName} 已${outcome}，结果摘要：${task.summary ?? task.detail ?? '无摘要'}。${supplement}`;
+  // resultText 优先：240 字 summary 会截断「改走 Bash curl 审批」这类可执行提示（FB-577）
+  const resultText = task.resultText ?? task.summary ?? task.detail ?? '无摘要';
+  return `后台任务 ${task.shortName} 已${outcome}，结果摘要：${resultText}。${supplement}`;
 }
 
 export function createForegroundWake(
@@ -103,19 +129,66 @@ export function createForegroundWake(
 ): (task: SessionCommandTask, status: WakeStatus) => Promise<void> {
   const consecutiveBySession = new Map<string, ConsecutiveWakeState>();
   const inFlightSessions = new Set<string>();
+  // 每会话只记最新一次被推迟的唤醒；会话回到 idle（或在途唤醒结束）时投递一次
+  const pendingBySession = new Map<string, { task: SessionCommandTask; status: WakeStatus }>();
+  let idleListenerInstalled = false;
 
-  return async (task, status) => {
+  const defer = (
+    manager: WakeTaskManager,
+    task: SessionCommandTask,
+    status: WakeStatus,
+    reason: string,
+    details?: Record<string, unknown>,
+  ): void => {
+    pendingBySession.set(task.sessionId, { task, status });
+    dependencies.logger.info(`Foreground wake deferred: ${reason}`, {
+      sessionId: task.sessionId,
+      taskId: task.id,
+      ...details,
+    });
+    if (idleListenerInstalled) return;
+    idleListenerInstalled = true;
+    manager.on('state_change', (event) => {
+      if ((event.data as { status?: unknown } | undefined)?.status !== 'idle') return;
+      flushPending(event.sessionId);
+    });
+    manager.onRunIdle(() => {
+      for (const sessionId of [...pendingBySession.keys()]) {
+        if (manager.hasActivePrimaryRun(sessionId)) continue;
+        // 退场通知发生在 orchestrator 清 agentLoop 之前的同一同步段，放到微任务再检查 isProcessing
+        queueMicrotask(() => flushPending(sessionId));
+      }
+    });
+  };
+
+  const flushPending = (sessionId: string): void => {
+    const pending = pendingBySession.get(sessionId);
+    if (!pending || inFlightSessions.has(sessionId)) return;
+    pendingBySession.delete(sessionId);
+    void wake(pending.task, pending.status).catch((error) => {
+      dependencies.logger.warn('Foreground wake failed', {
+        sessionId,
+        taskId: pending.task.id,
+        message: error instanceof Error ? error.message : String(error),
+      });
+    });
+  };
+
+  const wake = async (task: SessionCommandTask, status: WakeStatus): Promise<void> => {
     const sessionId = task.sessionId;
     if (status === 'cancelled') {
       dependencies.logger.info('Foreground wake skipped: task cancelled', { sessionId, taskId: task.id });
       return;
     }
     if (inFlightSessions.has(sessionId)) {
-      dependencies.logger.info('Foreground wake skipped: wake already in flight', { sessionId, taskId: task.id });
+      // 在途唤醒结束后补投，别丢第二个任务的结果
+      pendingBySession.set(sessionId, { task, status });
+      dependencies.logger.info('Foreground wake deferred: wake already in flight', { sessionId, taskId: task.id });
       return;
     }
 
     inFlightSessions.add(sessionId);
+    let turnRan = false;
     try {
       const session = await dependencies.loadSession(sessionId);
       if (!session || (session.type ?? 'chat') !== 'chat') {
@@ -138,15 +211,11 @@ export function createForegroundWake(
         || manager.hasActivePrimaryRun(sessionId)
         || manager.getWaitingQueue().includes(sessionId)
       ) {
-        dependencies.logger.info('Foreground wake skipped: session busy', {
-          sessionId,
-          taskId: task.id,
-          status: state.status,
-        });
+        defer(manager, task, status, 'session busy', { status: state.status });
         return;
       }
       if (dependencies.hasQueuedUserInput(sessionId)) {
-        dependencies.logger.info('Foreground wake skipped: queued user input', { sessionId, taskId: task.id });
+        defer(manager, task, status, 'queued user input');
         return;
       }
 
@@ -174,10 +243,7 @@ export function createForegroundWake(
         return;
       }
       if (orchestrator.isProcessing()) {
-        dependencies.logger.info('Foreground wake skipped: foreground orchestrator processing', {
-          sessionId,
-          taskId: task.id,
-        });
+        defer(manager, task, status, 'foreground orchestrator processing');
         return;
       }
 
@@ -213,10 +279,35 @@ export function createForegroundWake(
         status,
         consecutive: consecutive + 1,
       });
-      await orchestrator.sendMessage(wakePrompt(task, status), undefined, options);
+      turnRan = true;
+      try {
+        await orchestrator.sendMessage(wakePrompt(task, status), undefined, options);
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        // 失败原因分开记：owner lease 缺失是 run 注册问题，其余是唤醒轮自身失败
+        const ownerMissing = message.includes('no live owner lease');
+        dependencies.logger.warn(
+          `Foreground wake failed: ${ownerMissing ? 'owner missing' : 'wake turn failed'}`,
+          { sessionId, taskId: task.id, message },
+        );
+        await dependencies.recordWakeFailureNote(
+          sessionId,
+          `后台任务「${task.shortName}」已结束，结果见上方的任务结果；自动汇报这一步没能完成，需要的话可以直接问我。`,
+          { taskId: task.id, reason: ownerMissing ? 'owner_missing' : 'wake_failed' },
+        ).catch((noteError) => {
+          dependencies.logger.warn('Foreground wake failure note not recorded', {
+            sessionId,
+            taskId: task.id,
+            message: noteError instanceof Error ? noteError.message : String(noteError),
+          });
+        });
+      }
     } finally {
       inFlightSessions.delete(sessionId);
+      // 只有真跑过唤醒轮才补投在途期间攒下的那次；推迟/跳过的路径补投会自旋
+      if (turnRan) flushPending(sessionId);
     }
   };
+  return wake;
 }
 

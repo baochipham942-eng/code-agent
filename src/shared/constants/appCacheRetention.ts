@@ -1,8 +1,8 @@
 /**
- * 三个 app 自有缓存目录（channel-media / 托管浏览器截图 / appshots）的保留策略。
+ * 四个 app 自有缓存目录（channel-media / 托管浏览器截图 / appshots / 工具截图）的保留策略。
  *
- * 背景：这三个目录此前只有写入方、没有任何回收路径，会无限增长；托管浏览器截图
- * 还是敏感页面捕捉，不应久留。阈值只在这里出现，sweep
+ * 背景：这些目录此前只有写入方、没有任何回收路径，会无限增长；两类截图还是
+ * 敏感页面/屏幕捕捉，不应久留。阈值只在这里出现，sweep
  * （src/host/services/infra/appCacheRetention.ts）引用。
  */
 export const APP_CACHE_RETENTION = {
@@ -27,6 +27,14 @@ export const APP_CACHE_RETENTION = {
   APPSHOT_MAX_AGE_MS: 90 * 24 * 60 * 60 * 1000,
   /** 同目录总量上限 2 GB */
   APPSHOT_MAX_TOTAL_BYTES: 2 * 1024 * 1024 * 1024,
+  /**
+   * 工具截图（<configDir>/tool-screenshots/<会话>/）：screenshot / screenshot_page /
+   * PPT visualReview 无显式输出路径时的落盘，同为敏感页面/屏幕捕捉，与托管浏览器
+   * 截图同档 30 天（起草方选定，不另设更宽档）。
+   */
+  TOOL_SCREENSHOT_MAX_AGE_MS: 30 * 24 * 60 * 60 * 1000,
+  /** 同目录总量上限 1 GB：与托管浏览器截图同档（整页图片易堆满磁盘） */
+  TOOL_SCREENSHOT_MAX_TOTAL_BYTES: 1 * 1024 * 1024 * 1024,
   /**
    * 删除地板：写入不足 24 h 的文件一律不动——刚落盘的文件大概率正被本轮会话引用，
    * 也避免删掉正在写入的半成品。

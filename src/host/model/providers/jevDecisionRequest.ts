@@ -4,7 +4,12 @@
 import type { JevQuestionSpec } from '../../../shared/constants/jevQuestions';
 
 export interface JevRoute {
-  kind: 'official' | 'openrouter';
+  /**
+   * official / openrouter：带 key 直打对应端点。
+   * neo_hosted（N-JEV-NEO-KEY）：打 Neo 云端计量代理（CLOUD_ENDPOINTS.jevJudge），
+   * apiKey 是运行时取的云端 access token，model 由服务端 pin（请求体不带 model）。
+   */
+  kind: 'official' | 'openrouter' | 'neo_hosted';
   endpoint: string;
   model: string;
   apiKey: string;
@@ -12,7 +17,8 @@ export interface JevRoute {
 
 interface JevDecisionRequestBody {
   state: Record<string, unknown>;
-  model: string;
+  /** 服务端 pin 模型后（neo_hosted）不再随请求体发送。 */
+  model?: string;
   questions: Record<string, JevQuestionSpec>;
 }
 
@@ -21,6 +27,9 @@ export function buildJevDecisionRequestBody(
   state: Record<string, unknown>,
   questions: Record<string, JevQuestionSpec>,
 ): JevDecisionRequestBody {
+  if (route.kind === 'neo_hosted') {
+    return { state, questions };
+  }
   return { state, model: route.model, questions };
 }
 

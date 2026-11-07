@@ -34,6 +34,8 @@ export interface RunUiState {
   blockedReason?: string;
   blockedReasonCategory?: TaskBlockedCategory;
   completionSignal?: string;
+  /** 系统回收（长时间无进展）而非用户停止；仅 status='cancelled' 时出现 */
+  terminalReason?: 'idle_reaped';
   /** 当前轮起止时间（来自 TraceTurn），Overview Run header 的用时来源 */
   startedAt?: number;
   endedAt?: number;
@@ -86,7 +88,11 @@ export interface TaskRecord {
   ownerRunId?: string | null;
   sourceThreadId?: string | null;
   resumeHint?: string;
+  /** resumeHint 是 raw 日志被清洗掉时（ADR-050）的语义类别；渲染层用 taskBlockedReason[category] 兜底 */
+  resumeHintCategory?: TaskBlockedCategory;
   outputRefs?: TaskRecordOutputRef[];
+  /** 终态失败（后台任务 failed/expired/orphaned）：status 仍为 blocked，面板标签显示「失败」 */
+  failed?: boolean;
 }
 
 export interface TaskRecordOutputRef {

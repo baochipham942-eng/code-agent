@@ -7,6 +7,7 @@ import agentEngineModelsHandler from './api/v1/agent-engine-models.js';
 import capabilitiesHandler from './api/v1/capabilities.js';
 import configHandler from './api/v1/config.js';
 import controlPlaneHandler from './api/v1/control-plane.js';
+import jevJudgeHandler from './api/v1/jev-judge.js';
 import promptsHandler from './api/prompts.js';
 import updateHandler from './api/update.js';
 import type {
@@ -29,6 +30,7 @@ const apiHandlers: Record<string, ControlPlaneHandler> = {
   '/api/v1/capabilities': capabilitiesHandler,
   '/api/v1/agent-engine-models': agentEngineModelsHandler,
   '/api/v1/config': configHandler,
+  '/api/v1/jev-judge': jevJudgeHandler,
 };
 
 const contentTypes: Record<string, string> = {

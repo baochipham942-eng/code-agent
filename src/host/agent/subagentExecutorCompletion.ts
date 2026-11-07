@@ -32,6 +32,13 @@ import {
   inferAgentFailureCode,
 } from '../../shared/contract/agentFailure';
 import { normalizeCancellationReason, type CancellationReason } from '../../shared/contract/cancellation';
+import {
+  appendSubagentLeftoverShellReport,
+  appendSubagentLeftoverShellReportToError,
+  reportSubagentLeftoverShells,
+} from './subagentLeftoverShells';
+
+export { appendSubagentLeftoverShellReport, reportSubagentLeftoverShells } from './subagentLeftoverShells';
 
 const logger = createLogger('SubagentExecutor');
 
@@ -126,6 +133,7 @@ export async function handleSubagentAbort(
   agentTask.fail(errorMsg);
   // orphan 接管（roadmap 2.6）
   adoptOrphanTasks(sessionId, pipelineContext.agentId);
+  const leftoverReport = reportSubagentLeftoverShells(executionAgentId, 'cancelled');
   if (context.spawnGuardId) {
     getSpawnGuard().cancelDescendants(context.spawnGuardId, 'parent-cancel');
   }
@@ -133,7 +141,7 @@ export async function handleSubagentAbort(
   context.hooks?.triggerSubagentStop(config.name, answerLedger.settled() || undefined, sessionId, agentTask.id).catch(silence(logger, 'triggerSubagentStop:abort', 'warn'));
   return {
     success: false,
-    output: answerLedger.settled(),
+    output: appendSubagentLeftoverShellReport(answerLedger.settled(), leftoverReport),
     error: errorMsg,
     toolsUsed: [...new Set(toolsUsed)],
     toolCallCount: turnObservability.getToolCallCount(),
@@ -177,6 +185,7 @@ export function finalizeSubagentSuccess(
 
   // orphan 接管（roadmap 2.6）：正常结束时名下未收口任务回归主会话
   adoptOrphanTasks(sessionId, pipelineContext.agentId);
+  const leftoverReport = reportSubagentLeftoverShells(executionAgentId, 'completed');
   if (context.spawnGuardId) {
     getSpawnGuard().cancelDescendants(context.spawnGuardId, 'parent-gone');
   }
@@ -211,7 +220,10 @@ export function finalizeSubagentSuccess(
   terminal.status = 'completed';
   return {
     success: true,
-    output: finalOutput || 'Subagent completed without output',
+    output: appendSubagentLeftoverShellReport(
+      finalOutput || 'Subagent completed without output',
+      leftoverReport,
+    ),
     toolsUsed: [...new Set(toolsUsed)],
     toolCallCount: turnObservability.getToolCallCount(),
     iterations,
@@ -253,6 +265,7 @@ export function handleSubagentFailure(
 
   // orphan 接管（roadmap 2.6）
   adoptOrphanTasks(sessionId, pipelineContext.agentId);
+  const leftoverReport = reportSubagentLeftoverShells(executionAgentId, 'failed');
   if (context.spawnGuardId) {
     getSpawnGuard().cancelDescendants(context.spawnGuardId, 'parent-cancel');
   }
@@ -268,7 +281,14 @@ export function handleSubagentFailure(
     ).catch(() => {});
   }
 
-  if (error instanceof SubagentDoomLoopStopError) return { ...error.toResult(answerLedger.settled(), toolsUsed, iterations, getTotalTokens(), getTotalCost(), executionAgentId, latestContextSnapshot), toolCallCount: turnObservability.getToolCallCount() };
+  if (error instanceof SubagentDoomLoopStopError) {
+    const result = error.toResult(answerLedger.settled(), toolsUsed, iterations, getTotalTokens(), getTotalCost(), executionAgentId, latestContextSnapshot);
+    return {
+      ...result,
+      output: appendSubagentLeftoverShellReport(result.output, leftoverReport),
+      toolCallCount: turnObservability.getToolCallCount(),
+    };
+  }
   const preservedExit = answerLedger.failureExit(error, {
     signalAborted: effectiveSignal.aborted,
     signalReason: effectiveSignal.reason,
@@ -280,15 +300,22 @@ export function handleSubagentFailure(
     agentId: executionAgentId,
     contextSnapshot: latestContextSnapshot,
   });
-  if (preservedExit) return preservedExit;
+  if (preservedExit) {
+    return {
+      ...preservedExit,
+      output: appendSubagentLeftoverShellReport(preservedExit.output, leftoverReport),
+    };
+  }
+
+  const reportedError = appendSubagentLeftoverShellReportToError(error, leftoverReport);
 
   // 把已消耗的 outputTokens 挂到 error 上，让 dynamic-workflow 的 BudgetTracker 在抛出路径
   // 也能记账（provider 产出部分 output 后崩的场景，Codex R2 MED#4）。不影响既有错误处理。
-  if (error && typeof error === 'object') {
+  if (reportedError && typeof reportedError === 'object') {
     try {
-      (error as { tokensUsed?: number; cost?: number }).tokensUsed = getTotalTokens();
-      (error as { tokensUsed?: number; cost?: number }).cost = getTotalCost();
+      (reportedError as { tokensUsed?: number; cost?: number }).tokensUsed = getTotalTokens();
+      (reportedError as { tokensUsed?: number; cost?: number }).cost = getTotalCost();
     } catch { /* frozen error, ignore */ }
   }
-  throw error; // re-throw to preserve existing error handling
+  throw reportedError;
 }

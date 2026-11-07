@@ -23,7 +23,12 @@ import { useEventScheduleNames } from './useChannelCatalog';
 
 type LocationFilter = 'all' | CronRunsOn;
 
-export const CronJobList: React.FC = () => {
+interface CronJobListProps {
+  /** jobId → 等批准运行（N-CRON-UNATTENDED-BASH-PARK-STUCK）：命中行的状态 chip 换成「等你批准」。 */
+  awaitingByJobId?: Map<string, unknown>;
+}
+
+export const CronJobList: React.FC<CronJobListProps> = ({ awaitingByJobId }) => {
   const { t, language } = useI18n();
   const cc = t.cronCenter;
   const {
@@ -133,6 +138,7 @@ export const CronJobList: React.FC = () => {
               const latest = latestExecutions[job.id];
               const latestMeta = getLatestExecutionStatus(latest);
               const latestLabel = cc.status[latest?.status ?? 'none'];
+              const awaitingApproval = awaitingByJobId?.has(job.id) ?? false;
               const triggerKind = getCronTriggerKind(job);
               return (
                 <button /* ds-allow:button: 任务列表行（多行内容左对齐布局），primitive 是居中动作按钮形状不适配 */
@@ -155,7 +161,7 @@ export const CronJobList: React.FC = () => {
                       </div>
                       {job.enabled && job.nextRunAt != null && (
                         <div className="mt-0.5 text-xs text-zinc-500" data-testid="cron-job-next-run">
-                          {cc.nextRun.replace('{time}', formatDateTime(job.nextRunAt))}
+                          {cc.nextRun.replace('{time}', formatDateTime(job.nextRunAt, language))}
                         </div>
                       )}
                     </div>
@@ -173,9 +179,18 @@ export const CronJobList: React.FC = () => {
                   )}
 
                   <div className="mt-3 flex items-center justify-between gap-3 text-xs">
-                    <span className={`rounded-full px-2 py-1 ${latestMeta.className}`}>
-                      {cc.latest.replace('{label}', latestLabel)}
-                    </span>
+                    {awaitingApproval ? (
+                      <span
+                        className="rounded-full border border-badge-warning/40 bg-amber-500/15 px-2 py-1 text-badge-warning"
+                        data-testid="cron-job-awaiting-approval"
+                      >
+                        {cc.awaitingApprovalBadge}
+                      </span>
+                    ) : (
+                      <span className={`rounded-full px-2 py-1 ${latestMeta.className}`}>
+                        {cc.latest.replace('{label}', latestLabel)}
+                      </span>
+                    )}
                     {/* 触发源 chip：信息性标识统一中性 zinc，彩色只留给「要你处理的地方」 */}
                     <span
                       className="rounded-full border border-zinc-700/70 bg-zinc-900 px-2 py-0.5 text-[11px] text-zinc-400"

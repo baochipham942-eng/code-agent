@@ -130,11 +130,36 @@ describe('mailModule (native)', () => {
       if (!result.ok) expect(result.code).toBe('NOT_INITIALIZED');
     });
 
-    it('wraps connector errors as FS-less failure', async () => {
-      execMock.mockRejectedValue(new Error('boom'));
+    it('returns a plain reason without the osascript command line', async () => {
+      const script = Array.from({ length: 40 }, (_, i) => `set a${i} to ${i}`).join('\n');
+      const raw = `Command failed: osascript -e tell application "Mail"\n${script}\nend tell\nMail got an error: Can't get mailbox "INBOX". (-1728)`;
+      expect(raw.length).toBeGreaterThan(300);
+      execMock.mockRejectedValue(Object.assign(new Error(raw), { code: 1 }));
+      const ctx = makeCtx();
+      const result = await run({ action: 'get_status' }, ctx);
+      expect(result.ok).toBe(false);
+      if (!result.ok) {
+        expect(result.error).not.toMatch(/osascript|Command failed|tell application|set a1 to|end tell/);
+        expect(result.error).toContain('Mail');
+        expect(result.error).toContain('检查对应账户');
+      }
+      const warn = vi.mocked(ctx.logger.warn);
+      expect(warn).toHaveBeenCalledTimes(1);
+      const meta = warn.mock.calls[0][1] as { connector: string; code: string; detail: string };
+      expect(meta).toMatchObject({ connector: 'mail', code: 'not_found' });
+      expect(meta.detail.length).toBeLessThanOrEqual(300);
+      expect(meta.detail).toContain('-1728');
+      expect(meta.detail).not.toContain('set a1 to');
+    });
+
+    it('keeps connector validation errors intact instead of rewriting to a retry hint', async () => {
+      execMock.mockRejectedValue(new Error('mailbox is required for list_messages'));
       const result = await run({ action: 'get_status' });
       expect(result.ok).toBe(false);
-      if (!result.ok) expect(result.error).toContain('Mail connector failed: boom');
+      if (!result.ok) {
+        expect(result.error).toContain('mailbox is required for list_messages');
+        expect(result.error).not.toContain('读取失败');
+      }
     });
   });
 
@@ -234,16 +259,45 @@ describe('mailModule (native)', () => {
         expect(result.output).toContain('Work / INBOX');
         expect(result.output).toContain('| 已读');
         expect(result.output).toContain('#2 Unread');
-        expect(result.output).toContain('未知时间');
+        expect(result.output).toContain('收信时间无法解析');
+        expect(result.output).not.toContain('未知时间');
         expect(result.output).toContain('| 未读');
         expect(result.meta).toMatchObject({
           action: 'list_messages',
           connector: 'mail',
           count: 2,
+          receivedTimeParsed: false,
         });
         const artifact = result.meta?.artifact as { kind?: string; metadata?: Record<string, unknown> };
         expect(artifact.kind).toBe('text');
         expect(artifact.metadata?.count).toBe(2);
+      }
+    });
+
+    it('list_messages meta marks receivedTimeParsed true when every time parsed', async () => {
+      execMock.mockResolvedValue({
+        data: [{ id: 1, subject: 'A', sender: 'a@x.com', receivedAtMs: Date.UTC(2026, 10, 3), read: true }],
+      });
+      const result = await run({ action: 'list_messages', mailbox: 'INBOX' });
+      expect(result.ok).toBe(true);
+      if (result.ok) {
+        expect(result.output).not.toContain('收信时间无法解析');
+        expect(result.meta).toMatchObject({ receivedTimeParsed: true });
+      }
+    });
+
+    it('read_message distinguishes unparseable time from parsed time', async () => {
+      const base = { id: 9, subject: 'S', sender: 'a@x.com', read: true, content: 'c', attachmentCount: 0 };
+      execMock.mockResolvedValueOnce({ data: { ...base, receivedAtMs: null } });
+      const bad = await run({ action: 'read_message', message_id: 9 });
+      execMock.mockResolvedValueOnce({ data: { ...base, receivedAtMs: Date.UTC(2026, 10, 3) } });
+      const good = await run({ action: 'read_message', message_id: 9 });
+      expect(bad.ok && good.ok).toBe(true);
+      if (bad.ok && good.ok) {
+        expect(bad.output).toContain('时间：收信时间无法解析');
+        expect(bad.meta).toMatchObject({ receivedTimeParsed: false });
+        expect(good.output).not.toContain('收信时间无法解析');
+        expect(good.meta).toMatchObject({ receivedTimeParsed: true });
       }
     });
 

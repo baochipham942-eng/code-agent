@@ -27,6 +27,7 @@ import {
   type SurfaceRuntimeIdentityV1,
 } from './SurfaceExecutionRuntime';
 import { SurfaceExecutionRuntimeError } from './SurfaceExecutionRuntimeError';
+import { waitForBrowserHumanTakeoverRelease } from './browserHumanTakeoverWait';
 import {
   SecureBrowserResumeStateStore,
   type BrowserResumeStateStore,
@@ -287,6 +288,20 @@ export class ManagedBrowserProviderAdapter {
     return fallback;
   }
 
+  private async waitWhileUserHoldsBrowser(
+    binding: ManagedBrowserBinding,
+    input: ManagedBrowserActionInput,
+  ): Promise<void> {
+    const subject = this.subject(binding);
+    const readSession = () => this.runtime.sessions.requireOwned(binding.surfaceSessionId, subject);
+    if (readSession().state !== 'waiting_human') return;
+    await waitForBrowserHumanTakeoverRelease({
+      readSession,
+      operationId: input.operationId,
+      ...(input.abortSignal ? { parentSignal: input.abortSignal } : {}),
+    });
+  }
+
   async execute(input: ManagedBrowserActionInput): Promise<ToolExecutionResult> {
     try {
       const binding = await this.ensureBinding(input.identity);
@@ -296,6 +311,8 @@ export class ManagedBrowserProviderAdapter {
         input.params,
       );
       if (!descriptor.mutation) {
+        // Read-only actions must not observe the pre-fill page while the user still holds the browser.
+        await this.waitWhileUserHoldsBrowser(binding, input);
         const result = await this.dispatchWithAbort(binding, input);
         const providerSnapshot = input.action === 'get_dom_snapshot'
           ? domSnapshotFromResult(result)

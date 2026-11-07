@@ -4,7 +4,7 @@
 // 深度研究通过语义自动检测触发，无需手动切换
 // ============================================================================
 
-import React, { useState, useRef, useCallback, useEffect, useImperativeHandle, forwardRef, useMemo } from 'react';
+import React, { useState, useRef, useCallback, useEffect, useImperativeHandle, forwardRef, useMemo, useSyncExternalStore } from 'react';
 import { Image, FileText } from 'lucide-react';
 import type { MessageAttachment } from '../../../../../shared/contract';
 import type {
@@ -46,6 +46,7 @@ import { ContextUsagePill } from '../ContextUsagePill';
 import { CommandPalette } from '../../../CommandPalette';
 import { SlashCommandPopover } from './SlashCommandPopover';
 import { useFileUpload } from './useFileUpload';
+import { usePendingUploadSend } from './usePendingUploadSend';
 import { useChatInputSessionScope } from './useChatInputSessionScope';
 import {
   useAtMentionPanel,
@@ -119,6 +120,7 @@ import { AgentChip } from './AgentChip';
 import { MountedConnectorIcons } from './MountedConnectorIcons';
 import { getAgentSlashCommandQuery } from './agentCommand';
 import { ComposerUploadStatus } from './ComposerUploadStatus';
+import { ComposerRejectedUploadsNotice } from './ComposerRejectedUploadsNotice';
 import { QueuedInputTray } from './QueuedInputTray';
 import { composerEditModeState } from './composerEditMode';
 import { useBundledCapabilityStore } from '../../../../stores/bundledCapabilityStore';
@@ -126,6 +128,13 @@ import { ReadOnlySessionNotice } from './ReadOnlySessionNotice';
 import { ImportedSessionNotice } from './ImportedSessionNotice';
 import { useImportedSessionNotice } from '../../../../hooks/useImportedSessionResume';
 import { useComposerAppEvents } from './useComposerAppEvents';
+import {
+  deriveCronRunStatusLine,
+  findCronExecutionForSession,
+  getObservedCronRunStatusForSession,
+  subscribeObservedCronRunStatus,
+} from '../cronRunSessionStatus';
+import { useCronStore } from '../../../../stores/cronStore';
 
 // ============================================================================
 // 类型定义
@@ -180,6 +189,13 @@ export interface ChatInputHandle {
     clientMessageId?: string;
   }) => void;
   focus: () => void;
+  /** FB-580 欢迎页示例卡：composer 是否已有内容（文本 / 内联 chip 含附件 / 待发 appshot）。 */
+  hasDraftOccupancy: () => boolean;
+  /**
+   * FB-580 欢迎页示例卡：模板追加到现有文本之后（空行分隔），附件与 chip 原样保留，
+   * 聚焦输入框。不发送。
+   */
+  appendDraftPrompt: (prompt: string) => void;
 }
 
 // ============================================================================
@@ -233,6 +249,29 @@ export function resolveComposerCoreActions(params: Parameters<typeof resolveLive
   // 附件「+」、身份/连接器/权限/模型、审批与提示 chip、VoiceChrome 状态条都不在此边界内。
   // JSX 必须逐项消费这份列表，禁止在映射外另塞同级核心按钮。
   return params.voiceInputInstalled === false ? [primaryAction] : ['voice-input', primaryAction];
+}
+
+// ============================================================================
+// 欢迎页示例卡 × 草稿保育（FB-580，2026-11-05 真机复现）
+// ============================================================================
+// 用户已在 composer 打字/挂附件/摆 chip 时点欢迎页示例卡：不发送、不丢弃，
+// 模板追加进输入框（空行分隔），发送时机由用户决定。占用判定与追加语义放纯函数，
+// handle（hasDraftOccupancy / appendDraftPrompt）与单测共用同一份口径——两个函数
+// 只在本文件消费（handle 是唯一出口），不导出（knip production 档不把测试当消费方）。
+// 占用的「chip」口径 = inlineChips 全集（命令 / 当轮 skill / @文件附件 / 资料库 pin /
+// 会话与产物引用）+ 待发 appshot——即输入区里用户摆进来的任何东西。
+function resolveDraftOccupancy(params: {
+  text: string;
+  inlineChipCount: number;
+  hasPendingAppshot: boolean;
+}): boolean {
+  return params.text.trim().length > 0 || params.inlineChipCount > 0 || params.hasPendingAppshot;
+}
+
+/** 模板追加语义：现有文本收掉尾随空白，空一行再接模板；空文本直接给模板。 */
+function appendComposerPrompt(currentText: string, prompt: string): string {
+  const base = currentText.replace(/\s+$/, '');
+  return base ? `${base}\n\n${prompt}` : prompt;
 }
 
 const ignoreVoiceInput = () => undefined;
@@ -328,6 +367,10 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
   const clearAppshot = useAppshotsStore((s) => s.clear);
   const appshotSlotRef = useRef<HTMLDivElement>(null);
   const [isUploading, setIsUploading] = useState(false);
+  // 本轮上传是否有文件没读出来：processFile / processFolderEntry 返回 null 记一次，
+  // 上传回合结束时汇成 uploadFailed，交给挂起发送分流（见 usePendingUploadSend）。
+  const [uploadFailed, setUploadFailed] = useState(false);
+  const uploadFailureCountRef = useRef(0);
   const [suggestions, setSuggestions] = useState<Array<{ id: string; text: string; source: string }>>([]);
   const [showCommandPalette, setShowCommandPalette] = useState(false);
   const [slashFilter, setSlashFilter] = useState('');
@@ -345,6 +388,34 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
   const currentSessionReadOnly = useSessionStore((s) => (
     s.sessions.find((session) => session.id === currentSessionId)?.readOnly === true
   ));
+  // 定时任务运行记录（N-UI-CRON-RUN-RECORD-CLEAR）：readOnly 只是「记录不改写」的内部
+  // 标志，对用户不出现「只读」。composer 照常可用，发送经 useCronRunFollowUpSend
+  // fork 出新对话带走任务+结果，placeholder 直接说清去向。
+  const isCronRunRecordSession = useSessionStore((s) => {
+    const kind = s.sessions.find((session) => session.id === currentSessionId)?.origin?.kind;
+    return kind === 'cron' || kind === 'heartbeat';
+  });
+  const cronRunFollowUpMode = currentSessionReadOnly && isCronRunRecordSession;
+  const observedCronRunStatus = useSyncExternalStore(
+    subscribeObservedCronRunStatus,
+    () => getObservedCronRunStatusForSession(currentSessionId),
+    () => null,
+  );
+  const cronStoreStatusKind = useCronStore((state) => {
+    if (!cronRunFollowUpMode || !currentSessionId) return null;
+    const session = useSessionStore.getState().sessions.find((item) => item.id === currentSessionId);
+    const jobId = session?.origin?.id?.trim();
+    if (!jobId) return null;
+    const latestForJob = state.latestExecutions[jobId];
+    const candidates = [
+      ...(state.executionsByJobId[jobId] ?? []),
+      ...(latestForJob ? [latestForJob] : []),
+      ...state.recentExecutions.filter((item) => item.jobId === jobId),
+    ];
+    const execution = findCronExecutionForSession(candidates, { executionId: session?.sourceRunId, sessionId: currentSessionId });
+    return deriveCronRunStatusLine({ execution, pendingApproval: null })?.kind ?? null;
+  });
+  const cronRunStatusKind = observedCronRunStatus?.kind ?? cronStoreStatusKind;
   // 导入的外部历史会话：composer 保持可用，上方挂一行「发送即开新会话续聊」说明。
   const importedSessionNotice = useImportedSessionNotice();
   const [pendingPromptCommand, setPendingPromptCommand] = useState<ComposerPromptCommandSelection | null>(null);
@@ -415,7 +486,28 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
     };
   }, []);
 
-  const { processFile, processFolderEntry } = useFileUpload();
+  const { processFile: processFileRaw, processFolderEntry: processFolderEntryRaw } = useFileUpload();
+  // 包一层记失败：附件没读出来（返回 null）计一次，FB-579 的挂起发送据此「不发并告知」。
+  const processFile = useCallback(async (file: File) => {
+    const attachment = await processFileRaw(file);
+    if (!attachment) uploadFailureCountRef.current += 1;
+    return attachment;
+  }, [processFileRaw]);
+  const processFolderEntry = useCallback(async (dirEntry: FileSystemDirectoryEntry, folderName: string) => {
+    const attachment = await processFolderEntryRaw(dirEntry, folderName);
+    if (!attachment) uploadFailureCountRef.current += 1;
+    return attachment;
+  }, [processFolderEntryRaw]);
+  // 上传回合起止：起点清失败计数，终点汇出 uploadFailed（与 setIsUploading 同批提交）。
+  const handleUploadStateChange = useCallback((uploading: boolean) => {
+    setIsUploading(uploading);
+    if (uploading) {
+      uploadFailureCountRef.current = 0;
+      setUploadFailed(false);
+    } else {
+      setUploadFailed(uploadFailureCountRef.current > 0);
+    }
+  }, []);
   const handleDroppedSkillZips = useCallback(async (files: File[]) => {
     const { divertDroppedSkillZips } = await import('../../../../services/skillLocalZip');
     return divertDroppedSkillZips(files, {
@@ -430,7 +522,7 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
     processFile,
     processFolderEntry,
     setAttachments,
-    setIsUploading: (uploading) => setIsUploading(uploading),
+    setIsUploading: handleUploadStateChange,
     onDroppedSkillZips: handleDroppedSkillZips,
   });
   // Composer typing stays passive for generic heuristics; only official registry skill
@@ -641,7 +733,22 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
     focus: () => {
       inputAreaRef.current?.focus();
     },
-  }), []);
+    // FB-580 欢迎页示例卡：占位探针读 latestValueRef（避免逐键重建 handle），chip /
+    // appshot 计数走依赖数组保持新鲜——空 composer 的「一键直发」与「有内容改填充」
+    // 都以用户此刻输入区里的真实状态为准。
+    hasDraftOccupancy: () => resolveDraftOccupancy({
+      text: latestValueRef.current,
+      inlineChipCount: inlineChips.length,
+      hasPendingAppshot: pendingAppshot !== null,
+    }),
+    appendDraftPrompt: (prompt) => {
+      if (!prompt) return;
+      // 与 setDraft 同款口径：程序写入的文本不算用户亲手输入，envelope 记 memoryTainted。
+      inputMemoryTainted.current = true;
+      setValue((prev) => appendComposerPrompt(prev, prompt));
+      inputAreaRef.current?.focus();
+    },
+  }), [inlineChips, pendingAppshot]);
 
   useEffect(() => {
     setVoiceInputContext(null);
@@ -794,8 +901,6 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
     onSessionSelect: handleAtSessionSelect,
     onArtifactSelect: handleAtArtifactSelect,
   });
-  const { search: searchAtMention, dismiss: dismissAtMention } = atMention;
-
   // Track input changes for @ autocomplete and / command palette
   const handleValueChange = useCallback((newValue: string) => {
     setValue(newValue);
@@ -804,7 +909,7 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
     }
     if (newValue.toLowerCase().startsWith('/agent ')) {
       setShowSlashPopover(false);
-      dismissAtMention();
+      atMention.dismiss();
       return;
     }
     // 触发词识别是光标位置感知的：只看光标前的纯文本算尾 token
@@ -815,17 +920,17 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
     if (slashToken) {
       setShowSlashPopover(true);
       setSlashFilter(slashToken.query);
-      dismissAtMention();
+      atMention.dismiss();
       return;
     }
     setShowSlashPopover(false);
     if (isLeadingAgentMentionInput(newValue, swarmAgents)) {
-      dismissAtMention();
+      atMention.dismiss();
       return;
     }
     // Check for @ pattern at cursor position
-    searchAtMention(newValue, caret);
-  }, [dismissAtMention, pendingPromptCommand, searchAtMention, swarmAgents]);
+    atMention.search(newValue, caret);
+  }, [atMention.dismiss, atMention.search, pendingPromptCommand, swarmAgents]);
 
   const focusComposer = useCallback(() => {
     requestAnimationFrame(() => inputAreaRef.current?.focus());
@@ -904,10 +1009,16 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
 
   const resolvedPlaceholder = useMemo(() => {
     if (placeholder) return placeholder;
+    if (cronRunFollowUpMode) {
+      // 只有 finished 有结果可带；中断/没跑成/取消/进行中一律不承诺「带上这次的结果」。
+      return cronRunStatusKind === 'finished'
+        ? t.chatInput.cronFollowUpPlaceholder
+        : t.chatInput.cronFollowUpPlaceholderNoResult;
+    }
     if (inputPlaceholder) return inputPlaceholder;
     if (!isProcessing) return undefined;
     return t.chatInputSubmit.runtimeInputPlaceholder;
-  }, [inputPlaceholder, isProcessing, placeholder, t]);
+  }, [cronRunFollowUpMode, cronRunStatusKind, inputPlaceholder, isProcessing, placeholder, t]);
 
   // 提交发送管线（schedule/loop/goal/agent 命令分支 + appshot 注入 + ! shell 快捷 + 失败回滚）
   const { handleSubmit, runScheduleCreation, confirmScheduleCreation, startGoalRun, submitSeedComposer } = useChatInputSubmit({
@@ -921,12 +1032,14 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
     artifactReferences,
     currentSessionId,
     isProcessing,
+    neverQueueToSession: cronRunFollowUpMode,
     disabled,
     isUploading,
     onSend,
     onSteer,
     onComposerDraftOptimisticClear: composerDraft.noteOptimisticClear,
     onComposerDraftSendSettled: composerDraft.noteSendSettled,
+    onDraftCleared: atMention.dismiss,
     onQueuedInputChanged: () => setQueuedInputRevision((value) => value + 1),
     agentEntries,
     buildEnvelope,
@@ -952,6 +1065,20 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
   // 「转后台继续聊」：当前会话转后台 + 新前台会话发草稿（排队/改道默认路径不动）
   const submitBackgroundHandoff = useBackgroundHandoffSubmit({ currentSessionId, handleSubmit });
 
+  // FB-579：上传中的提交不丢——先挂起（提示「正在上传，完成后自动发送」），
+  // 上传结束自动重放；失败 / 等待期间改草稿则作废并告知（见 usePendingUploadSend）。
+  const pendingUploadReplayRef = useRef<((opts?: { steer?: boolean; content?: string }) => unknown) | null>(null);
+  const { pending: pendingUploadSend, park: parkUploadSend } = usePendingUploadSend({
+    isUploading,
+    uploadFailed,
+    disabled,
+    isProcessing: Boolean(isProcessing),
+    value,
+    attachments,
+    hasPendingCommand: Boolean(pendingCommand),
+    replayRef: pendingUploadReplayRef,
+  });
+
   const submitWithRuntimeChoice = useCallback(async (event?: React.FormEvent, opts?: { steer?: boolean; content?: string }) => {
     event?.preventDefault();
     if (editingQueuedInputId) {
@@ -970,8 +1097,17 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
       inputAreaRef.current?.focus();
       return;
     }
+    // 上传还没结束：提交先挂起，草稿原地不动；上传结束由 usePendingUploadSend 重放本函数。
+    if (isUploading) {
+      parkUploadSend(opts);
+      return;
+    }
     return handleSubmit(undefined, opts);
-  }, [editingQueuedInputId, handleSubmit, value]);
+  }, [editingQueuedInputId, handleSubmit, isUploading, parkUploadSend, value]);
+  // 重放入口给 effect 用 ref 拿最新闭包：重放当刻的 value / attachments / isUploading 都是最新的。
+  pendingUploadReplayRef.current = (replayOpts) => {
+    void submitWithRuntimeChoice(undefined, replayOpts);
+  };
 
   // 附件 / 语音动作单元
   const {
@@ -981,7 +1117,7 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
   } = useChatInputComposerActions({
     processFile,
     inputAreaRef,
-    setIsUploading,
+    setIsUploading: handleUploadStateChange,
     setAttachments,
     setValue,
     setVoiceInputContext,
@@ -1220,10 +1356,12 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
             </button>
           </SlotEntry>
 
-          {/* 文件处理中提示（L2 进行中层，组件自闸 + 自己走互斥表） */}
+          {/* 文件处理中提示（L2 进行中层，组件自闸 + 自己走互斥表）；挂起发送时换成「完成后自动发送」 */}
           <SlotEntry id="upload">
-            <ComposerUploadStatus active={isUploading} />
+            <ComposerUploadStatus active={isUploading} pendingSend={pendingUploadSend} />
           </SlotEntry>
+
+          <SlotEntry id="rejected-uploads"><ComposerRejectedUploadsNotice /></SlotEntry>
 
           {/* Combo Skill suggestion card（L4 建议层） */}
           <SlotEntry id="combo-skill" active={Boolean(comboSuggestion)}>
@@ -1324,7 +1462,7 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
           }}
         />
 
-        {composerDraft.notice && !currentSessionReadOnly && (
+        {composerDraft.notice && (!currentSessionReadOnly || cronRunFollowUpMode) && (
           <UnsentDraftNotice
             preview={composerDraft.notice.preview}
             onPutBack={composerDraft.putBack}
@@ -1334,7 +1472,7 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
         {!currentSessionReadOnly && importedSessionNotice && (
           <ImportedSessionNotice state={importedSessionNotice} />
         )}
-        {currentSessionReadOnly ? (
+        {currentSessionReadOnly && !cronRunFollowUpMode ? (
           <ReadOnlySessionNotice />
         ) : (
         // composer 浮起（2026-08-04 §3.1）：L2 底 + 投影，默认无边框、聚焦描边显现，

@@ -66,4 +66,3 @@ export const TimeInput24: React.FC<TimeInput24Props> = ({
     </div>
   );
 };
-

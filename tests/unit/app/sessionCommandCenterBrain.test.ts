@@ -99,6 +99,7 @@ describe('SESSION_COMMAND_CENTER_BRAIN_CONTEXT design notice', () => {
     expect(SESSION_COMMAND_CENTER_BRAIN_CONTEXT).toContain('对明确指定终端工具、命令行方式或脚本执行形式的请求');
     expect(SESSION_COMMAND_CENTER_BRAIN_CONTEXT).toContain('这条点名路由优先于 3a');
     expect(SESSION_COMMAND_CENTER_BRAIN_CONTEXT).toContain('把用户的命令意图完整写入 prompt');
+    expect(SESSION_COMMAND_CENTER_BRAIN_CONTEXT).toContain('收到 accepted 后');
     expect(SESSION_COMMAND_CENTER_BRAIN_CONTEXT).toContain('正在后台任务中运行');
     expect(SESSION_COMMAND_CENTER_BRAIN_CONTEXT).toContain('3a. 对普通邮件、日历和提醒请求');
   });

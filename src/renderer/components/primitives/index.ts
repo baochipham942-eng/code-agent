@@ -31,7 +31,7 @@ export {
 } from './Select';
 
 // TimeInput24
-export { TimeInput24, type TimeInput24Props } from './TimeInput24';
+export { TimeInput24 } from './TimeInput24';
 
 // Modal
 export { Modal, ModalHeader, ModalFooter } from './Modal';

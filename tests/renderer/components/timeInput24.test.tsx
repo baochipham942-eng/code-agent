@@ -5,16 +5,15 @@ import { cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { TimeInput24 } from '../../../src/renderer/components/primitives/TimeInput24';
 
-const originalResolvedOptions = Intl.DateTimeFormat.prototype.resolvedOptions;
-
 function stubTwelveHourLocale(): void {
   vi.stubGlobal('navigator', { language: 'en-US' });
-  vi.spyOn(Intl.DateTimeFormat.prototype, 'resolvedOptions').mockImplementation(function () {
-    return {
-      ...originalResolvedOptions.call(this),
-      hourCycle: 'h12',
-      hour12: true,
-    };
+  vi.spyOn(Intl.DateTimeFormat.prototype, 'resolvedOptions').mockReturnValue({
+    locale: 'en-US',
+    calendar: 'gregory',
+    numberingSystem: 'latn',
+    timeZone: 'America/Los_Angeles',
+    hourCycle: 'h12',
+    hour12: true,
   });
 }
 

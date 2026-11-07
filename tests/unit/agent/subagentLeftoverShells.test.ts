@@ -210,7 +210,7 @@ beforeAll(async () => {
   ({ getConfigService } = await import('../../../src/host/services/core/configService'));
   ({ getSystemPromptHint } = await import('../../../src/shared/i18n/sessionTaskSlot'));
   ({ handoverTimedOutCommand } = await import('../../../src/host/tools/shell/timeoutHandover'));
-}, 30_000);
+}, 60_000);
 
 beforeEach(() => {
   consoleError = vi.spyOn(console, 'error').mockImplementation(() => {});

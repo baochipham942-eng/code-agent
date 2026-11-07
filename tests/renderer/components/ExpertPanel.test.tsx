@@ -136,6 +136,7 @@ afterEach(() => {
 });
 
 beforeEach(() => {
+  useAppStore.setState({ expertPanelTab: 'discover' });
   listRolePacks.mockResolvedValue([]);
   listTeamRecipes.mockResolvedValue([]);
   createTeamRecipe.mockImplementation(async (recipe: Omit<TeamRecipe, 'id'>) => ({ ...recipe, id: 'user-copied' }));
@@ -178,6 +179,21 @@ describe('ExpertPanel', () => {
     const create = screen.getByTestId('expert-create-role');
     expect(create.textContent).toContain('新建专家');
     expect(create.className).toContain('bg-btn-secondary');
+  });
+
+  it('选择「我的」后卸载并重新挂载仍保留选中态与专家列表', async () => {
+    listRoles.mockResolvedValue([
+      makeEntry({ roleId: '自定义客服', source: 'user', displayName: '阿问' }),
+    ]);
+    const first = render(<ExpertPanel />);
+    fireEvent.click(screen.getByTestId('expert-tab-mine'));
+    await waitFor(() => expect(screen.getByTestId('expert-card-自定义客服')).toBeTruthy());
+
+    first.unmount();
+    render(<ExpertPanel />);
+
+    await waitFor(() => expect(screen.getByTestId('expert-tab-mine').getAttribute('aria-selected')).toBe('true'));
+    expect(screen.getByTestId('expert-card-自定义客服')).toBeTruthy();
   });
 
   it('专家团词条不回潮为配方或 recipe', () => {

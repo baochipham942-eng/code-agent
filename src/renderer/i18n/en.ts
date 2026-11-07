@@ -57,6 +57,7 @@ import { connectorRequiredEn } from './connectorRequired';
 import { roleFirstWakeEn } from './roleFirstWake';
 import { roleWakeProposalsEn } from './roleWakeProposals';
 import { permissionRuleNlEn } from './permissionRuleNl';
+import { sessionTaskPresentationEn } from './sessionTaskPresentation';
 // satisfies（而非 `: Translations` 注解）：key 集合必须与 zh 完全一致——zh 多 key /
 // en 缺 key / en 多 key 都在此报红，同时保留 en 自身的推断类型。zh.ts 是形状真源
 //（Translations = typeof zh），与叶子先例 artifactShare.ts 的 satisfies 锁同范式。
@@ -82,6 +83,7 @@ export const en = {
   ...roleFirstWakeEn,
   ...roleWakeProposalsEn,
   ...permissionRuleNlEn,
+  ...sessionTaskPresentationEn,
   // Common
   common: {
     save: 'Save',

@@ -8,7 +8,8 @@
 // ============================================================================
 
 import { UNATTENDED_TRUST_NOTICE } from '../../shared/unattendedTrust';
-import { CRON_AGENT_SNAPSHOT, CRON_GUARDRAILS, EXTERNAL_WATCH } from '../../shared/constants';
+import { CRON_AGENT_SNAPSHOT, CRON_GUARDRAILS, EXTERNAL_WATCH, isZeroPricedModel } from '../../shared/constants';
+import { createLogger } from '../services/infra/logger';
 import type { AgentAction, CronJobDefinition } from '../../shared/contract/cron';
 import {
   buildCronAgentActionResult,
@@ -31,6 +32,8 @@ import { enterObserveModeForCronRun } from './cronObserveMode';
 import { deriveCronPermissionDenied } from './cronPermissionDenied';
 import { parseCronRunDigest } from '../../shared/cronRunDigest';
 import type { CronPermissionDeniedMarker } from '../../shared/contract/sessionAutomation';
+
+const logger = createLogger('CronAgentAction');
 
 export interface CronAgentActionHost {
   /** 从内存 job 表取该任务当前定义（快照写回与常设刷新结算都要最新底稿）。 */
@@ -122,6 +125,19 @@ export async function executeCronAgentAction(
   // 常设刷新（metadata.artifactRefresh）：跑前建快照记基线；非刷新任务返回 undefined 零扰动
   // N-CRON-RUN-LEDGER-VISIBLE：单次运行成本计量（maxRunBudget 有值时计量器兼任预算闸，见 cronRunCostMeter 头注）。
   const costMeter = createCronRunCostMeterForExecution(definition.maxRunBudget, executionId);
+  const runModel = cronSession.modelConfig;
+  if (
+    (definition.maxRunBudget ?? 0) > 0
+    && runModel
+    && isZeroPricedModel(runModel.provider, runModel.model)
+  ) {
+    logger.warn('Run budget cap cannot trigger on a zero-priced model', {
+      jobId: definition.id,
+      model: runModel.model,
+      maxRunBudget: definition.maxRunBudget,
+      reason: 'cap cannot trigger on a zero-priced model',
+    });
+  }
   const artifactRefresh = beginArtifactRefresh(definition);
   // 观察档（N-TRIGGER-OBSERVE-MODE）：本会话的对外副作用调用由 ToolExecutor 拦下记 would_act。
   const leaveObserveMode = enterObserveModeForCronRun(definition, cronSession.id, executionId);

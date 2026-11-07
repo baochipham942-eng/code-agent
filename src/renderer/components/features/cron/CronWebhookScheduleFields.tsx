@@ -4,6 +4,7 @@
 // 单次预算上限（webhook 任务硬性要求 > 0）。
 // ============================================================================
 
+import { FlatFeeBudgetNote } from './FlatFeeBudgetNote';
 import React from 'react';
 import { Button } from '../../primitives/Button';
 import { Input } from '../../primitives/Input';
@@ -47,6 +48,7 @@ export const CronWebhookScheduleFields: React.FC<CronWebhookScheduleFieldsProps>
           placeholder="0.5"
         />
       </FormField>
+      <FlatFeeBudgetNote variant="cron" />
       <p className="text-xs text-zinc-500">{cc.webhook.budgetRequired}</p>
       {validationMessage && (
         <div className="rounded-lg border border-red-500/20 bg-red-500/10 px-3 py-2 text-xs text-badge-danger" data-testid="cron-webhook-validation">

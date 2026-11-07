@@ -304,6 +304,8 @@ export const cronCenterZh = {
     eventConstraintsHint: '事件触发任务只能在本机运行，动作固定为 Agent 任务；单次预算上限必须设置（就在下方）。',
     eventBudgetLabel: '单次预算上限 (USD)',
     eventBudgetHint: '事件触发任务必填：本次运行花费超过该金额即停车并自动停用。',
+    flatFeeBudgetNoteSettings: '{model} 是包月模型，不按美元计费，美元上限对它不生效。要让上限起作用，请换成按量计费的模型。',
+    flatFeeBudgetNoteCron: '{model} 是包月模型，不按美元计费，美元上限对它不生效。要限制单次运行，请改用任务设置里的「执行超时」，或换成按量计费的模型。',
     // shared 校验器（cronEventValidation）reason → 用户能照着改的中文提示；
     // 判据与文案原文在 shared 层（= createJob 抛的），这里只做呈现映射。
     // Record 键集 = reason 全集：校验器新增 reason 时 zh/en 都必须补齐词条。
@@ -740,6 +742,8 @@ export const cronCenterEn: typeof cronCenterZh = {
     eventConstraintsHint: 'Event-triggered jobs run on this machine only, use an Agent action, and require a per-run budget cap (set it just below).',
     eventBudgetLabel: 'Per-run budget cap (USD)',
     eventBudgetHint: 'Required for event jobs: the run stops and the job is disabled once spending exceeds this cap.',
+    flatFeeBudgetNoteSettings: '{model} is a flat-fee model and is not billed in USD, so the USD cap does not apply to it. Switch to a pay-per-use model for the cap to take effect.',
+    flatFeeBudgetNoteCron: '{model} is a flat-fee model and is not billed in USD, so the USD cap does not apply to it. To limit a single run, use the task\'s run time limit ("Execution timeout"), or switch to a pay-per-use model.',
     // reason → user-facing copy, mapped from the shared validator (cronEventValidation);
     // the check itself and its English messages live in shared (what createJob throws).
     // Record keys = the full reason set: adding a reason forces copy here and in zh.

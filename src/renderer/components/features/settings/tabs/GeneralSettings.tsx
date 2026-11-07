@@ -11,6 +11,7 @@
 // 用户 ack 后写 inheritanceMigrationAcked=true。
 // ============================================================================
 
+import { FlatFeeBudgetNote } from '../../cron/FlatFeeBudgetNote';
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   AlertTriangle,
@@ -578,6 +579,8 @@ export const GeneralSettings: React.FC = () => {
               </div>
             </div>
           </div>
+
+          <FlatFeeBudgetNote variant="settings" />
 
           {budgetInputInvalid ? (
             <p className="text-xs text-badge-danger" role="alert">{budgetText.invalidValue}</p>

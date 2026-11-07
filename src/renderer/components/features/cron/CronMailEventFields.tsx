@@ -9,6 +9,7 @@
 // 必填单次预算，判据来自 shared 校验器，呈现走 reason → 本地化文案。
 // ============================================================================
 
+import { FlatFeeBudgetNote } from './FlatFeeBudgetNote';
 import React from 'react';
 import { CRON_EVENT_TRIGGER } from '@shared/constants';
 import type { EventScheduleViolation } from '@shared/cronEventValidation';
@@ -167,6 +168,7 @@ export const CronMailEventFields: React.FC<CronMailEventFieldsProps> = ({
         />
       </FormField>
 
+      <FlatFeeBudgetNote variant="cron" />
       <p className="text-xs text-zinc-500">{cc.eventConstraintsHint}</p>
 
       {validationMessage && (

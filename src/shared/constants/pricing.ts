@@ -193,6 +193,15 @@ export function getCuratedModelPricing(provider: string, model: string): ModelPr
   return undefined;
 }
 
+/**
+ * 包月/免费额度模型（策展价表里 input 与 output 都是 0）。美元预算上限对它们永不触发。
+ * 未知/自定义模型返回 false（它们按 default 非零价计费）。
+ */
+export function isZeroPricedModel(provider: string, model: string): boolean {
+  const pricing = getCuratedModelPricing(provider, model);
+  return pricing?.input === 0 && pricing.output === 0;
+}
+
 /** 设计模式 flux 路由所用模型 id（schnell 档，成本低；供 generateImage 的 fluxModel 入参 + 价表查表）。 */
 export const DESIGN_FLUX_MODEL = 'black-forest-labs/flux.2-klein-4b';
 

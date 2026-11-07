@@ -10,6 +10,7 @@
 // 选完调度类型不立刻报）。
 // ============================================================================
 
+import { FlatFeeBudgetNote } from './FlatFeeBudgetNote';
 import React, { useEffect, useRef, useState } from 'react';
 import { Button } from '../../primitives/Button';
 import { Input } from '../../primitives/Input';
@@ -278,6 +279,7 @@ export const CronEventScheduleFields: React.FC<CronEventScheduleFieldsProps> = (
         />
       </FormField>
 
+      <FlatFeeBudgetNote variant="cron" />
       <p className="text-xs text-zinc-500" data-testid="cron-event-constraints-hint">
         {cc.eventConstraintsHint}
       </p>

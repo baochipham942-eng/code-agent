@@ -76,5 +76,16 @@ describe('预算上限 renderer 写路径', () => {
       expect.anything(),
     );
   });
-});
 
+  it('包月默认模型下预算区显示不生效提示，按量模型下没有', async () => {
+    useAppStore.setState({ modelConfig: { ...useAppStore.getState().modelConfig, provider: 'xiaomi', model: 'mimo-v2.6-flash' } });
+    const { unmount } = render(<GeneralSettings />);
+    await screen.findByTestId('foreground-budget-input');
+    expect(screen.getByTestId('flat-fee-budget-note').textContent).toContain('美元上限对它不生效');
+    unmount();
+    useAppStore.setState({ modelConfig: { ...useAppStore.getState().modelConfig, provider: 'zhipu', model: 'glm-5.3' } });
+    render(<GeneralSettings />);
+    await screen.findByTestId('foreground-budget-input');
+    expect(screen.queryByTestId('flat-fee-budget-note')).toBeNull();
+  });
+});

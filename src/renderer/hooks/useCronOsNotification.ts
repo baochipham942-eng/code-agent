@@ -15,7 +15,7 @@ import {
   cronLoginWallSiteOriginFromNotification,
   openCronLoginWallSite,
 } from '../components/features/cron/cronLoginWallNotice';
-import { postOsNotification, registerNotificationClick } from '../utils/osNotification';
+import { postOsNotification, registerNotificationClick, reportNotificationHandled } from '../utils/osNotification';
 
 const MISSED_ALERT_TOAST_MS = 10_000;
 
@@ -66,10 +66,14 @@ export function useCronOsNotification(
         // 不弹 OS 通知、不作点击目标（retract 本身没有任何用户可见动作）。
         if (event.retract) {
           missedRef.current.remove(event.dedupeKey);
+          reportNotificationHandled({ mode: 'renderer-early-return', reason: 'retract', dispatched: false, dedupeKey: event.dedupeKey });
           return;
         }
         // 预算窗口折起弹窗时单独送达的未读标记：只供侧栏圆点，不弹 OS 通知、不作点击目标。
-        if (event.attentionOnly) return;
+        if (event.attentionOnly) {
+          reportNotificationHandled({ mode: 'renderer-early-return', reason: 'attention-only', dispatched: false });
+          return;
+        }
         lastEventRef.current = event;
         missedRef.current.record(event, windowAttended());
         const needsInput = event.urgent === true && event.failure !== true;

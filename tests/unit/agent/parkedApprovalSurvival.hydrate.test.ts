@@ -163,6 +163,8 @@ describe('parked approval survival across restart (hydrate + startupMaintenance)
     faithful?: boolean;
     withFingerprint?: boolean;
     kind?: 'tool_approval' | 'directory_access' | 'channel_pairing';
+    /** 预置存量 displayTool（如已堆叠多层重启前缀的老行），缺省不带。 */
+    displayTool?: string;
   }): void {
     const command = input.command ?? 'sleep 30';
     const survival = bashSurvivalPayload(command);
@@ -182,6 +184,7 @@ describe('parked approval survival across restart (hydrate + startupMaintenance)
         permissionLevel: 'medium',
         requestedAt: input.requestedAt,
         argsRef: { sessionId: input.sessionId, toolCallId: input.toolCallId },
+        ...(input.displayTool ? { displayTool: input.displayTool } : {}),
         ...(withFingerprint ? { argsFingerprint: survival.argsFingerprint, ledgerFaithful: faithful } : {}),
       },
       submittedAt: input.requestedAt,
@@ -517,5 +520,53 @@ describe('parked approval survival across restart (hydrate + startupMaintenance)
     const again = await resumeSurvivingParkedApproval({ requestId: 'inbox-cwd-1', response: 'allow', ports });
     expect(again).toEqual({ handled: false });
     expect(executed).toHaveLength(1);
+  });
+
+  // ------------------------------------------------------------------
+  // N-FIX-PARKED-APPROVAL-RESTART-PREFIX-STACK：重启前缀幂等（FB-599 前缀堆叠）
+  // 每次启动 hydrate 都会重写幸存行标题——标记必须幂等，displayTool 恒为
+  // 「重启前发起 · <tool>」（前缀恰一枚），否则连续重启一层层堆叠。
+  // ------------------------------------------------------------------
+
+  it('重启前缀幂等：同一幸存行连续 hydrate 3 次（同库、24h 窗口内），displayTool 仍是单枚前缀', () => {
+    createCrashedSession('rehydrate-session');
+    seedAssistantToolCall('rehydrate-session', 'call-rehydrate', 'sleep 30');
+    seedParkedRow({ id: 'rehydrate-1', sessionId: 'rehydrate-session', toolCallId: 'call-rehydrate', requestedAt: 1_000 });
+
+    const H = 3_600_000;
+    expect(hydrate(1_000 + H).survived).toBe(1); // 第 1 次重启
+    expect(hydrate(1_000 + 2 * H).survived).toBe(1); // 第 2 次重启
+    expect(hydrate(1_000 + 3 * H).survived).toBe(1); // 第 3 次重启（均在 24h 存活窗口内）
+
+    const displayTool = JSON.parse(repo.getById('rehydrate-1')!.payloadJson).displayTool as string;
+    expect(displayTool).toBe('重启前发起 · Bash');
+    expect(displayTool.split('重启前发起 · ').length - 1).toBe(1); // 前缀恰出现一次，未堆叠
+  });
+
+  it('存量堆叠行收敛：displayTool 已带 3 层重启前缀的老行，一次 hydrate 收敛为单枚', () => {
+    createCrashedSession('stacked-session');
+    seedAssistantToolCall('stacked-session', 'call-stacked', 'sleep 30');
+    seedParkedRow({
+      id: 'stacked-1', sessionId: 'stacked-session', toolCallId: 'call-stacked', requestedAt: 1_000,
+      displayTool: '重启前发起 · 重启前发起 · 重启前发起 · Bash', // 旧版本堆叠的存量行
+    });
+
+    const counts = hydrate(2_000);
+
+    expect(counts.survived).toBe(1);
+    const displayTool = JSON.parse(repo.getById('stacked-1')!.payloadJson).displayTool as string;
+    expect(displayTool).toBe('重启前发起 · Bash');
+    expect(displayTool.split('重启前发起 · ').length - 1).toBe(1);
+  });
+
+  it('首次 hydrate 标题不变：displayTool 恰为「重启前发起 · Bash」（单枚前缀）', () => {
+    createCrashedSession('first-mark-session');
+    seedAssistantToolCall('first-mark-session', 'call-first-mark', 'sleep 30');
+    seedParkedRow({ id: 'first-mark-1', sessionId: 'first-mark-session', toolCallId: 'call-first-mark', requestedAt: 1_000 });
+
+    const counts = hydrate(2_000);
+
+    expect(counts.survived).toBe(1);
+    expect(JSON.parse(repo.getById('first-mark-1')!.payloadJson).displayTool).toBe('重启前发起 · Bash');
   });
 });

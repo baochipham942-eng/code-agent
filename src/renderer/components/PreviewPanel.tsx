@@ -235,7 +235,9 @@ export function PreviewErrorState({
 export function PresentationPreview({ content }: { content: string }) {
   const { t } = useI18n();
   const pv = t.previewWorkspace.preview;
-  const pagePreview = parsePresentationPagePreview(content);
+  // 同一份缓存 content 在纯重渲染间保持同一对象：picker 的 effect 依赖
+  // preview 的引用稳定性，避免重试结果被重渲染打回缓存里的旧状态。
+  const pagePreview = useMemo(() => parsePresentationPagePreview(content), [content]);
   if (pagePreview) {
     return (
       <div className="h-full overflow-auto bg-zinc-950 p-4">

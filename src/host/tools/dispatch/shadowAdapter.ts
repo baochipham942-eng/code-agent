@@ -121,6 +121,10 @@ export function buildProtocolContext(input: ProtocolContextInput): ProtocolToolC
 
   return {
     runId: input.runId,
+    // FB-772：委托幂等键（submission_key）按发起轮 origin_turn_id 派生，漏搬 =
+    // 协议工具恒看到 undefined，delegate_session 只能落跨轮共享的 'unknown-turn'
+    // 常量，同目标第二个不同正文的委托被 G4 误拒。
+    turnId: input.legacyCtx.turnId,
     sourceMessageId: input.legacyCtx.sourceMessageId,
     sessionId: input.sessionId ?? 'protocol-unknown',
     workspace: input.workspace,

@@ -21,6 +21,7 @@ import ipcService from '../../../services/ipcService';
 import { IPC_CHANNELS } from '@shared/ipc';
 import { CRON_REVIEW_INBOX_TIMEOUTS } from '@shared/constants';
 import { createLogger } from '../../../utils/logger';
+import { localizeParkedApprovalClosureText } from '../../../utils/toolExecutionPresentation';
 import { useSessionStore } from '../../../stores/sessionStore';
 import { useAppStore } from '../../../stores/appStore';
 import { useCronStore } from '../../../stores/cronStore';
@@ -226,7 +227,8 @@ export const AutomationReviewInbox: React.FC<AutomationReviewInboxProps> = ({ on
                       >
                         <div className="truncate text-sm text-zinc-200">{item.displayTool ?? item.tool}</div>
                         <div className="text-[11px] text-zinc-500">
-                          {cc.parkedVoidedLabel}：{item.voidReason}
+                          {/* 收口句按当前语言展示（老行持久化的是中文原句）；非收口文本原样保留 */}
+                          {cc.parkedVoidedLabel}：{localizeParkedApprovalClosureText(item.voidReason, t) ?? item.voidReason}
                         </div>
                       </div>
                     );

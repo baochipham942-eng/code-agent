@@ -5,7 +5,7 @@ import type { ToolCapabilitySource } from '../types/runWorkbench';
 import type { Translations } from '../i18n';
 import { readHostReasonFromMetadata, resolveHostReasonCopy } from './hostReasonPresentation';
 import { redactCredentialText } from '@shared/security/secretPatterns';
-import { isParkedApprovalClosureSentence } from '@shared/parkedApprovalClosure';
+import { isParkedApprovalClosureSentence, lookupParkedApprovalClosureKey } from '@shared/parkedApprovalClosure';
 
 /**
  * 判定一条工具结果是否「自动加载重试」的良性内部状态（success:false 但不是真失败）。
@@ -260,6 +260,9 @@ const REGISTERED_TOOL_ERROR_CODES: ReadonlySet<RegisteredToolErrorCode> = new Se
   'INJECTION_CEILING',
   'MUSIC_SERVICE_UNAVAILABLE',
   'MUSIC_SERVICE_UNAVAILABLE_NO_ALTERNATIVE',
+  'WORKTREE_NO_REPO',
+  'WORKTREE_NO_COMMITS',
+  'WORKTREE_CREATE_FAILED',
 ]);
 
 /**
@@ -461,13 +464,24 @@ function isDeclinedSandboxEscalation(metadata: Record<string, unknown> | null | 
   return (escalation as { decision?: unknown }).decision === 'declined';
 }
 
+/**
+ * 停车审批收口句的展示侧翻译：台账/收件箱持久化的是中文原句（老行也不会重写），
+ * 拿原句做精确匹配换出当前语言的同义句。差一个字的文本返回 null，调用方回退原文。
+ */
+export function localizeParkedApprovalClosureText(text: unknown, t: Translations): string | null {
+  if (!isParkedApprovalClosureSentence(text)) return null;
+  const key = lookupParkedApprovalClosureKey(text);
+  return key === null ? null : t.toolStepHumanize.parkedClosure[key];
+}
+
 /** 停车审批被自动收口（没有执行）的 denied 结果：「未执行 · <原因句>」，不读作执行失败。 */
 export function resolveParkedApprovalClosureCopy(
   toolCall: Pick<ToolCall, 'result'>,
   t: Translations,
 ): string | null {
   const error = toolCall.result?.error;
-  return isParkedApprovalClosureSentence(error) ? `${t.toolStepHumanize.notRunPrefix} · ${error}` : null;
+  const localized = localizeParkedApprovalClosureText(error, t);
+  return localized === null ? null : `${t.toolStepHumanize.notRunPrefix} · ${localized}`;
 }
 
 export function humanizeToolFailureReason(toolCall: Pick<ToolCall, 'name' | 'result'>, t: Translations): string {

@@ -63,8 +63,30 @@ const systemPromptHint = {
   en: 'A system permission prompt may still be on screen; dismiss it or choose Don\'t Allow.',
 } as const;
 
+export function getSystemPromptHint(locale: SessionTaskSlotLocale): string {
+  return systemPromptHint[locale];
+}
+
+const automationPromptTimeoutHint = {
+  zh: `这条命令可能一直在等待无人处理的 macOS「自动化」授权框，随后超时。请在「系统设置」>「隐私与安全性」>「自动化」中允许 Agent Neo 控制相应应用，然后重跑。${systemPromptHint.zh}`,
+  en: `The command probably waited for an unanswered macOS Automation prompt and timed out. In System Settings > Privacy & Security > Automation, allow Agent Neo to control the app, then rerun. ${systemPromptHint.en}`,
+} as const;
+
+export function withAutomationPromptTimeoutHint(
+  text: string,
+  locale: SessionTaskSlotLocale,
+  flag?: boolean,
+): string {
+  if (!flag) return text;
+  const hasSentenceEnding = /[.!?。！？]$/.test(text);
+  const separator = locale === 'zh'
+    ? (hasSentenceEnding ? '' : '。')
+    : (hasSentenceEnding ? ' ' : '. ');
+  return `${text}${separator}${automationPromptTimeoutHint[locale]}`;
+}
+
 function withSystemPromptHint(text: string, locale: SessionTaskSlotLocale, flag?: boolean): string {
-  return flag ? `${text}${locale === 'zh' ? '。' : '. '}${systemPromptHint[locale]}` : text;
+  return flag ? `${text}${locale === 'zh' ? '。' : '. '}${getSystemPromptHint(locale)}` : text;
 }
 
 export function formatSessionCommandTaskIdleFailure(input: {

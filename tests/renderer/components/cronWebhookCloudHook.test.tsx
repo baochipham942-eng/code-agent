@@ -178,6 +178,9 @@ describe('⑤b 编辑器门', () => {
     fireEvent.change(controlForLabel('Agent 类型'), { target: { value: 'default' } });
     fireEvent.change(controlForLabel('Prompt'), { target: { value: 'p' } });
     fireEvent.click(screen.getByText('创建任务'));
+    // 无角色任务先过保存前确认卡（N-CRON-MORNING-TRIAGE-REST1），确认后才创建 +
+    // register → 一次性链接卡（CronWebhookCreatedView 行为不变）。
+    fireEvent.click(await screen.findByTestId('cron-pending-routine-confirm'));
 
     const urlField = await screen.findByTestId('cron-webhook-url');
     expect((urlField as HTMLInputElement).value).toBe(HOOK_URL_1);
@@ -204,6 +207,7 @@ describe('⑤b 编辑器门', () => {
     fireEvent.change(controlForLabel('Agent 类型'), { target: { value: 'default' } });
     fireEvent.change(controlForLabel('Prompt'), { target: { value: 'p' } });
     fireEvent.click(screen.getByText('创建任务'));
+    fireEvent.click(await screen.findByTestId('cron-pending-routine-confirm'));
 
     const failure = await screen.findByTestId('cron-webhook-failure');
     expect(failure.textContent).toContain(wc.registerFailed);

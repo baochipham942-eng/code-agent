@@ -95,6 +95,8 @@ describe('morning-triage template role field', () => {
 
     fireEvent.click(screen.getByText('创建任务'));
 
+    // 没选角色 = 无角色任务：先出保存前确认卡（N-CRON-MORNING-TRIAGE-REST1），确认才落库。
+    fireEvent.click(await screen.findByTestId('cron-pending-routine-confirm'));
     await waitFor(() => expect(cronStore.createJob).toHaveBeenCalledTimes(1));
     const payload = cronStore.createJob.mock.calls[0]?.[0] as CronJobDefinition;
     expect(payload.action.type === 'agent' ? payload.action.roleId : 'present').toBeUndefined();

@@ -150,6 +150,10 @@ describe('CronSimpleCreate 保存后复述', () => {
     });
     fireEvent.click(screen.getByRole('button', { name: '创建自动化' }));
 
+    // 表单没选角色 = 无角色输入：先过保存前确认卡，确认后才落库
+    //（N-CRON-MORNING-TRIAGE-REST1）。
+    fireEvent.click(await screen.findByTestId('cron-pending-routine-confirm'));
+
     await waitFor(() => {
       expect(screen.getByTestId('cron-saved-routine-restate')).toBeTruthy();
     });
@@ -167,7 +171,7 @@ describe('CronSimpleCreate 保存后复述', () => {
     expect(onDone).toHaveBeenCalledTimes(1);
   });
 
-  it('非角色任务照旧立即关闭，不出复述视图', async () => {
+  it('非角色任务：先出保存前确认卡，确认后才 createJob 并关闭（不出复述视图）', async () => {
     mocks.createJob.mockResolvedValue(savedRoleJob({
       action: { type: 'agent', agentType: 'default', prompt: '记录里的目标' },
       resultChannel: undefined,
@@ -181,9 +185,18 @@ describe('CronSimpleCreate 保存后复述', () => {
     });
     fireEvent.click(screen.getByRole('button', { name: '创建自动化' }));
 
+    // 无角色输入先挂起：createJob 零调用，保存后复述视图不出现（那张卡只给角色绑定）。
+    await waitFor(() => {
+      expect(screen.getByTestId('cron-pending-routine-restate')).toBeTruthy();
+    });
+    expect(mocks.createJob).not.toHaveBeenCalled();
+    expect(screen.queryByTestId('cron-saved-routine-restate')).toBeNull();
+
+    fireEvent.click(screen.getByTestId('cron-pending-routine-confirm'));
     await waitFor(() => {
       expect(onDone).toHaveBeenCalledTimes(1);
     });
+    expect(mocks.createJob).toHaveBeenCalledTimes(1);
     expect(screen.queryByTestId('cron-saved-routine-restate')).toBeNull();
     // 非角色任务：store 照旧关掉编辑器。
     await waitFor(() => {
@@ -263,7 +276,7 @@ describe('CronJobEditor 保存后复述', () => {
     expect(onClose).toHaveBeenCalledTimes(1);
   });
 
-  it('非角色任务的 update 照旧立即关闭', async () => {
+  it('非角色任务的 update：先出保存前确认卡，确认后才 updateJob 并关闭', async () => {
     mocks.updateJob.mockResolvedValue(savedRoleJob({
       id: 'job-edit',
       action: { type: 'agent', agentType: 'default', prompt: '记录里的目标' },
@@ -284,9 +297,17 @@ describe('CronJobEditor 保存后复述', () => {
 
     fireEvent.click(screen.getByRole('button', { name: '保存修改' }));
 
+    // 无角色输入先挂起：updateJob 零调用。
+    await waitFor(() => {
+      expect(screen.getByTestId('cron-pending-routine-restate')).toBeTruthy();
+    });
+    expect(mocks.updateJob).not.toHaveBeenCalled();
+
+    fireEvent.click(screen.getByTestId('cron-pending-routine-confirm'));
     await waitFor(() => {
       expect(onClose).toHaveBeenCalledTimes(1);
     });
+    expect(mocks.updateJob).toHaveBeenCalledTimes(1);
     expect(screen.queryByTestId('cron-saved-routine-restate')).toBeNull();
     await waitFor(() => {
       expect(useCronStore.getState().isEditorOpen).toBe(false);

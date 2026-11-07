@@ -26,6 +26,8 @@ import { CronRunsOnSelector } from './CronRunsOnSelector';
 import { CronResultChannelField } from './CronResultChannel';
 import { showCronLoginWallWarning } from './cronLoginWallNotice';
 import { SavedRoutineRestate } from './SavedRoutineRestate';
+import { PendingRoutineRestate } from './PendingRoutineRestate';
+import { usePendingRoutineGate, type PendingRoutineSave } from './usePendingRoutineGate';
 
 export type SimpleFrequency = 'daily' | 'weekdays' | 'weekly' | 'hourly' | 'once';
 
@@ -112,6 +114,34 @@ export const CronSimpleCreate: React.FC<CronSimpleCreateProps> = ({ onDone }) =>
   const [error, setError] = useState<string | null>(null);
   // 保存成功且角色绑定的任务：不直接关闭，切换到只读复述视图（Done 才关闭）。
   const [savedJob, setSavedJob] = useState<CronJobDefinition | null>(null);
+  // 无角色任务（缺省档，新手最常见的路）保存前先出复述卡，确认后才真正 createJob
+  // （N-CRON-MORNING-TRIAGE-REST1）；选了角色照旧直存 → 保存后复述视图。
+  const persistPending = async (pending: PendingRoutineSave): Promise<boolean> => {
+    setSubmitting(true);
+    setError(null);
+    try {
+      const created = await createJob(pending.input);
+      showCronLoginWallWarning(created, { warning: cc.loginWallWarning, openSite: cc.loginWallOpenSite });
+      if (isRoleBoundCronJob(created)) {
+        setSavedJob(created);
+        return true;
+      }
+      onDone();
+      return true;
+    } catch (err) {
+      const message = err instanceof Error ? err.message : '';
+      setError(message.includes('Cloud jobs must have an interval')
+        ? cc.cloudIntervalHint
+        : message.includes('Local jobs must have an interval')
+          ? cc.localIntervalHint
+          : message || cc.simpleCreateFailed);
+      return false;
+    } finally {
+      setSubmitting(false);
+    }
+  };
+  const { pending: pendingSave, gateOrPersist, confirm: confirmPending, back: backToEdit } =
+    usePendingRoutineGate(persistPending);
 
   useEffect(() => {
     listRoles().then(setRoles).catch(() => setRoles([]));
@@ -136,13 +166,7 @@ export const CronSimpleCreate: React.FC<CronSimpleCreateProps> = ({ onDone }) =>
         resultChannel,
         runsOn === 'local' ? urgencyCriteria : '',
       );
-      const created = await createJob(buildCronJobInput(draft));
-      showCronLoginWallWarning(created, { warning: cc.loginWallWarning, openSite: cc.loginWallOpenSite });
-      if (isRoleBoundCronJob(created)) {
-        setSavedJob(created);
-        return;
-      }
-      onDone();
+      await gateOrPersist(buildCronJobInput(draft), 'create');
     } catch (err) {
       const message = err instanceof Error ? err.message : '';
       setError(message.includes('Cloud jobs must have an interval')
@@ -159,6 +183,19 @@ export const CronSimpleCreate: React.FC<CronSimpleCreateProps> = ({ onDone }) =>
 
   if (savedJob) {
     return <SavedRoutineRestate job={savedJob} onDone={onDone} />;
+  }
+
+  if (pendingSave) {
+    return (
+      <PendingRoutineRestate
+        input={pendingSave.input}
+        mode={pendingSave.mode}
+        confirming={submitting}
+        error={error}
+        onConfirm={() => void confirmPending()}
+        onBack={backToEdit}
+      />
+    );
   }
 
   return (

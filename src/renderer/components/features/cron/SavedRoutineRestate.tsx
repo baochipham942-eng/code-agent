@@ -61,6 +61,8 @@ export const SavedRoutineRestate: React.FC<SavedRoutineRestateProps> = ({ job, o
     labels: {
       what: sc.what,
       when: sc.when,
+      notifyWhen: sc.notifyWhen,
+      fallbackNotifyWhen: sc.fallbackNotifyWhen,
       result: sc.result,
       fallbackWhat: sc.fallbackWhat,
       reviewInbox: sc.reviewInbox,

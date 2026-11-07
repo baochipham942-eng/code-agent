@@ -13,10 +13,13 @@ import {
   cronJobBoundRoleId,
   isRoleBoundCronJob,
 } from '../../../src/shared/cronRoleBinding';
+import { buildCronJobInput, createDefaultCronJobDraft } from '../../../src/renderer/components/features/cron/types';
 
 const labels = {
   what: '检查什么',
   when: '什么时候',
+  notifyWhen: '什么变化值得通知',
+  fallbackNotifyWhen: '任务完成或发现异常时通知',
   result: '结果送到哪里',
   fallbackWhat: '按任务描述执行并整理结果',
   reviewInbox: '自动化审核收件箱',
@@ -298,5 +301,97 @@ describe('buildSavedRoutineRestateRows', () => {
       label: 'Status',
       value: 'Currently paused — it will only run on schedule after you turn it on.',
     });
+  });
+});
+
+// N-CRON-MORNING-TRIAGE-REST1：保存前确认卡（notifyWhenRow + create 输入形状 +
+// 无角色前缀）。同一份 builder，不另立措辞。
+describe('buildSavedRoutineRestateRows · 预保存确认卡（notifyWhenRow）', () => {
+  function roleLessInput(overrides: Partial<CronJobDefinition> = {}): CronJobDefinition {
+    return agentJob({
+      action: { type: 'agent', agentType: 'default', prompt: '盯竞品并汇总' },
+      ...overrides,
+    });
+  }
+
+  it('notifyWhenRow：四行 what/when/notifyWhen/result，无角色前缀，notifyWhen 走兜底文案', () => {
+    const rows = buildSavedRoutineRestateRows({
+      job: roleLessInput(),
+      channelLabel: '',
+      labels,
+      notifyWhenRow: true,
+    });
+    expect(rows.map((row) => row.key)).toEqual(['what', 'when', 'notifyWhen', 'result']);
+    expect(rows[0].value).toBe('盯竞品并汇总');
+    expect(rows[0].value).not.toContain('执行：');
+    expect(rows[1].value).toBe('每天 09:00');
+    expect(rows[2]).toEqual({ key: 'notifyWhen', label: '什么变化值得通知', value: '任务完成或发现异常时通知' });
+  });
+
+  it('notifyWhenRow：设了 urgencyCriteria 时 notifyWhen 行陈述判据原文', () => {
+    const rows = buildSavedRoutineRestateRows({
+      job: roleLessInput({
+        action: {
+          type: 'agent', agentType: 'default', prompt: '盯竞品并汇总',
+          urgencyCriteria: '只有老板发来的邮件算今天必须处理',
+        },
+      }),
+      channelLabel: '',
+      labels,
+      notifyWhenRow: true,
+    });
+    expect(rows[2].value).toBe('只有老板发来的邮件算今天必须处理');
+  });
+
+  it('notifyWhenRow：action.notifyWhen 优先于 urgencyCriteria', () => {
+    const rows = buildSavedRoutineRestateRows({
+      job: roleLessInput({
+        action: {
+          type: 'agent', agentType: 'default', prompt: '盯竞品并汇总',
+          notifyWhen: '发现新版本发布才通知', urgencyCriteria: '只有老板发来的邮件算今天必须处理',
+        },
+      }),
+      channelLabel: '',
+      labels,
+      notifyWhenRow: true,
+    });
+    expect(rows[2].value).toBe('发现新版本发布才通知');
+  });
+
+  it('notifyWhenRow：非 agent 动作不出 notifyWhen 行（通知判据只挂在 agent 执行链上）', () => {
+    const rows = buildSavedRoutineRestateRows({
+      job: agentJob({ action: { type: 'shell', command: 'echo ok' } }),
+      channelLabel: '',
+      labels,
+      notifyWhenRow: true,
+    });
+    expect(rows.map((row) => row.key)).toEqual(['what', 'when', 'result']);
+  });
+
+  it('不开 notifyWhenRow 照旧三行（保存后复述视图形状不变）', () => {
+    const rows = buildSavedRoutineRestateRows({
+      job: agentJob({ action: { type: 'agent', agentType: 'default', prompt: 'p', urgencyCriteria: '判据' } }),
+      roleDisplayName: '小星',
+      channelLabel: '',
+      labels,
+    });
+    expect(rows.map((row) => row.key)).toEqual(['what', 'when', 'result']);
+  });
+
+  it('接受 buildCronJobInput 产出的 create 输入形状（id/createdAt/updatedAt 缺席）', () => {
+    const draft = {
+      ...createDefaultCronJobDraft(),
+      name: '盯竞品',
+      actionType: 'agent' as const,
+      agentType: 'default',
+      agentPrompt: '盯竞品并汇总',
+      scheduleType: 'cron' as const,
+      cronExpression: '0 9 * * *',
+    };
+    const input = buildCronJobInput(draft);
+    expect('id' in input).toBe(false);
+    const rows = buildSavedRoutineRestateRows({ job: input, channelLabel: '', labels, notifyWhenRow: true });
+    expect(rows.map((row) => row.key)).toEqual(['what', 'when', 'notifyWhen', 'result']);
+    expect(rows[1].value).toBe('每天 09:00');
   });
 });

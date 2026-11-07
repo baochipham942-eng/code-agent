@@ -101,6 +101,8 @@ describe('挂载编辑器（编辑路径）', () => {
     await waitFor(() => expect(screen.getByDisplayValue('Refresh status.md')).toBeTruthy());
 
     fireEvent.click(screen.getByText('保存修改'));
+    // 无角色任务先过保存前确认卡（N-CRON-MORNING-TRIAGE-REST1），确认才落库。
+    fireEvent.click(await screen.findByTestId('cron-pending-routine-confirm'));
 
     const updateJob = useCronStore.getState().updateJob as Mock;
     await waitFor(() => expect(updateJob).toHaveBeenCalledTimes(1));
@@ -116,6 +118,7 @@ describe('挂载编辑器（复制路径，基线护栏）', () => {
     await waitFor(() => expect(screen.getByDisplayValue(/Refresh status\.md/)).toBeTruthy());
 
     fireEvent.click(screen.getByText('创建任务'));
+    fireEvent.click(await screen.findByTestId('cron-pending-routine-confirm'));
 
     const createJob = useCronStore.getState().createJob as Mock;
     await waitFor(() => expect(createJob).toHaveBeenCalledTimes(1));

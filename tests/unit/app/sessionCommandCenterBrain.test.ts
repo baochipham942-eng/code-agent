@@ -62,10 +62,11 @@ describe('SESSION_COMMAND_CENTER_BRAIN_CONTEXT design notice', () => {
   // 「不要说 X」和 X 写在同一句是经典失效形态——这道门钉住「只讲能做什么」，
   // 防止有人再把负向枚举加回来。
   it('does not hand the model the refusal vocabulary it echoed back', () => {
-    for (const name of ['Bash', 'WebSearch', 'ToolSearch']) {
+    for (const name of ['WebSearch', 'ToolSearch']) {
       expect(SESSION_COMMAND_CENTER_BRAIN_CONTEXT).not.toContain(name);
     }
-    for (const word of ['禁用', '受限', '不能动']) {
+    expect(SESSION_COMMAND_CENTER_BRAIN_CONTEXT.match(/\bBash\b/g)).toHaveLength(1);
+    for (const word of ['禁用', '受限', '不能动', '不可用', '无法使用', '不能使用', '没有权限', '无权限', '权限不足']) {
       expect(SESSION_COMMAND_CENTER_BRAIN_CONTEXT).not.toContain(word);
     }
   });
@@ -93,6 +94,15 @@ describe('SESSION_COMMAND_CENTER_BRAIN_CONTEXT design notice', () => {
     for (const intent of ['跑命令', '联网查证', '等待审批', '生成级长任务']) {
       expect(SESSION_COMMAND_CENTER_BRAIN_CONTEXT).toContain(intent);
     }
+  });
+
+  it('routes an explicitly named command method to a background task with positive wording', () => {
+    expect(SESSION_COMMAND_CENTER_BRAIN_CONTEXT).toContain('用户明确点名 Bash、终端、命令行或脚本执行形式时');
+    expect(SESSION_COMMAND_CENTER_BRAIN_CONTEXT).toContain('这条点名路由优先于 3a');
+    expect(SESSION_COMMAND_CENTER_BRAIN_CONTEXT).toContain('把用户的命令意图完整写入 prompt');
+    expect(SESSION_COMMAND_CENTER_BRAIN_CONTEXT).toContain('调用后用一句话说明它正在作为后台任务运行');
+    expect(SESSION_COMMAND_CENTER_BRAIN_CONTEXT).toContain('再一句话说明它已经开始');
+    expect(SESSION_COMMAND_CENTER_BRAIN_CONTEXT).toContain('3a. 本轮工具表里已有邮件、日历、提醒事项工具时');
   });
 
   it('covers direct foreground writes and contextual file references', () => {

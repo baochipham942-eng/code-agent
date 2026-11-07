@@ -122,6 +122,8 @@ describe('CronSimpleCreate · 无角色任务先复述后保存', () => {
     await waitFor(() => expect(pendingCard()).toBeTruthy());
     expect(mocks.createJob).not.toHaveBeenCalled();
     expect(onDone).not.toHaveBeenCalled();
+    expect(pendingCard().textContent).toContain('现在还没有创建任何任务，核对无误再保存；想改就返回。');
+    expect(pendingCard().textContent).not.toContain('改动还没有保存');
     // 四行：what 跟 goal（复述语义源），when 是人话时间，notifyWhen 走兜底句，result 落审核收件箱。
     expect(pendingRowValue('what')).toBe('每天盯一下竞品发布');
     expect(pendingRowValue('when')).toBe('每天 09:00');
@@ -240,6 +242,9 @@ describe('CronJobEditor · 无角色任务先复述后保存', () => {
 
     await waitFor(() => expect(pendingCard()).toBeTruthy());
     expect(mocks.updateJob).not.toHaveBeenCalled();
+    expect(pendingCard().textContent).toContain('改动还没有保存，核对无误再确认；想改就返回。');
+    expect(pendingCard().textContent).not.toContain('现在还没有创建任何任务');
+    expect(pendingCard().textContent).not.toContain('Nothing is created yet');
     expect(pendingRowValue('notifyWhen')).toBe('只有老板的邮件算必办');
 
     fireEvent.click(screen.getByTestId('cron-pending-routine-confirm'));

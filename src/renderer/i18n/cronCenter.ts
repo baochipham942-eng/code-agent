@@ -323,6 +323,7 @@ export const cronCenterZh = {
     // 行文案复用 chatInput 的 scheduleConfirm（what/when/notifyWhen/result）
     pendingRestateTitle: '保存前确认 · 这个自动化会这样做',
     pendingRestateHint: '现在还没有创建任何任务，核对无误再保存；想改就返回。',
+    pendingRestateHintUpdate: '改动还没有保存，核对无误再确认；想改就返回。',
     pendingRestateConfirm: '确认保存',
     pendingRestateBack: '返回修改',
     // 手动编辑器 Agent 动作：自定义紧急判据（N-CRON-MORNING-TRIAGE-URGENCY-RULE）
@@ -740,6 +741,7 @@ export const cronCenterEn: typeof cronCenterZh = {
     savedRestateStatusPaused: 'Currently paused — it will only run on schedule after you turn it on.',
     pendingRestateTitle: 'Before saving · what this automation will do',
     pendingRestateHint: 'Nothing is created yet — check it over, then save. Or go back and edit.',
+    pendingRestateHintUpdate: 'Your changes are not saved yet — check them, then confirm. Or go back and edit.',
     pendingRestateConfirm: 'Save it',
     pendingRestateBack: 'Back to edit',
     urgencyCriteriaLabel: 'Urgency rule (optional)',

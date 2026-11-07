@@ -183,6 +183,7 @@ export const CronSimpleCreate: React.FC<CronSimpleCreateProps> = ({ onDone }) =>
     return (
       <PendingRoutineRestate
         input={pendingSave.input}
+        mode={pendingSave.mode}
         confirming={submitting}
         error={error}
         onConfirm={() => void confirmPending()}

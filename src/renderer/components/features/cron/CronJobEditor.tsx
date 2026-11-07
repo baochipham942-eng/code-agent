@@ -352,6 +352,7 @@ export const CronJobEditor: React.FC<CronJobEditorProps> = ({ isOpen, job, copyS
       <Modal isOpen={isOpen} onClose={submitting ? undefined : onClose} title={title}>
         <PendingRoutineRestate
           input={pendingSave.input}
+          mode={pendingSave.mode}
           confirming={submitting}
           error={errors.form ?? null}
           onConfirm={() => void confirmPending()}

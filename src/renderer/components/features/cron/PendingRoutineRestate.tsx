@@ -18,10 +18,13 @@ import {
   resolveSavedRoutineChannelLabel,
   type SavedRoutineJobSource,
 } from './savedRoutineRows';
+import type { PendingRoutineMode } from './usePendingRoutineGate';
 
 interface PendingRoutineRestateProps {
   /** buildCronJobInput 产出的待保存输入（尚未落库，编辑器/简易创建的表单值编译结果）。 */
   input: SavedRoutineJobSource;
+  /** 新建 vs 编辑已有任务：副标题区分「还没有创建任何任务」与「改动还没有保存」。 */
+  mode?: PendingRoutineMode;
   /** 确认保存进行中（createJob/updateJob await 期间）：确认按钮 loading、返回禁用。 */
   confirming: boolean;
   /** create/update 抛错的用户可读文案：卡顶横幅呈现；返回修改后仍在表单错误框里。 */
@@ -32,6 +35,7 @@ interface PendingRoutineRestateProps {
 
 export const PendingRoutineRestate: React.FC<PendingRoutineRestateProps> = ({
   input,
+  mode = 'create',
   confirming,
   error,
   onConfirm,
@@ -72,7 +76,9 @@ export const PendingRoutineRestate: React.FC<PendingRoutineRestateProps> = ({
         <Clock3 className="h-4 w-4 text-badge-accent" aria-hidden="true" />
         <span className="text-sm font-medium text-zinc-100">{cc.pendingRestateTitle}</span>
       </div>
-      <p className="text-xs leading-relaxed text-zinc-500">{cc.pendingRestateHint}</p>
+      <p className="text-xs leading-relaxed text-zinc-500">
+        {mode === 'update' ? cc.pendingRestateHintUpdate : cc.pendingRestateHint}
+      </p>
       {error && (
         <div className="rounded-lg border border-red-500/20 bg-red-500/10 px-3 py-2 text-sm text-badge-danger">
           {error}

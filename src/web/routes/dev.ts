@@ -7,6 +7,7 @@ import fs from 'fs';
 import { Router } from 'express';
 import type { Request, Response } from 'express';
 import type { AgentEvent, Message, PermissionRequest, PermissionResponse } from '../../shared/contract';
+import { isApprovePermissionResponse } from '../../shared/contract/permission';
 import { shouldRefusePackagedDevMode } from '../../shared/security/packagedDevModeGuard';
 import { generatePermissionRequestId } from '../../shared/utils/id';
 import { IPC_CHANNELS } from '../../shared/ipc';
@@ -258,7 +259,7 @@ async function requestDevToolPermission(
       resolve: (response) => {
         clearTimeout(timer);
         pendingDevPermissions.delete(fullRequest.id);
-        if (response === 'allow' || response === 'allow_session') {
+        if (isApprovePermissionResponse(response)) {
           resolve(true);
           return;
         }

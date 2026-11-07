@@ -1,10 +1,11 @@
 // ============================================================================
 // 统一授权台账（N-PERM-GRANT-LEDGER）
 // ============================================================================
-// 三个各自记「允许」的后端，在这里折成一张设置页能显示、能按行撤销的清单：
+// 各自记「允许」的后端，在这里折成一张设置页能显示、能按行撤销的清单：
 //   ① app_permission_grants 表 + AppGrantStore.sessions（按应用的电脑操作授权）
 //   ② automation config_json.standingGrants（(tool,target) 长期授权，SessionAutomationService）
 //   ③ ConfirmationGate.sessionApprovals（会话内工具放行）
+//   ④ toolGrantStore（N-PERM-GRANT-TIERS 工具授权 run / 24h 两档，source 即档位）
 // 撤销键是 id：`<variant>:<uri-encoded 分段>`——段内冒号已被 encodeURIComponent 转义，
 // split(':') 无歧义；拼/拆都只在本文件。已过期条目不列出（各后端的 match 自己也不匹配）。
 // 本模块只被设置 IPC 消费，不注册成任何 agent 可调用的工具（no-self-revoke）。
@@ -16,6 +17,11 @@ import {
   revokeAppGrant,
   revokeAppSessionGrant,
 } from './appGrantStore';
+import {
+  listToolGrants,
+  revokeTool24hGrant,
+  revokeToolRunGrant,
+} from './toolGrantStore';
 import { getConfirmationGate } from '../agent/confirmationGate';
 import { getSessionAutomationService } from '../services/sessionAutomation/sessionAutomationService';
 
@@ -24,6 +30,8 @@ const ID_VARIANT = {
   appSession: 'app-session',
   standingGrant: 'standing-grant',
   toolSession: 'tool-session',
+  toolRun: 'tool-run',
+  tool24h: 'tool-24h',
 } as const;
 
 function encodeSegment(value: string): string {
@@ -99,6 +107,21 @@ export function listGrants(now: number = Date.now()): PermissionGrantEntry[] {
     });
   }
 
+  // N-PERM-GRANT-TIERS 两档工具授权：source 'run'（本次任务）| '24h'（24 小时内）。
+  for (const grant of listToolGrants(now)) {
+    entries.push({
+      id: grant.tier === 'run'
+        ? buildId(ID_VARIANT.toolRun, grant.sessionId, grant.tool, ...(grant.target ? [grant.target] : []))
+        : buildId(ID_VARIANT.tool24h, grant.tool, ...(grant.target ? [grant.target] : [])),
+      kind: 'tool-timed',
+      label: grant.tool,
+      ...(grant.target ? { detail: grant.target } : {}),
+      source: grant.tier,
+      grantedAt: grant.grantedAt,
+      expiresAt: grant.expiresAt,
+    });
+  }
+
   return entries;
 }
 
@@ -120,6 +143,12 @@ export function revokeGrant(id: string): boolean {
         && getSessionAutomationService().revokeStandingGrant(segments[0], segments[1], segments[2]);
     case ID_VARIANT.toolSession:
       return segments.length === 2 && getConfirmationGate().revokeSessionApproval(segments[0], segments[1]);
+    case ID_VARIANT.toolRun:
+      return (segments.length === 2 || segments.length === 3)
+        && revokeToolRunGrant(segments[0], segments[1], segments[2] ?? null);
+    case ID_VARIANT.tool24h:
+      return (segments.length === 1 || segments.length === 2)
+        && revokeTool24hGrant(segments[0], segments[1] ?? null);
     default:
       return false;
   }

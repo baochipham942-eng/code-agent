@@ -219,9 +219,9 @@ export const CronExecutionDetail: React.FC<CronExecutionDetailProps> = ({
             testId="cron-exec-trigger-source"
           />
         )}
-        <Info label={cc.colScheduledAt} value={formatDateTime(execution.scheduledAt)} />
-        <Info label={cc.colStartedAt} value={formatDateTime(execution.startedAt)} />
-        <Info label={cc.execCompletedAt} value={formatDateTime(execution.completedAt)} />
+        <Info label={cc.colScheduledAt} value={formatDateTime(execution.scheduledAt, language)} />
+        <Info label={cc.colStartedAt} value={formatDateTime(execution.startedAt, language)} />
+        <Info label={cc.execCompletedAt} value={formatDateTime(execution.completedAt, language)} />
         <Info label={cc.colDuration} value={formatDuration(execution.duration)} />
         <Info label={cc.colCost} value={formatRunCostUsd(execution.cost, execution.runsOn ?? runsOn)} testId="cron-execution-cost" />
         <Info label={cc.execRetryCount} value={String(execution.retryAttempt)} />

@@ -51,13 +51,15 @@ export function redactToolResultSecrets(result: ToolResult): ToolResult {
   return { ...result, output, error };
 }
 
-export function sanitizeLogValue(value: unknown, key?: string): unknown {
+type Redactor = (value: string) => string;
+
+function sanitizeWith(redact: Redactor, value: unknown, key?: string): unknown {
   if (value === null || value === undefined) {
     return value;
   }
 
   if (typeof value === 'string') {
-    return key && isSensitiveLogKey(key) ? '***REDACTED***' : redactSecrets(value);
+    return key && isSensitiveLogKey(key) ? '***REDACTED***' : redact(value);
   }
 
   if (typeof value !== 'object') {
@@ -71,20 +73,30 @@ export function sanitizeLogValue(value: unknown, key?: string): unknown {
   if (value instanceof Error) {
     return {
       name: value.name,
-      message: redactSecrets(value.message),
-      stack: value.stack ? redactSecrets(value.stack) : undefined,
+      message: redact(value.message),
+      stack: value.stack ? redact(value.stack) : undefined,
     };
   }
 
   if (Array.isArray(value)) {
-    return value.map((item) => sanitizeLogValue(item));
+    return value.map((item) => sanitizeWith(redact, item));
   }
 
   const output: Record<string, unknown> = {};
   for (const [childKey, childValue] of Object.entries(value as Record<string, unknown>)) {
     output[childKey] = isSensitiveLogKey(childKey)
       ? '***REDACTED***'
-      : sanitizeLogValue(childValue, childKey);
+      : sanitizeWith(redact, childValue, childKey);
   }
   return output;
+}
+
+/** 通用脱敏（streamSnapshot 恢复快照仍用它：快照可能回灌/重放，保持旧行为）。 */
+export function sanitizeLogValue(value: unknown, key?: string): unknown {
+  return sanitizeWith(redactSecrets, value, key);
+}
+
+/** 纯日志输出专用（logger / logCollector）：额外掩 password=… / --password … 形态。不要用于模型可见内容。 */
+export function sanitizeLogOutput(value: unknown, key?: string): unknown {
+  return sanitizeWith(redactCommandSecrets, value, key);
 }

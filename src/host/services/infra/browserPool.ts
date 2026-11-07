@@ -19,6 +19,8 @@ interface PoolEntry {
   service: BrowserService;
   lastUsedAt: number;
   inUse: boolean;
+  /** kept 结果页窗口（N-BROWSER-KEEP-RESULT-PAGE）：不占 in-use 名额，但池满时可先于闲置阈值被回收。 */
+  kept: boolean;
 }
 
 /**
@@ -46,7 +48,7 @@ export class BrowserPool {
   ) {
     this.maxNamedAgents = Math.max(1, maxNamedAgents);
     this.createNamedService = createNamedService;
-    this.entries.set(DEFAULT_AGENT_KEY, { service: defaultService, lastUsedAt: Date.now(), inUse: false });
+    this.entries.set(DEFAULT_AGENT_KEY, { service: defaultService, lastUsedAt: Date.now(), inUse: false, kept: false });
   }
 
   acquire(agentId?: string | null): BrowserService {
@@ -60,7 +62,7 @@ export class BrowserPool {
     this.evictIfFull();
 
     const service = this.createNamedService(key);
-    this.entries.set(key, { service, lastUsedAt: Date.now(), inUse: false });
+    this.entries.set(key, { service, lastUsedAt: Date.now(), inUse: false, kept: false });
     return service;
   }
 
@@ -73,6 +75,19 @@ export class BrowserPool {
     const entry = this.entries.get(key);
     if (!entry) return;
     entry.inUse = inUse;
+  }
+
+  /**
+   * Mark/unmark a named entry as a kept result page window
+   * (N-BROWSER-KEEP-RESULT-PAGE). Kept entries are not in use but stay in the
+   * pool; `evictIfFull` may reclaim them before the idle threshold (oldest
+   * first) so a kept window never blocks a new browser task.
+   */
+  setKept(key: string, kept: boolean): void {
+    if (!key || key === DEFAULT_AGENT_KEY) return;
+    const entry = this.entries.get(key);
+    if (!entry) return;
+    entry.kept = kept;
   }
 
   async releaseAgent(agentId: string): Promise<void> {
@@ -96,9 +111,13 @@ export class BrowserPool {
     if (named.length < this.maxNamedAgents) return;
 
     const now = Date.now();
+    // 回收候选 = 闲置够久的普通条目 ∪ kept 结果页条目（未到闲置阈值也可回收，
+    // oldest first；kept 窗永不阻塞新任务）。占用中的条目一律不动。
     const reclaimable = named
       .filter(([, entry]) => (
-        !entry.inUse && now - entry.lastUsedAt >= BROWSER_TIMEOUTS.POOL_IDLE_RECLAIM
+        !entry.inUse && (
+          entry.kept || now - entry.lastUsedAt >= BROWSER_TIMEOUTS.POOL_IDLE_RECLAIM
+        )
       ))
       .sort((a, b) => a[1].lastUsedAt - b[1].lastUsedAt);
 

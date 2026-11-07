@@ -34,6 +34,10 @@ import {
 } from './BrowserResumeStateStore';
 import { importBrowserStorageStateForOrigin } from './CronBrowserLoginState';
 import { MANAGED_BROWSER_DEFAULT_LEASE_TTL_MS } from '../infra/browser/managedBrowserHelpers';
+import {
+  getKeptBrowserRegistry,
+  type KeptBrowserRegistry,
+} from './keptBrowserRegistry';
 
 const DEFAULT_PROVIDER = 'system-chrome-cdp';
 const SURFACE_PROFILE_TTL_MS = 30 * 60_000;
@@ -233,6 +237,7 @@ export class ManagedBrowserProviderAdapter {
     ),
     private readonly resumeStateStore: BrowserResumeStateStore = new SecureBrowserResumeStateStore(),
     private readonly resumeLogger: BrowserResumeLogger = createLogger('ManagedBrowserResume'),
+    private readonly keptRegistry: KeptBrowserRegistry = getKeptBrowserRegistry(),
   ) {}
 
   getBrowserService(identity: SurfaceRuntimeIdentityV1): BrowserService {
@@ -649,12 +654,60 @@ export class ManagedBrowserProviderAdapter {
       && candidate.browserService === binding.browserService
     ));
     if (!stillShared) binding.browserService.setLeaseInUse(false);
-    // Personal/default pool entry is never released here — login state must survive
-    // surface cleanup and app-visible session ends (BrowserPool no-ops default key).
-    if (!stillShared && binding.serviceKey !== MANAGED_BROWSER_USER_PERSONAL_SERVICE_KEY) {
+    // N-BROWSER-KEEP-RESULT-PAGE: a kept result window survives its run's cleanup
+    // (agent keep or user claim release alike). It stays pooled-but-idle: lease
+    // un-pinned and pool entry not in use, so idle expiry / pool pressure can
+    // still reclaim it. Final URL/title refresh so reopen restores where the
+    // run actually ended, not where keep was called.
+    const keptAlive = this.keptRegistry.isKeptServiceAlive(binding.serviceKey);
+    if (!stillShared && keptAlive) {
+      const activeTab = binding.browserService.getActiveTab();
+      if (activeTab?.url) {
+        this.keptRegistry.refreshTarget(
+          binding.identity.conversationId,
+          activeTab.url,
+          activeTab.title || '',
+        );
+      }
+      browserPool.setInUse(binding.serviceKey, false);
+    } else if (!stillShared && binding.serviceKey !== MANAGED_BROWSER_USER_PERSONAL_SERVICE_KEY) {
+      // Personal/default pool entry is never released here — login state must survive
+      // surface cleanup and app-visible session ends (BrowserPool no-ops default key).
       await this.releaseBrowser(binding.serviceKey);
     }
     if (abortShutdownError) throw abortShutdownError;
+  }
+
+  /**
+   * N-BROWSER-KEEP-RESULT-PAGE: 模型显式把当前 binding 的活跃页标记为会话的
+   * kept 结果页（keep_result_page 动作处理器调用）。
+   * 个人档案（与用户共用 __default__ 的 run）没有「留给用户的结果窗」语义，拒绝。
+   */
+  markResultPageKept(
+    identity: SurfaceRuntimeIdentityV1,
+    target: { url: string; title: string },
+  ): { ok: true; serviceKey: string } | { ok: false; reason: string } {
+    const binding = this.bindings.get(this.ownerKey(identity));
+    if (!binding) {
+      return {
+        ok: false,
+        reason: 'No managed browser session is bound to this run. Open the result page with browser_action first.',
+      };
+    }
+    if (binding.serviceKey === MANAGED_BROWSER_USER_PERSONAL_SERVICE_KEY) {
+      return {
+        ok: false,
+        reason: 'This run shares the personal browser profile, so its window cannot be kept as a result page. Finish the task and give the user the result URL instead.',
+      };
+    }
+    this.keptRegistry.register({
+      conversationId: identity.conversationId,
+      serviceKey: binding.serviceKey,
+      url: target.url,
+      title: target.title,
+      browserService: binding.browserService,
+    });
+    return { ok: true, serviceKey: binding.serviceKey };
   }
 
   private async captureObservation(

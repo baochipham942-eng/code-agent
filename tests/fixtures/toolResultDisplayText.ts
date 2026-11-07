@@ -26,6 +26,10 @@ nextOffset: 2
 ${ARCHIVE_NOTICE}
 [next-read] Before Edit or overwrite Write on any listed file path, call Read on that exact file first.`;
 
+export const GREP_NO_MATCH_RESULT = 'No matches found';
+export const GREP_COMPLETE_RESULT = `src/a.ts:1:alpha
+
+nextOffset: null`;
 export const GREP_PAGED_RESULT = `src/a.ts:1:alpha
 
 (showing 1-1 of 2 matches)

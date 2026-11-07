@@ -9,6 +9,8 @@ import {
   GLOB_EMPTY_PAGE_RESULT,
   GLOB_NO_MATCH_RESULT,
   GLOB_PAGED_RESULT,
+  GREP_COMPLETE_RESULT,
+  GREP_NO_MATCH_RESULT,
   GREP_PAGED_RESULT,
   LIST_DIRECTORY_EMPTY_RESULT,
   LIST_DIRECTORY_PAGED_RESULT,
@@ -46,6 +48,8 @@ describe('tool result display text', () => {
     expect(cleanToolResultDisplayText('Grep', GREP_PAGED_RESULT, enCopy)).toBe(
       GREP_PAGED_RESULT.replace('nextOffset: 1', 'More results are available.'),
     );
+    expect(cleanToolResultDisplayText('grep', GREP_COMPLETE_RESULT, enCopy)).toBe('src/a.ts:1:alpha');
+    expect(cleanToolResultDisplayText('grep', GREP_NO_MATCH_RESULT, enCopy)).toBe(GREP_NO_MATCH_RESULT);
   });
 
   it('passes unrelated text through byte-for-byte and refuses an empty cleaned body', () => {

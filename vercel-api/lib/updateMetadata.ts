@@ -440,7 +440,7 @@ async function handleCheck(req: ControlPlaneRequestLike, res: ControlPlaneRespon
   const platform = firstQueryValue(req.query?.platform) ?? 'darwin';
   const arch = normalizeArch(firstQueryValue(req.query?.arch), platform);
   const channel = normalizeChannel(firstQueryValue(req.query?.channel) ?? process.env.UPDATE_RELEASE_CHANNEL);
-  const repo = process.env.UPDATE_GITHUB_REPOSITORY || process.env.GITHUB_REPOSITORY || 'baochipham942-eng/code-agent';
+  const repo = process.env.UPDATE_GITHUB_REPOSITORY || process.env.GITHUB_REPOSITORY || 'neo-cowork/code-agent';
   const release = await fetchLatestRelease(repo);
   let runtimeAssets = runtimeAssetsMetadataFromEnv(channel);
   if (!runtimeAssets) {
@@ -477,7 +477,7 @@ async function handleDownload(req: ControlPlaneRequestLike, res: ControlPlaneRes
   const platform = firstQueryValue(req.query?.platform) ?? 'darwin';
   const arch = normalizeArch(firstQueryValue(req.query?.arch), platform);
   const channel = normalizeChannel(firstQueryValue(req.query?.channel) ?? process.env.UPDATE_RELEASE_CHANNEL);
-  const repo = process.env.UPDATE_GITHUB_REPOSITORY || process.env.GITHUB_REPOSITORY || 'baochipham942-eng/code-agent';
+  const repo = process.env.UPDATE_GITHUB_REPOSITORY || process.env.GITHUB_REPOSITORY || 'neo-cowork/code-agent';
   const policy = releasePolicyFromEnv(channel);
 
   if (policy.downloadUrl) {

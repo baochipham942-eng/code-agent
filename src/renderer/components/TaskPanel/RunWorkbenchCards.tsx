@@ -411,6 +411,10 @@ const TaskRecordRow = ({
       : task.status === 'completed'
         ? rw.result
         : rw.currentAction;
+  // 与 run 卡同口径（ADR-050 / FB-746）：失败原因被判定成 raw 日志清洗掉时，
+  // 退回 taskBlockedReason[category] 类别文案，行上永不出现报错原文。
+  const currentActionCopy = rail.currentAction
+    ?? (rail.currentActionCategory ? t.taskPanel.taskBlockedReason[rail.currentActionCategory] : null);
 
   return (
     <div
@@ -454,8 +458,8 @@ const TaskRecordRow = ({
 
       {/* 结果/原因/当前动作行只挂在非 checklist 行（后台任务等）——checklist 会话任务的
           当前动作与「任务」模块进度线的 phase 是同一份内容，不重复（四模块禁止内容重复） */}
-      {rail.mode !== 'checklist' && rail.currentAction && (
-        <div className="mt-1 truncate text-[11px] text-zinc-500">{detailLabel}：{rail.currentAction}</div>
+      {rail.mode !== 'checklist' && currentActionCopy && (
+        <div className="mt-1 truncate text-[11px] text-zinc-500">{detailLabel}：{currentActionCopy}</div>
       )}
 
       {showOutputRefs && task.outputRefs && task.outputRefs.length > 0 && (

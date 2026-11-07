@@ -65,7 +65,7 @@ describe('SESSION_COMMAND_CENTER_BRAIN_CONTEXT design notice', () => {
     for (const name of ['Bash', 'WebSearch', 'ToolSearch']) {
       expect(SESSION_COMMAND_CENTER_BRAIN_CONTEXT).not.toContain(name);
     }
-    for (const word of ['禁用', '受限', '不能动']) {
+    for (const word of ['禁用', '受限', '不能动', '不可用', '无法使用', '不能使用', '没有权限', '无权限', '权限不足']) {
       expect(SESSION_COMMAND_CENTER_BRAIN_CONTEXT).not.toContain(word);
     }
   });
@@ -93,6 +93,13 @@ describe('SESSION_COMMAND_CENTER_BRAIN_CONTEXT design notice', () => {
     for (const intent of ['跑命令', '联网查证', '等待审批', '生成级长任务']) {
       expect(SESSION_COMMAND_CENTER_BRAIN_CONTEXT).toContain(intent);
     }
+  });
+
+  it('routes an explicitly named command method to a background task with positive wording', () => {
+    expect(SESSION_COMMAND_CENTER_BRAIN_CONTEXT).toContain('用户明确指定终端工具、命令行方式或脚本执行形式时');
+    expect(SESSION_COMMAND_CENTER_BRAIN_CONTEXT).toContain('把用户的命令意图完整写入 prompt');
+    expect(SESSION_COMMAND_CENTER_BRAIN_CONTEXT).toContain('正在后台任务中运行');
+    expect(SESSION_COMMAND_CENTER_BRAIN_CONTEXT).toContain('普通邮件、日历和提醒请求继续按 3a 直调连接器');
   });
 
   it('covers direct foreground writes and contextual file references', () => {

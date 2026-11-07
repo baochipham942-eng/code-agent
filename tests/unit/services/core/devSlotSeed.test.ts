@@ -12,6 +12,7 @@ vi.mock('../../../../src/host/services/core/secureStorage', () => ({
 }));
 
 import { seedDevSlotFromProduction } from '../../../../src/host/services/core/devSlotSeed';
+import { DEFAULT_SETTINGS } from '../../../../src/host/services/core/configDefaults';
 
 const PROD_CONFIG = {
   models: { default: 'deepseek', providers: { deepseek: { enabled: true, model: 'deepseek-chat' } } },
@@ -67,13 +68,16 @@ describe('seedDevSlotFromProduction', () => {
     expect(fs.existsSync(path.join(dir, 'SEEDED-FROM-PRODUCTION.txt'))).toBe(true);
   });
 
-  it('只导模型配置：审批策略 / exec 策略一律不跨槽', () => {
+  it('只导模型配置 + 出厂 disclosureLevel：审批策略 / exec 策略一律不跨槽', () => {
     const dir = devDir();
     seedDevSlotFromProduction(dir);
     const written = JSON.parse(fs.readFileSync(path.join(dir, 'config.json'), 'utf-8'));
-    expect(Object.keys(written)).toEqual(['models']);
+    expect(Object.keys(written)).toEqual(['models', 'ui']);
     expect(written.permissions).toBeUndefined();
     expect(written.execPolicy).toBeUndefined();
+    // FB-483：ui 只带出厂 simple 一个键——seed 槽按全新安装首启，不被升级规则钉 standard。
+    expect(written.ui).toEqual({ disclosureLevel: 'simple' });
+    expect(written.ui.disclosureLevel).toBe(DEFAULT_SETTINGS.ui.disclosureLevel);
   });
 
   it('非空 dev 槽：已有 config.json 时零改动（反向变异靶子）', () => {

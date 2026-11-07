@@ -24,6 +24,7 @@ import { CONFIG_DIR_NEW } from '../../../shared/constants/configDir';
 import { devSlotFromDataDirName } from '../../../shared/devSlot';
 import { getHomeDir } from '../../config/configPaths';
 import { createLogger } from '../infra/logger';
+import { DEFAULT_SETTINGS } from './configDefaults';
 import { getSecureStorage, readModelCredentialsFromDataDir } from './secureStorage';
 
 const logger = createLogger('DevSlotSeed');
@@ -75,10 +76,16 @@ export function seedDevSlotFromProduction(
     return { seeded: false, reason: 'no-production-config' };
   }
 
-  // 只写 models 一个子树：ConfigService 会把它 merge 进 DEFAULT_SETTINGS，
-  // 权限 / exec-policy / 会话相关的一切保持这个槽自己的出厂值。
+  // 只写 models + ui.disclosureLevel 两个键：ConfigService 会把它们 merge 进
+  // DEFAULT_SETTINGS，权限 / exec-policy / 会话相关的一切保持这个槽自己的出厂值。
+  // disclosureLevel 必须显式带上出厂值——seed 写出的 config.json 是「已存在文件」，
+  // ConfigService 对缺该字段的旧文件按升级规则钉 standard（FB-483：全新槽被当成
+  // 老用户升级，首启变 standard 而非出厂 simple）。
   fs.mkdirSync(dataDir, { recursive: true });
-  fs.writeFileSync(devConfigPath, JSON.stringify({ models }, null, 2), 'utf-8');
+  fs.writeFileSync(devConfigPath, JSON.stringify({
+    models,
+    ui: { disclosureLevel: DEFAULT_SETTINGS.ui.disclosureLevel },
+  }, null, 2), 'utf-8');
 
   // 凭据本体在 secure store 里，config.json 只有 provider 开关/模型名。
   const credentials = readModelCredentialsFromDataDir(prodDir);

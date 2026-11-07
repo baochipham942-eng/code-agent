@@ -160,7 +160,7 @@ describe('BrowserPool', () => {
     const older = timed.acquire('kept-older');
     timed.setKept('kept-older', true);
     vi.setSystemTime(new Date('2026-01-01T00:00:10.000Z'));
-    const newer = timed.acquire('kept-newer');
+    timed.acquire('kept-newer');
     timed.setKept('kept-newer', true);
     const olderClose = vi.spyOn(older, 'close');
 

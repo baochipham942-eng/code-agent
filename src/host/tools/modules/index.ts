@@ -151,6 +151,7 @@ import { proposeRoleSchema } from './roleAuthoring/proposeRole.schema';
 import { proposeTeamRecipeSchema } from './teamAuthoring/proposeTeamRecipe.schema';
 import { listExpertsSchema } from './teamAuthoring/listExperts.schema';
 import { exitRoleFlowSchema } from './roleAuthoring/exitRoleFlow.schema';
+import { setRoleProactivitySchema } from './roleAuthoring/setRoleProactivity.schema';
 
 // planning/
 import { planModeFacadeSchema } from './planning/planModeFacade.schema';
@@ -797,7 +798,8 @@ export function registerMigratedTools(registry: ToolRegistry, platform: NodeJS.P
     async () => (await import('./lightMemory/history')).historyModule,
   );
 
-  // roleAuthoring (2): propose_role —— 对话式建角色起草 / exit_role_flow —— 退出严格流程
+  // roleAuthoring (3): propose_role —— 对话式建角色起草 / exit_role_flow —— 退出严格流程
+  //   / set_role_proactivity —— 对话里改角色主动性（forceConfirm 确认卡复述旧->新）
   registry.register(
     proposeRoleSchema,
     async () => (await import('./roleAuthoring/proposeRole')).proposeRoleModule,
@@ -805,6 +807,10 @@ export function registerMigratedTools(registry: ToolRegistry, platform: NodeJS.P
   registry.register(
     exitRoleFlowSchema,
     async () => (await import('./roleAuthoring/exitRoleFlow')).exitRoleFlowModule,
+  );
+  registry.register(
+    setRoleProactivitySchema,
+    async () => (await import('./roleAuthoring/setRoleProactivity')).setRoleProactivityModule,
   );
   registry.register(
     proposeTeamRecipeSchema,

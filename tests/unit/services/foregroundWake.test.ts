@@ -162,7 +162,11 @@ describe('foreground task-result wake', () => {
       'Foreground wake failed: wake turn failed',
       expect.objectContaining({ message: 'model unavailable' }),
     );
-    expect(recordWakeFailureNote).toHaveBeenCalledWith('session-a', expect.stringContaining('任务结果'));
+    expect(recordWakeFailureNote).toHaveBeenCalledWith(
+      'session-a',
+      expect.stringContaining('任务结果'),
+      { taskId: 'task-1', reason: 'wake_failed' },
+    );
   });
 
   it('logs owner-missing wake failures under a distinct reason', async () => {

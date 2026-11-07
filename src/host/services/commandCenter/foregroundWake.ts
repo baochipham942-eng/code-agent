@@ -1,4 +1,5 @@
 import type { Message } from '../../../shared/contract';
+import type { SystemEventMessageMetadata } from '../../../shared/contract/systemEventRegistry';
 import {
   MAX_CONSECUTIVE_WAKES,
   SESSION_COMMAND_CENTER_WAKE_MAX_ITERATIONS,
@@ -52,7 +53,11 @@ export interface ForegroundWakeDependencies {
   hasQueuedUserInput(sessionId: string): boolean;
   isVoiceSession(sessionId: string): boolean;
   /** 唤醒轮失败时给用户的一句人话（任务结果本身已由 projectTerminalResult 落在会话里） */
-  recordWakeFailureNote(sessionId: string, content: string): Promise<void>;
+  recordWakeFailureNote(
+    sessionId: string,
+    content: string,
+    detail: { taskId: string; reason: 'owner_missing' | 'wake_failed' },
+  ): Promise<void>;
   logger: WakeLogger;
 }
 
@@ -87,13 +92,18 @@ const defaultDependencies: ForegroundWakeDependencies = {
   loadSession: (sessionId) => getSessionManager().getSession(sessionId, Number.MAX_SAFE_INTEGER),
   hasQueuedUserInput,
   isVoiceSession: (sessionId) => getPermissionModeManager().isLiveVoiceSession(sessionId),
-  recordWakeFailureNote: async (sessionId, content) => {
-    await getSessionManager().addMessageToSession(sessionId, {
+  recordWakeFailureNote: async (sessionId, content, detail) => {
+    // 必须带登记键：渲染端按 systemEventRegistry 放行，无 metadata 的 system 消息一律被投影层跳过
+    const message: Message = {
       id: `session-wake-note-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
       role: 'system',
       content,
       timestamp: Date.now(),
-    });
+      metadata: { backgroundWakeFailed: detail } satisfies SystemEventMessageMetadata,
+    };
+    await getSessionManager().addMessageToSession(sessionId, message);
+    // 在线会话立即可见（该 system 'message' 事件只广播、不会被 TaskManager 二次落库）
+    getTaskManager().emitAgentEventForSession(sessionId, { type: 'message', data: message });
   },
   logger,
 };
@@ -275,11 +285,15 @@ export function createForegroundWake(
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error);
         // 失败原因分开记：owner lease 缺失是 run 注册问题，其余是唤醒轮自身失败
-        const reason = message.includes('no live owner lease') ? 'owner missing' : 'wake turn failed';
-        dependencies.logger.warn(`Foreground wake failed: ${reason}`, { sessionId, taskId: task.id, message });
+        const ownerMissing = message.includes('no live owner lease');
+        dependencies.logger.warn(
+          `Foreground wake failed: ${ownerMissing ? 'owner missing' : 'wake turn failed'}`,
+          { sessionId, taskId: task.id, message },
+        );
         await dependencies.recordWakeFailureNote(
           sessionId,
           `后台任务「${task.shortName}」已结束，结果见上方的任务结果；自动汇报这一步没能完成，需要的话可以直接问我。`,
+          { taskId: task.id, reason: ownerMissing ? 'owner_missing' : 'wake_failed' },
         ).catch((noteError) => {
           dependencies.logger.warn('Foreground wake failure note not recorded', {
             sessionId,

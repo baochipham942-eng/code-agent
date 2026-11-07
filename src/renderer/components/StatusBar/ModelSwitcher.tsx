@@ -70,7 +70,7 @@ import {
 import { loadEnginePanelData } from './enginePanelLoader';
 import { ReasoningSegment } from './ReasoningSegment';
 import { SearchToggleSection } from './SearchToggleSection';
-import { modelOverrideFailureReason } from './modelOverrideErrorCopy';
+import { modelOverrideFailureToast } from './modelOverrideErrorCopy';
 
 interface ModelSwitcherProps {
   currentModel: string;
@@ -435,12 +435,12 @@ export function ModelSwitcher({ currentModel }: ModelSwitcherProps) {
           setOverrideProvider((res.data?.provider as ModelProvider | undefined) ?? null);
           setOverrideAdaptive(!!res.data?.adaptive);
         } else {
-          toast.error('加载模型覆盖失败: ' + modelOverrideFailureReason(res?.error?.message));
+          toast.error(modelOverrideFailureToast('load', res?.error?.message));
         }
       })
       .catch((err: unknown) => {
         if (!cancelled) {
-          toast.error('加载模型覆盖失败: ' + modelOverrideFailureReason(err));
+          toast.error(modelOverrideFailureToast('load', err));
         }
       });
     return () => {
@@ -532,7 +532,7 @@ export function ModelSwitcher({ currentModel }: ModelSwitcherProps) {
         { sessionId }
       );
       if (!res?.success) {
-        toast.error('清除模型覆盖失败: ' + modelOverrideFailureReason(res?.error?.message));
+        toast.error(modelOverrideFailureToast('clear', res?.error?.message));
         return;
       }
       setOverrideModel(null);
@@ -548,7 +548,7 @@ export function ModelSwitcher({ currentModel }: ModelSwitcherProps) {
       });
       setOpen(false);
     } catch (err) {
-      toast.error('清除模型覆盖失败: ' + modelOverrideFailureReason(err));
+      toast.error(modelOverrideFailureToast('clear', err));
     }
   }, [sessionId, defaultProvider, currentModel]);
 

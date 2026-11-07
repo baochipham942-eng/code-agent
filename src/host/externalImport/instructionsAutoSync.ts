@@ -30,7 +30,11 @@ const logger = createLogger('InstructionsAutoSync');
 const CODEX_ADAPTER_ID = 'codex-local-custom' as const;
 
 type InstructionsDatabase = Parameters<typeof dryRunMemoryHarnessImport>[0];
-type DirectiveConfirmer = NonNullable<Parameters<typeof confirmMemoryHarnessDirective>[2]['confirmDirective']>;
+type DirectiveConfirmer = (input: { content: string; category: string }) => Promise<{
+  confirmed: boolean;
+  headlessNoUi?: boolean;
+  timedOut?: boolean;
+}>;
 
 export interface PendingInstructionRule {
   instructionId: string;
@@ -191,7 +195,7 @@ export async function confirmInstructionsSyncItem(
 
   const confirmation = await confirmMemoryHarnessDirective(db, instructionId, {
     ...discoveryOptions(options),
-    ...(options.confirmDirective ? { confirmDirective: options.confirmDirective } : {}),
+    confirmDirective: options.confirmDirective,
   });
   const shouldHandle = confirmation.imported
     || confirmation.confirmed

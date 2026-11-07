@@ -74,7 +74,11 @@ export function withAutomationPromptTimeoutHint(
   flag?: boolean,
 ): string {
   if (!flag) return text;
-  return `${text}${locale === 'zh' ? '' : ' '}${automationPromptTimeoutHint[locale]}`;
+  const hasSentenceEnding = /[.!?。！？]$/.test(text);
+  const separator = locale === 'zh'
+    ? (hasSentenceEnding ? '' : '。')
+    : (hasSentenceEnding ? ' ' : '. ');
+  return `${text}${separator}${automationPromptTimeoutHint[locale]}`;
 }
 
 function withSystemPromptHint(text: string, locale: SessionTaskSlotLocale, flag?: boolean): string {

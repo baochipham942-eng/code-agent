@@ -65,6 +65,11 @@ export interface ToolApprovalPayload {
   /** 脱敏（密钥/Bearer/.env 值）+ 截断的参数预览：收件箱/审批卡一眼看清这步要干什么。 */
   argsPreview?: string;
   /**
+   * N-PERM-NL-RULES-K2：这步来自「交回我亲手做」规则——收件箱行出「我做完了 /
+   * 让 Neo 做这一次」两键，而非批准/拒绝；通知文案也不同。缺省 = 普通停车审批。
+   */
+  handback?: boolean;
+  /**
    * ADR-088 敏感步骤交回（透传自 permission request details.sensitiveStep）：该行渲染为
    * 单状态交回卡（[完成后继续]/[这步不做了]），不出任何「每次都允许」铸权入口。
    */
@@ -93,6 +98,8 @@ export interface ParkedApprovalInboxItem {
   standingGrantTarget?: string | null;
   /** 脱敏 + 截断的参数预览；老行没有该字段，收件箱按缺省不渲染。 */
   argsPreview?: string;
+  /** N-PERM-NL-RULES-K2：handback 行（出「我做完了/让 Neo 做这一次」两键）。 */
+  handback?: boolean;
   /** ADR-088 敏感步骤交回；非交回行缺省，收件箱按普通停车行渲染。 */
   sensitiveStep?: ToolApprovalPayload['sensitiveStep'];
   pairingCode?: string;

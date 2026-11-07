@@ -11,8 +11,12 @@
 
 import { TOOL_SPECIFIER_PATTERN, TOOL_SPECIFIER_TYPES } from './permissionRuleSyntax';
 
-/** 行为档：与用户规则三列表一一对应（engine 里 ask = prompt）。 */
-export type NlRuleBehavior = 'allow' | 'ask' | 'deny';
+/**
+ * 行为档：allow/ask/deny 与用户规则三列表一一对应（engine 里 ask = prompt）；
+ * preapprove/handback 是 K2 新增两档（只有我说了才做 / 交回我亲手做），落在
+ * permissions.nlRules 结构化键里，不进三张旧表。
+ */
+export type NlRuleBehavior = 'allow' | 'ask' | 'deny' | 'preapprove' | 'handback';
 
 /** 模型产出的草稿（翻译结果），未经确定性校验前的原始形状。 */
 export interface PermissionRuleDraft {
@@ -23,6 +27,16 @@ export interface PermissionRuleDraft {
   behavior: NlRuleBehavior;
   /** hit = 会被这条规则命中；miss = 明确不会命中。用于确定性反证与确认卡示例 */
   examples: { hit: readonly string[]; miss: readonly string[] };
+  /**
+   * preapprove 触发短语（K2）：只有本轮发起话里出现其中一条才免询问直接做。
+   * 模型从用户句子里逐字摘出（用户自己的用词），确定性校验见 permissionRuleDraft。
+   */
+  phrases?: readonly string[];
+  /**
+   * 角色范围（K2）：句子点名了某个角色时给出其 id；缺省 = 对所有人生效。
+   * id 必须出自翻译时注入的角色目录（agentRegistry），确认卡上可改。
+   */
+  roleId?: string;
 }
 
 /** 与已保存规则的冲突：更严的那条会生效（policyEngine deny > ask > allow）。 */
@@ -51,6 +65,10 @@ export interface PermissionTranslateResult {
   behavior?: NlRuleBehavior;
   /** 代码生成的人话复述（ok / protected 给出） */
   restatement?: string;
+  /** K2：preapprove 触发短语（草稿校验通过时给出，确认卡列出） */
+  phrases?: readonly string[];
+  /** K2：句子点名角色时的 roleId（出自注入的角色目录，卡上可改） */
+  roleId?: string;
   /** 面向用户的中文说明（unrecognized / protected / 冲突提示） */
   reasonText?: string;
   conflict?: PermissionTranslateConflict;
@@ -72,11 +90,15 @@ export const NL_RULE_TEXT = {
     allow: '直接做',
     ask: '先问我',
     deny: '永不',
+    preapprove: '我说了才做',
+    handback: '交回我亲手做',
   },
   behaviorPhrase: {
     allow: '直接执行，不再询问',
     ask: '先问你',
     deny: '一律禁止',
+    preapprove: '只有你在这轮开头说了约定的话，才直接做；没说就先问你',
+    handback: '停下来，把这一步交回给你亲自做（不算失败）',
   },
   unrecognizedReason: '这条我没法可靠识别。我能识别的是：具体的终端命令（比如 rm 开头的命令）、文件路径（比如 .env 文件）、或某个具体工具（比如发邮件）。可以照「删文件之前先问我」这样，用一句提到具体命令、文件或工具的话改写一下。',
   protectedReason: '这类操作我不会帮你设成自动放行。可以改成「先问我」或「永不」。',
@@ -132,22 +154,29 @@ function patternPhrase(pattern: string, noun: '命令' | '文件'): string {
 }
 
 /**
+ * 规则串 → 范围短语（“用终端运行 rm 开头的命令时”），不含行为尾。
+ * K2 的结构化复述（nlRuleRestate.describeNlRule）复用同一段，保证两代复述口径一致。
+ */
+export function ruleScopePhrase(rule: string): string {
+  const match = TOOL_SPECIFIER_PATTERN.exec(rule);
+  if (!match) {
+    const specifierType = TOOL_SPECIFIER_TYPES[rule];
+    const scope = specifierType === 'command' ? '任何命令' : specifierType === 'path' ? '任何文件' : '';
+    return `${toolPhrase(rule)}${scope}时`;
+  }
+  const [, toolName, rawPattern] = match;
+  const pattern = rawPattern.trim();
+  const noun: '命令' | '文件' = toolName === 'Bash' ? '命令' : '文件';
+  return `${toolPhrase(toolName)} ${patternPhrase(pattern, noun)}时`;
+}
+
+/**
  * 规则串 → 人话复述（代码生成，不经过模型）。
  * describeRule('Bash(rm *)', 'ask') === '用终端运行 rm 开头的命令时 → 先问你'。
  * 裸工具名（无括号）按整工具面复述；不认识的形状原样带出规则串。
  */
 export function describeRule(rule: string, behavior: NlRuleBehavior): string {
-  const behaviorPhrase = NL_RULE_TEXT.behaviorPhrase[behavior];
-  const match = TOOL_SPECIFIER_PATTERN.exec(rule);
-  if (!match) {
-    const specifierType = TOOL_SPECIFIER_TYPES[rule];
-    const scope = specifierType === 'command' ? '任何命令' : specifierType === 'path' ? '任何文件' : '';
-    return `${toolPhrase(rule)}${scope}时 → ${behaviorPhrase}`;
-  }
-  const [, toolName, rawPattern] = match;
-  const pattern = rawPattern.trim();
-  const noun: '命令' | '文件' = toolName === 'Bash' ? '命令' : '文件';
-  return `${toolPhrase(toolName)} ${patternPhrase(pattern, noun)}时 → ${behaviorPhrase}`;
+  return `${ruleScopePhrase(rule)} → ${NL_RULE_TEXT.behaviorPhrase[behavior]}`;
 }
 
 /** 草稿 → 规范化规则串（带模式时 Tool(pattern)，否则裸工具名）。 */

@@ -28,6 +28,7 @@ import { useCronStore } from '../../../stores/cronStore';
 import { useI18n } from '../../../hooks/useI18n';
 import { toast } from '../../../hooks/useToast';
 import { Button } from '../../primitives/Button';
+import { NL_RULE_K2_TEXT } from '@shared/nlRuleRestate';
 import { SensitiveStepParkedRow } from '../../PermissionDialog/SensitiveStepHandbackCard';
 import { openCronLoginWallSite } from './cronLoginWallNotice';
 import { CronReviewDigest } from './CronReviewDigest';
@@ -279,6 +280,14 @@ export const AutomationReviewInbox: React.FC<AutomationReviewInboxProps> = ({ on
                               {cc.parkedExternalBadge}
                             </span>
                           )}
+                          {item.handback && (
+                            <span
+                              className="shrink-0 rounded bg-amber-500/15 px-1.5 py-0.5 text-[10px] text-badge-warning"
+                              data-testid="parked-handback-badge"
+                            >
+                              {NL_RULE_K2_TEXT.inbox.badge}
+                            </span>
+                          )}
                         </div>
                         {isPairing && item.pairingCode && (
                           <div className="text-xs font-medium text-badge-warning" data-testid="pairing-code">
@@ -309,7 +318,31 @@ export const AutomationReviewInbox: React.FC<AutomationReviewInboxProps> = ({ on
                           {isOrphaned ? cc.parkedOrphaned : cc.parkedWaiting.replace('{duration}', formatWaiting(item.requestedAt))}
                         </div>
                       </div>
-                      {!isOrphaned && (
+                      {!isOrphaned && item.handback ? (
+                        <>
+                          {/* N-PERM-NL-RULES-K2 handback 行：出「我做完了 / 让 Neo 做这一次」两键，语义见 shared/nlRuleRestate */}
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => handleResolveParked(item, 'user_did_it')}
+                            disabled={busyId === item.id}
+                            className="shrink-0 text-badge-success"
+                            data-testid="parked-handback-done"
+                          >
+                            {NL_RULE_K2_TEXT.inbox.userDidIt}
+                          </Button>
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => handleResolveParked(item, 'allow')}
+                            disabled={busyId === item.id}
+                            className="shrink-0"
+                            data-testid="parked-handback-let-neo"
+                          >
+                            {NL_RULE_K2_TEXT.inbox.letNeoOnce}
+                          </Button>
+                        </>
+                      ) : !isOrphaned && (
                         <>
                           <button /* ds-allow:button: 收件箱行内超小文本按钮（py-1 text-xs） */
                             onClick={() => handleResolveParked(item, 'allow')}

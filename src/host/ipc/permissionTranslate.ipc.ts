@@ -11,7 +11,8 @@ import type { IPCResponse } from '../../shared/ipc';
 import type { RawDomainRouteHandlers } from '../../shared/ipc/domainRoutes';
 import { PermissionTranslateSchemas, type PermissionTranslateDomainRequest } from '../../shared/ipc/schemas/permissionTranslate';
 import { defineDomainRoutes, installDomainRoutes } from './domainRoutes/registry';
-import { NL_RULE_TEXT } from '../../shared/permissionRuleTranslate';
+import { NL_RULE_TEXT, type NlRuleBehavior } from '../../shared/permissionRuleTranslate';
+import { listAllAgentsWithRoleFlag } from '../agent/agentRegistry';
 import {
   PermissionTranslateParseError,
   translatePermissionSentence,
@@ -41,13 +42,31 @@ function buildToolCatalog(): string[] {
   return [...names];
 }
 
-function currentExistingRules(): { deny?: readonly string[]; ask?: readonly string[]; allow?: readonly string[] } {
+function currentExistingRules(): {
+  deny?: readonly string[];
+  ask?: readonly string[];
+  allow?: readonly string[];
+  nlRules?: ReadonlyArray<{ behavior: NlRuleBehavior; rule: string }>;
+} {
   const permissions = getConfigService().getSettings().permissions;
   return {
     ...(permissions.deny ? { deny: permissions.deny } : {}),
     ...(permissions.ask ? { ask: permissions.ask } : {}),
     ...(permissions.allow ? { allow: permissions.allow } : {}),
+    ...(permissions.nlRules?.length ? { nlRules: permissions.nlRules.map(({ behavior, rule }) => ({ behavior, rule })) } : {}),
   };
+}
+
+/** K2 角色目录：注册表里标记为角色（isRole）的条目——「只对某人生效」的范围从这里选。 */
+async function buildRoleCatalog(): Promise<Array<{ id: string; name: string }>> {
+  try {
+    const entries = await listAllAgentsWithRoleFlag();
+    return entries.filter((entry) => entry.isRole).map(({ id, name }) => ({ id, name }));
+  } catch (error) {
+    // 目录兜底：枚举失败不拦翻译，只是本轮不给 roleId（模型幻觉域会被确定性丢弃）
+    logger.warn('Role catalog enumeration failed during translate', { error });
+    return [];
+  }
 }
 
 const permissionTranslateHandlers: RawDomainRouteHandlers<PermissionTranslateDomainRequest, void> = {
@@ -60,6 +79,7 @@ const permissionTranslateHandlers: RawDomainRouteHandlers<PermissionTranslateDom
       const result = await translatePermissionSentence(sentence, {
         toolCatalog: buildToolCatalog(),
         existingRules: currentExistingRules(),
+        roleCatalog: await buildRoleCatalog(),
       });
       return { success: true, data: result } satisfies IPCResponse;
     } catch (error) {

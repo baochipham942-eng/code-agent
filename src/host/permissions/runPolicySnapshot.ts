@@ -50,6 +50,12 @@ interface RunPolicySnapshot {
   mode?: PermissionMode;
   /** null = run 起点没有活跃的 policy 文件（出现新文件是收紧，走活状态）。 */
   enforcer?: PolicyEnforcerState | null;
+  /**
+   * N-PERM-NL-RULES-K2 run 盖章：本轮路由到的角色 id 与发起话原文（聊天消息或定时
+   * 任务的 prompt）。带 roleId 的 nl 规则只在这个角色上生效；preapprove 的触发短语
+   * 在发起话里做逐字子串匹配。同会话栈的子代理解析到最新活跃 run 的快照，天然继承。
+   */
+  userRuleContext?: { roleId?: string; initiatingText?: string };
 }
 
 const runsById = new Map<string, RunPolicySnapshot>();
@@ -93,8 +99,14 @@ function trimJournalToActiveSnapshots(): void {
 /**
  * run 起点冻结基线。在 agentOrchestrator 里紧随角色档写入之后调用——专家自带的
  * 审批档是本轮基线的一部分；finally 里配对 endRunPolicy。
+ * context（N-PERM-NL-RULES-K2）：本轮角色 id 与发起话原文，随快照冻结；run 结束
+ * 随快照一起丢弃（endRunPolicy），不会漏到下一轮或别的会话。
  */
-export function beginRunPolicy(runId: string, sessionId?: string): void {
+export function beginRunPolicy(
+  runId: string,
+  sessionId?: string,
+  context?: { roleId?: string; initiatingText?: string },
+): void {
   const watermark = currentPolicyMutationSeq();
   let rules: PolicyRule[] | undefined;
   try {
@@ -120,7 +132,18 @@ export function beginRunPolicy(runId: string, sessionId?: string): void {
   } catch {
     enforcer = undefined;
   }
-  runsById.set(runId, { runId, sessionId, watermark, rules, execRules, mode, enforcer });
+  runsById.set(runId, {
+    runId,
+    sessionId,
+    watermark,
+    rules,
+    execRules,
+    mode,
+    enforcer,
+    ...(context && (context.roleId !== undefined || context.initiatingText !== undefined)
+      ? { userRuleContext: context }
+      : {}),
+  });
   if (sessionId) {
     const stack = activeRunsBySession.get(sessionId) ?? [];
     stack.push(runId);
@@ -208,6 +231,17 @@ function effectiveModeFor(snapshot: RunPolicySnapshot | undefined, sessionId?: s
 /** E1/E6：会话有效档（无快照路径 === getModeForSession，与 origin/main 一致）。 */
 export function resolveEffectiveSessionMode(sessionId?: string): PermissionMode {
   return effectiveModeFor(findRunSnapshot(undefined, sessionId), sessionId);
+}
+
+/**
+ * N-PERM-NL-RULES-K2：会话当前活跃 run 的盖章上下文（角色 id + 发起话）。
+ * 没有活跃 run（主聊天未开轮/已结束/从不 begin 的路径）返回空对象——角色域规则
+ * 不命中、preapprove 无发起话可匹配（未命中 → ask，永不静默放行）。同会话栈的
+ * 子代理解析到最新活跃 run，即继承该轮的角色与发起话。
+ */
+export function resolveRunUserRuleContext(sessionId?: string): { roleId?: string; initiatingText?: string } {
+  if (!sessionId) return {};
+  return findRunSnapshot(undefined, sessionId)?.userRuleContext ?? {};
 }
 
 /** E2/E3：用户规则引擎的有效规则列表。 */

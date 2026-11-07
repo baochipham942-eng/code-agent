@@ -28,6 +28,7 @@ import {
   UNATTENDED_APPROVAL_TIMEOUT,
 } from './unattendedApprovalTerminal';
 import { getConfirmationGate } from './confirmationGate';
+import { NL_RULE_K2_TEXT } from '../../shared/nlRuleRestate';
 import { mintAppGrantSession, mintAppGrantStanding } from '../permissions/appGrantStore';
 import { getPermissionLevel } from './orchestrator/modelConfigResolver';
 import { createLogger } from '../services/infra/logger';
@@ -119,6 +120,11 @@ function toAskResult(
   updatedArgs?: Record<string, unknown>,
   message?: string,
 ): PermissionAskResult {
+  // N-PERM-NL-RULES-K2：handback「我做完了」——不执行，把「用户亲自做、勿重试、继续
+  // 别的活」的说明带给模型；userDidIt 让消费端以成功形落结果，不记失败。
+  if (response === 'user_did_it') {
+    return { approved: false, denialSource: machineDenial ?? 'user', userDidIt: true, ...(message ? { message } : {}) };
+  }
   if (isApproveResponse(response)) {
     if (!updatedArgs) return { approved: true, approvalSource: 'user' };
     // N-WRITEBACK-EDIT：改过的参数只配一次性放行。配会话/长期授权 = 把改过的内容当成
@@ -282,7 +288,7 @@ export class OrchestratorPermissionIsland {
         changes = repo.resolve({
           id,
           status,
-          feedback: feedbackOverride ?? null,
+          feedback: feedbackOverride ?? (response === 'user_did_it' ? 'user did it themselves' : null),
           resolvedAt: Date.now(),
         });
       } catch (err) {
@@ -629,7 +635,7 @@ export class OrchestratorPermissionIsland {
         resolve: (response, machineDenial, updatedArgs) => {
           clearInterval(watchdog);
           recordHumanGrant(response, fullRequest);
-          resolve(toAskResult(response, machineDenial, updatedArgs));
+          resolve(toAskResult(response, machineDenial, updatedArgs, response === 'user_did_it' ? NL_RULE_K2_TEXT.handbackDoneModelText(fullRequest.tool) : undefined));
         },
         request: fullRequest,
       });
@@ -706,7 +712,7 @@ export class OrchestratorPermissionIsland {
         resolve: (response, machineDenial, _updatedArgs, message) => {
           clearTimeout(timeoutId);
           recordHumanGrant(response, fullRequest);
-          resolve(toAskResult(response, machineDenial, undefined, message));
+          resolve(toAskResult(response, machineDenial, undefined, response === 'user_did_it' ? NL_RULE_K2_TEXT.handbackDoneModelText(fullRequest.tool) : message));
         },
         request: fullRequest,
       });
@@ -738,6 +744,8 @@ export class OrchestratorPermissionIsland {
           }
           : {}),
         ...(argsPreview ? { argsPreview } : {}),
+        // N-PERM-NL-RULES-K2：handback 停车行——收件箱出「我做完了 / 让 Neo 做这一次」两键。
+        ...(fullRequest.handback ? { handback: true } : {}),
         // ADR-088 敏感步骤交回：收件箱/会话卡据此渲染单状态交回卡（展示元数据，无秘密本体）。
         ...(fullRequest.details?.sensitiveStep
           ? { sensitiveStep: fullRequest.details.sensitiveStep }
@@ -768,14 +776,22 @@ export class OrchestratorPermissionIsland {
 
       if (fullRequest.sessionId) {
         try {
-          notificationService.notifyNeedsInput({
-            sessionId: fullRequest.sessionId,
-            title: '有操作等你确认',
-            body: `无人值守任务请求执行 ${fullRequest.tool}，已挂起等待你在收件箱确认。`,
-            // 停车口先发；同一条请求随后经 permission_request 事件再进落库通知口，
-            // 同键去重，用户只看到这一条更具体的「去收件箱确认」横幅。
-            dedupeKey: fullRequest.id,
-          });
+          // N-PERM-NL-RULES-K2：handback 停车用专属文案（这一步要你亲手做，不是等你批准）。
+          // 同一请求随后经 permission_request 事件再进落库通知口，dedupeKey 同键去重——
+          // 停车口先发，所以用户只看到这一条（handback 文案优先于通用「需要授权」）。
+          notificationService.notifyNeedsInput(fullRequest.handback
+            ? {
+              sessionId: fullRequest.sessionId,
+              title: NL_RULE_K2_TEXT.notify.title,
+              body: NL_RULE_K2_TEXT.notify.body(fullRequest.tool),
+              dedupeKey: fullRequest.id,
+            }
+            : {
+              sessionId: fullRequest.sessionId,
+              title: '有操作等你确认',
+              body: `无人值守任务请求执行 ${fullRequest.tool}，已挂起等待你在收件箱确认。`,
+              dedupeKey: fullRequest.id,
+            });
         } catch (err) {
           logger.warn('Parked approval notification failed', err);
         }

@@ -17,13 +17,14 @@ import {
   type PermissionTranslateResult,
   type TranslatorChatFn,
 } from '../../shared/permissionRuleTranslate';
+import { describeNlRule } from '../../shared/nlRuleRestate';
 import { TOOL_SPECIFIER_TYPES } from '../../shared/permissionRuleSyntax';
 import { MODEL_MAX_TOKENS } from '../../shared/constants';
 import { ModelRouter } from '../model/modelRouter';
 import { resolveSessionDefaultModelConfig } from '../services/core/sessionDefaults';
 import { createLogger } from '../services/infra/logger';
 import { parseToolSpecifier } from './specifierParser';
-import { isProtectedAllowRule, resolveRuleConflict, validateDraft } from './permissionRuleDraft';
+import { isProtectedAllowRule, resolveRuleConflict, validateDraft, type NlExistingRuleEntry } from './permissionRuleDraft';
 
 const logger = createLogger('NlRuleTranslator');
 
@@ -40,8 +41,10 @@ export interface TranslatePermissionOptions {
   chat?: TranslatorChatFn;
   /** 工具名目录；缺省由调用方（ipc 层）给真实目录 */
   toolCatalog?: readonly string[];
-  /** 已保存的用户规则，用于冲突取严 */
-  existingRules?: { deny?: readonly string[]; ask?: readonly string[]; allow?: readonly string[] };
+  /** 已保存的用户规则，用于冲突取严（K2 起含 nlRules 条目） */
+  existingRules?: { deny?: readonly string[]; ask?: readonly string[]; allow?: readonly string[]; nlRules?: readonly NlExistingRuleEntry[] };
+  /** 角色目录（K2：句子点名某角色时模型可回 roleId；确认卡上仍可改）。 */
+  roleCatalog?: ReadonlyArray<{ id: string; name: string }>;
 }
 
 const defaultChat: TranslatorChatFn = async (messages) => {
@@ -59,16 +62,20 @@ const defaultChat: TranslatorChatFn = async (messages) => {
  * 系统提示：严格 JSON 草稿。高危放行照常产出 allow 草稿——拦不拦由确定性守卫决定
  * （isProtectedAllowRule），不靠模型自律，也不让模型替用户改主意。
  */
-function buildSystemPrompt(toolCatalog: readonly string[]): string {
+function buildSystemPrompt(
+  toolCatalog: readonly string[],
+  roleCatalog: ReadonlyArray<{ id: string; name: string }> = [],
+): string {
   const specifierTools = Object.entries(TOOL_SPECIFIER_TYPES)
     .map(([tool, kind]) => `${tool}(${kind})`)
     .join('、');
+  const roleList = roleCatalog.map((role) => `${role.name}(${role.id})`).join('、');
   return `你是一个权限规则翻译器。用户用一句中文描述一条权限规则，你把它翻译成一条结构化草稿。
 
 只返回一个 JSON 对象，不要有任何其他文字。两种返回：
 
 能翻译时：
-{"status":"ok","tool":"工具名","pattern":"通配模式（该工具支持模式时才给，可省略）","behavior":"allow 或 ask 或 deny","examples":{"hit":["会被这条规则命中的真实命令或文件路径"],"miss":["不会被命上的真实命令或文件路径"]}}
+{"status":"ok","tool":"工具名","pattern":"通配模式（该工具支持模式时才给，可省略）","behavior":"allow 或 ask 或 deny 或 preapprove 或 handback","phrases":["触发短语（仅 preapprove 给）"],"roleId":"角色 id（句子点名了下面清单里的某个角色时才给，可省略）","examples":{"hit":["会被这条规则命中的真实命令或文件路径"],"miss":["不会被命上的真实命令或文件路径"]}}
 
 没法可靠翻译时：
 {"status":"unrecognized","reason":"一句话说明为什么"}
@@ -76,10 +83,12 @@ function buildSystemPrompt(toolCatalog: readonly string[]): string {
 规则：
 - 工具名必须从这份清单里逐字选（区分大小写）：${toolCatalog.join('、')}
 - 只有这些工具能带 pattern：${specifierTools}。Bash 的 pattern 匹配整条终端命令（如 "rm *"、"git push *"）；其余的匹配文件路径（如 "*.env"、"src/**"）。其他工具一律不带 pattern，只用工具名。
-- behavior：allow=直接执行不再问；ask=先问用户；deny=一律禁止。
+- behavior：allow=直接执行不再问；ask=先问用户；deny=一律禁止；preapprove=「只有我说了 X 才做」（用户约定了特定说法，说了才免询问）；handback=「交回我亲手做 / 停下来让我自己做」（转账、改密码这类用户要亲自上手的步骤）。
+- preapprove 必须给 phrases：从用户句子里逐字摘出 1-5 条触发短语（用户自己的用词，每条 2-12 个字，不要加通配符，不要自己改写）。preapprove 之外的行为不要给 phrases。
+- 句子点名了某个角色/专家时才给 roleId，必须从这份清单里逐字选：${roleList || '（本次没有可用角色，一律不给 roleId）'}。没点名就不要给。
 - examples 的 hit 和 miss 各至少 2 条，必须能被通配模式机械验证：hit 条条命中，miss 条条不命中。命令例子给完整命令（如 "rm -rf ./build"），路径例子给完整路径。
-- 遇到这些情况返回 unrecognized：主观判断（如「涉及客户隐私」「注意分寸」）、模糊量词（如「合理的」「少量的」）、指不到具体命令/文件路径/工具的要求。
-- 用户要求放行高危操作（sudo、rm -rf /、强制推送、SSH 密钥、系统文件）时照常返回 allow 草稿，系统会另行把关。
+- 遇到这些情况返回 unrecognized：主观判断（如「涉及客户隐私」「注意分寸」）、模糊量词（如「合理的」「少量的」）、指不到具体命令/文件路径/工具的要求。preapprove 句子里找不到明确的触发短语时也返回 unrecognized。
+- 用户要求放行高危操作（sudo、rm -rf /、强制推送、SSH 密钥、系统文件）时照常返回 allow 或 preapprove 草稿，系统会另行把关。
 - 只返回 JSON。`;
 }
 
@@ -93,6 +102,15 @@ function extractJsonObject(raw: string): Record<string, unknown> {
   } catch {
     throw new PermissionTranslateParseError();
   }
+}
+
+/** roleId 是否出自注入的角色目录（没注入目录 = 一律不认）。 */
+function catalogHasRole(
+  roleCatalog: ReadonlyArray<{ id: string; name: string }> | undefined,
+  roleId: string,
+): boolean {
+  if (!roleCatalog) return false;
+  return roleCatalog.some((role) => role.id === roleId);
 }
 
 /** 识别不了：固定话术给用户；可区分原因只进日志（错题本：降级要留痕）。 */
@@ -114,7 +132,7 @@ export async function translatePermissionSentence(
   const chat = options.chat ?? defaultChat;
 
   const raw = await chat([
-    { role: 'system', content: buildSystemPrompt(catalog) },
+    { role: 'system', content: buildSystemPrompt(catalog, options.roleCatalog) },
     { role: 'user', content: trimmed },
   ]);
   const parsed = extractJsonObject(raw);
@@ -135,9 +153,20 @@ export async function translatePermissionSentence(
         ? ((parsed.examples as { miss: unknown[] }).miss.filter((item): item is string => typeof item === 'string'))
         : [],
     },
+    // K2：触发短语与角色域原样带给 validateDraft 做确定性校验
+    ...(Array.isArray(parsed.phrases)
+      ? { phrases: parsed.phrases.filter((item): item is string => typeof item === 'string') }
+      : {}),
+    ...(typeof parsed.roleId === 'string' && parsed.roleId.trim() ? { roleId: parsed.roleId.trim() } : {}),
   };
-  if (parsed.behavior === 'allow' || parsed.behavior === 'ask' || parsed.behavior === 'deny') {
+  if (parsed.behavior === 'allow' || parsed.behavior === 'ask' || parsed.behavior === 'deny'
+    || parsed.behavior === 'preapprove' || parsed.behavior === 'handback') {
     draftCandidate.behavior = parsed.behavior;
+  }
+  // roleId 不在注入的角色目录里 = 模型幻觉，丢弃角色域（规则退化为全局，卡上仍可再选）。
+  if (draftCandidate.roleId && !catalogHasRole(options.roleCatalog, draftCandidate.roleId)) {
+    logger.warn('NL rule draft roleId not in role catalog, dropping', { roleId: draftCandidate.roleId });
+    delete draftCandidate.roleId;
   }
 
   const verdict = validateDraft(draftCandidate, catalog);
@@ -154,7 +183,8 @@ export async function translatePermissionSentence(
 
   const rule = verdict.rule;
   const hasSpecifier = !!parseToolSpecifier(rule).specifier;
-  if (verdict.draft.behavior === 'allow' && isProtectedAllowRule(rule)) {
+  // 受保护探针对 preapprove 同样拒（放行语义一致）；handback 不受限（本就不放行）。
+  if ((verdict.draft.behavior === 'allow' || verdict.draft.behavior === 'preapprove') && isProtectedAllowRule(rule)) {
     logger.warn('NL rule allow refused: protected probe', { sentence, rule });
     return { status: 'protected', draft: verdict.draft, rule, reasonText: NL_RULE_TEXT.protectedReason };
   }
@@ -165,12 +195,25 @@ export async function translatePermissionSentence(
     : undefined;
   const effectiveBehavior: NlRuleBehavior = conflict?.effectiveBehavior ?? verdict.draft.behavior;
 
+  // K2 复述：带新档/角色域/短语的草稿走结构化 describeNlRule（范围段与 K1 同源）；
+  // 纯 K1 形状（allow/ask/deny 且无角色）保持 describeRule 原文不变。
+  const hasK2Aspects = verdict.draft.behavior === 'preapprove' || verdict.draft.behavior === 'handback'
+    || verdict.draft.roleId !== undefined;
+  const restatement = hasK2Aspects
+    ? describeNlRule(
+      { behavior: effectiveBehavior, rule, roleId: verdict.draft.roleId, phrases: verdict.draft.phrases },
+      (roleId) => options.roleCatalog?.find((role) => role.id === roleId)?.name,
+    )
+    : describeRule(rule, effectiveBehavior);
+
   return {
     status: 'ok',
     draft: verdict.draft,
     rule,
     behavior: effectiveBehavior,
-    restatement: describeRule(rule, effectiveBehavior),
+    restatement,
+    ...(verdict.draft.roleId ? { roleId: verdict.draft.roleId } : {}),
+    ...(verdict.draft.phrases && verdict.draft.phrases.length > 0 ? { phrases: verdict.draft.phrases } : {}),
     ...(conflict ? { conflict, reasonText: NL_RULE_TEXT.conflictNote(conflict.existingRule, effectiveBehavior) } : {}),
     ...(hasSpecifier ? { examples: { hit: verdict.draft.examples.hit, miss: verdict.draft.examples.miss } } : {}),
   };

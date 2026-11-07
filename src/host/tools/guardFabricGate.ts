@@ -47,6 +47,7 @@ export interface GuardFabricGateResult {
  * （block-root-write/block-ssh-keys）会在 evaluate 的 Pass1 抢先成为 matchedRule，若拿它的
  * 前缀当答案，用户 deny 被遮蔽成「无规则命中」，硬拒降级成可批的 ask——所以命中判定
  * 不看 evaluate 的 matchedRule，走独立扫描。
+ * nlRules 的 deny（id 前缀 user-nl:deny:，N-PERM-NL-RULES-K2）同语义硬拒；带 roleId 的条目只在角色吻合的 run 上命中。
  */
 function buildPolicyRequest(input: GuardFabricGateInput) {
   return {

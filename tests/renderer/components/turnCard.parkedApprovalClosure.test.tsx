@@ -110,7 +110,9 @@ describe('TurnCard cron run record parked approval closure', () => {
     expect((await screen.findByTestId('cron-run-status-text')).textContent)
       .toBe('Interrupted — no result');
     const toolRow = screen.getByTestId('tool-group-head-label').closest('button');
-    expect(toolRow?.textContent).toContain(`Not run · ${reason}`);
+    expect(toolRow?.textContent).toContain(
+      'Not run · The run this step belonged to has already ended, so it did not run; you will be asked again the next time it triggers.',
+    );
   });
 
   it('keeps a normal completed run-record tool folded without a turn toggle', async () => {

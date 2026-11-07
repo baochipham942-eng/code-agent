@@ -7,32 +7,32 @@
     "budgetMs": 3000,
     "withinBudget": true
   },
-  "generatedAt": "2026-10-29T13:03:38.251Z",
+  "generatedAt": "2026-11-03T13:26:31.489Z",
   "e1Run": {
     "summary": {
       "model": "glm-5.3",
-      "items": 220,
+      "items": 219,
       "transportErrors": 0,
       "e1": {
-        "overallAccuracy": 0.8772727272727273,
+        "overallAccuracy": 0.8767123287671232,
         "perLabel": [
           {
             "label": "delegate_existing",
             "n": 88,
-            "correct": 83,
-            "accuracy": 0.9431818181818182
+            "correct": 82,
+            "accuracy": 0.9318181818181818
           },
           {
             "label": "answer_here",
             "n": 33,
-            "correct": 26,
-            "accuracy": 0.7878787878787878
+            "correct": 25,
+            "accuracy": 0.7575757575757576
           },
           {
             "label": "clarify",
-            "n": 22,
-            "correct": 9,
-            "accuracy": 0.4090909090909091
+            "n": 21,
+            "correct": 12,
+            "accuracy": 0.5714285714285714
           },
           {
             "label": "correct",
@@ -55,8 +55,8 @@
           {
             "label": "reject",
             "n": 15,
-            "correct": 15,
-            "accuracy": 1
+            "correct": 13,
+            "accuracy": 0.8666666666666667
           },
           {
             "label": "stop",
@@ -65,23 +65,22 @@
             "accuracy": 1
           }
         ],
-        "answerHereCorrect": "26/33",
-        "rejectCorrect": "15/15（no-tool-call 签名不可分，两类分开报）"
+        "answerHereCorrect": "25/33",
+        "rejectCorrect": "13/15（no-tool-call 签名不可分，两类分开报）"
       },
       "e2": {
-        "violations": 6,
+        "violations": 5,
         "ids": [
-          "DK2-0044",
+          "DK2-0052",
           "DK2-0116",
-          "DK2-0137",
           "DK2-0140",
           "DK2-0143",
-          "DK2-0213"
+          "DK2-0181"
         ]
       },
       "e4": {
-        "unnecessaryClarifyRate": 0,
-        "numerator": 0,
+        "unnecessaryClarifyRate": 0.006666666666666667,
+        "numerator": 1,
         "denominator": 150,
         "redundantClarifyTrap": {
           "trapTotal": 18,
@@ -90,8 +89,8 @@
         }
       },
       "latency": {
-        "p50Ms": 8043,
-        "p95Ms": 32882
+        "p50Ms": 8940,
+        "p95Ms": 35734
       }
     },
     "rows": [
@@ -175,7 +174,7 @@
       {
         "id": "DK2-0012",
         "gold": "clarify",
-        "correct": true,
+        "correct": false,
         "e2": false,
         "e4": false
       },
@@ -231,7 +230,7 @@
       {
         "id": "DK2-0020",
         "gold": "clarify",
-        "correct": false,
+        "correct": true,
         "e2": false,
         "e4": false
       },
@@ -287,7 +286,7 @@
       {
         "id": "DK2-0028",
         "gold": "clarify",
-        "correct": false,
+        "correct": true,
         "e2": false,
         "e4": false
       },
@@ -343,7 +342,7 @@
       {
         "id": "DK2-0036",
         "gold": "clarify",
-        "correct": false,
+        "correct": true,
         "e2": false,
         "e4": false
       },
@@ -394,13 +393,6 @@
         "gold": "answer_here",
         "correct": true,
         "e2": false,
-        "e4": false
-      },
-      {
-        "id": "DK2-0044",
-        "gold": "clarify",
-        "correct": false,
-        "e2": true,
         "e4": false
       },
       {
@@ -456,13 +448,13 @@
         "id": "DK2-0052",
         "gold": "clarify",
         "correct": false,
-        "e2": false,
+        "e2": true,
         "e4": false
       },
       {
         "id": "DK2-0053",
         "gold": "reject",
-        "correct": true,
+        "correct": false,
         "e2": false,
         "e4": false
       },
@@ -504,14 +496,14 @@
       {
         "id": "DK2-0059",
         "gold": "answer_here",
-        "correct": true,
+        "correct": false,
         "e2": false,
         "e4": false
       },
       {
         "id": "DK2-0060",
         "gold": "clarify",
-        "correct": true,
+        "correct": false,
         "e2": false,
         "e4": false
       },
@@ -623,7 +615,7 @@
       {
         "id": "DK2-0076",
         "gold": "clarify",
-        "correct": false,
+        "correct": true,
         "e2": false,
         "e4": false
       },
@@ -735,7 +727,7 @@
       {
         "id": "DK2-0092",
         "gold": "clarify",
-        "correct": false,
+        "correct": true,
         "e2": false,
         "e4": false
       },
@@ -854,7 +846,7 @@
       {
         "id": "DK2-0109",
         "gold": "reject",
-        "correct": true,
+        "correct": false,
         "e2": false,
         "e4": false
       },
@@ -1051,7 +1043,7 @@
         "id": "DK2-0137",
         "gold": "clarify",
         "correct": false,
-        "e2": true,
+        "e2": false,
         "e4": false
       },
       {
@@ -1185,7 +1177,7 @@
         "gold": "delegate_existing",
         "correct": false,
         "e2": false,
-        "e4": false
+        "e4": true
       },
       {
         "id": "DK2-0157",
@@ -1358,8 +1350,8 @@
       {
         "id": "DK2-0181",
         "gold": "delegate_existing",
-        "correct": true,
-        "e2": false,
+        "correct": false,
+        "e2": true,
         "e4": false
       },
       {
@@ -1484,7 +1476,7 @@
       {
         "id": "DK2-0199",
         "gold": "delegate_existing",
-        "correct": true,
+        "correct": false,
         "e2": false,
         "e4": false
       },
@@ -1582,8 +1574,8 @@
       {
         "id": "DK2-0213",
         "gold": "delegate_existing",
-        "correct": false,
-        "e2": true,
+        "correct": true,
+        "e2": false,
         "e4": false
       },
       {
@@ -1646,18 +1638,18 @@
       "rate": 0.9,
       "passed": true
     },
-    "agreement": 0.6363636363636364,
-    "cohenKappa": 0.6988176726820162,
+    "agreement": 0.7727272727272727,
+    "cohenKappa": 0.7945296864576383,
     "perLabel": [
       {
         "label": "delegate_existing",
         "n": 18,
-        "agree": 7
+        "agree": 14
       },
       {
         "label": "answer_here",
         "n": 7,
-        "agree": 4
+        "agree": 6
       },
       {
         "label": "clarify",
@@ -1667,12 +1659,12 @@
       {
         "label": "correct",
         "n": 3,
-        "agree": 3
+        "agree": 2
       },
       {
         "label": "resume",
         "n": 3,
-        "agree": 3
+        "agree": 2
       },
       {
         "label": "create_new",
@@ -1682,7 +1674,7 @@
       {
         "label": "reject",
         "n": 3,
-        "agree": 3
+        "agree": 2
       },
       {
         "label": "stop",
@@ -1691,24 +1683,19 @@
       }
     ],
     "disagreementIds": [
+      "DK2-0029",
       "DK2-0217",
-      "DK2-0143",
-      "DK2-0213",
-      "DK2-0155",
-      "DK2-0189",
+      "DK2-0130",
+      "DK2-0169",
       "DK2-0191",
-      "DK2-0083",
-      "DK2-0180",
-      "DK2-0142",
-      "DK2-0214",
-      "DK2-0152",
-      "DK2-0215",
-      "DK2-0194",
-      "DK2-0179",
-      "DK2-0140",
-      "DK2-0198"
+      "DK2-0131",
+      "DK2-0200",
+      "DK2-0048",
+      "DK2-0070",
+      "DK2-0134"
     ],
-    "malformedCount": 1,
+    "malformedCount": 2,
+    "seed": 20261102,
     "sampleSize": 44
   }
 }

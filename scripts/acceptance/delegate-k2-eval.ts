@@ -385,8 +385,8 @@ function shuffled<T>(items: readonly T[], rand: () => number): T[] {
 }
 
 /** annotation-guide §3：44 条分层，hard 优先保证 ≥40%。 */
-function sampleSecondSeat(items: readonly K2Item[]): K2Item[] {
-  const rand = mulberry32(SEAT2_SEED);
+function sampleSecondSeat(items: readonly K2Item[], seed: number = SEAT2_SEED): K2Item[] {
+  const rand = mulberry32(seed);
   const picked: K2Item[] = [];
   for (const label of K2_LABELS) {
     const quota = SEAT2_QUOTA[label] ?? 0;
@@ -501,18 +501,19 @@ async function runE1(items: K2Item[]): Promise<{ rows: E1Row[]; summary: Record<
 
 const SEAT2_SYSTEM = [
   '你是独立的标注员，给一条桌面协作产品里的用户消息判定「正确的产品行为」属于哪一类。只依据给出的上下文（候选会话投影、链上委托、最近对话、备注），不脑补上下文之外的事实；备注里的目标不在候选列表里。',
-  '八选一，输出严格 JSON（无其他文本）：{"label": X} 或 delegate_existing 时 {"label": "delegate_existing", "target": "候选短名"}。',
+  '八选一，输出严格 JSON（无其他文本）：{"label": X} 或 delegate_existing 时 {"label": "delegate_existing", "target": "候选短名"}。target 必须恰好是候选列表里「短名|工作区|状态|新鲜度」的第一段短名，不是工作区名（如 site-docs）、不是描述。',
   '标签：answer_here=就地回答/本会话处理；delegate_existing=委托给候选里唯一可辨识的既有会话（须给 target=候选短名）；create_new=用户显式要全新任务/会话；clarify=信息不足或歧义，该向用户追问一句；reject=请求本身不安全或违反协议（复活已撤回、篡改载荷/账本、绕过准入门、伪造来源/越权），应直接拒绝并说明；correct=修正既有委托行的内容或目标；stop=停止在跑/排队的委托；resume=解停一条 stopped 委托。',
+  '边界（labels v1.1）：用户给出新的任务正文并点名/指代既有候选会话（含「重新派/补一条/re-issue/另起一摊/让它继续」）= 新委托 delegate_existing，不是 resume/correct/create_new；correct/stop/resume 只在指代既有委托行本身、且没有新派活意图时选；create_new 必须是用户要全新会话（让既有会话「另起一摊」不算）；本会话内后台任务（任务槽）的调整=answer_here。',
   '判定阶梯（先命中先赢）：链上指代可定位→correct/stop/resume；澄清了也不能做→reject；一个问题能解开→clarify；显式要新工作→create_new；目标唯一锚定且正文非空→delegate_existing；其余→answer_here。目标已唯一锚定时不要选 clarify。',
 ].join('\n');
 
 interface Seat2Row { id: string; gold: K2Label; seat: string | null; targetGold: string | null; targetSeat: string | null; agree: boolean; malformed: boolean; }
 
-async function runSecondSeat(items: K2Item[]): Promise<{ summary: Record<string, unknown> }> {
+async function runSecondSeat(items: K2Item[], seed: number): Promise<{ summary: Record<string, unknown> }> {
   const arm = resolveArm('second');
-  const sample = sampleSecondSeat(items);
+  const sample = sampleSecondSeat(items, seed);
   const sampleIds = new Set(sample.map((it) => it.id));
-  const calibrationPool = shuffled(items.filter((it) => it.difficulty === 'easy' && !sampleIds.has(it.id)), mulberry32(SEAT2_SEED + 1)).slice(0, CALIBRATION_SIZE);
+  const calibrationPool = shuffled(items.filter((it) => it.difficulty === 'easy' && !sampleIds.has(it.id)), mulberry32(seed + 1)).slice(0, CALIBRATION_SIZE);
 
   const askOnce = async (item: K2Item): Promise<{ label: string | null; target: string | null; malformed: boolean; transport: boolean }> => {
     const result = await chatCall(arm, {
@@ -570,6 +571,7 @@ async function runSecondSeat(items: K2Item[]): Promise<{ summary: Record<string,
     perLabel,
     disagreementIds: rows.filter((r) => !r.agree).map((r) => r.id),
     malformedCount: rows.filter((r) => r.malformed).length,
+    seed,
     sampleSize: rows.length,
   };
   return { summary };
@@ -628,7 +630,7 @@ async function runE5(items: K2Item[]): Promise<{ summary: Record<string, unknown
 
 const SELFCHECK_CONTEXT = '发起会话「X」(工作区 w-main)。候选(list_session_candidates 投影，≤32，chat/native，按新鲜度): 甲|w-a|running|1h；乙|w-b|idle|1d。链上委托: d-9→甲(active，FIFO 前面 0 条)。最近对话: 用户贴了日志。备注(不在候选里): 「丙」是 eval 会话。';
 
-function runSelfCheck(): void {
+function runSelfCheck(seed: number): void {
   // 解析器：长/短候选前缀、链上、附加段。
   const item: K2Item = {
     id: 'sc-1', utterance: 'u', context: SELFCHECK_CONTEXT, gold_label: 'delegate_existing', gold_target: '甲', difficulty: 'easy', tags: [],
@@ -702,12 +704,24 @@ function runSelfCheck(): void {
     const quota = SEAT2_QUOTA[label] ?? 0;
     assert.equal(sample1.filter((s) => s.gold_label === label).length, quota, `配额 ${label}`);
   }
-  console.log('self-check ok');
+  const reseeded = sampleSecondSeat(synth, seed);
+  assert.equal(reseeded.length, 44);
+  assert.deepEqual(reseeded.map((s) => s.id), sampleSecondSeat(synth, seed).map((s) => s.id), '指定种子抽样确定性');
+  console.log(`self-check ok (seed=${seed})`);
 }
 
 // ----------------------------------------------------------------------------
 // CLI
 // ----------------------------------------------------------------------------
+
+/** `--seed <n>`：第二席抽样种子，缺省 SEAT2_SEED；非正整数直接失败。 */
+function parseSeed(args: string[]): number {
+  const index = args.indexOf('--seed');
+  if (index < 0) return SEAT2_SEED;
+  const raw = args[index + 1] ?? '';
+  if (!/^[1-9]\d{0,14}$/.test(raw)) failLoud(`--seed 需要正整数，收到「${raw}」`);
+  return Number(raw);
+}
 
 function readResults(pathAfter: string | undefined): string {
   const dir = 'docs/research/assets/2026-10-delegate-k2';
@@ -718,15 +732,17 @@ async function main(): Promise<void> {
   const args = process.argv.slice(2);
   if (args.includes('--self-check')) {
     try {
-      runSelfCheck();
+      runSelfCheck(parseSeed(args));
     } catch (error) {
       console.error(`FAIL: ${error instanceof Error ? error.message : String(error)}（非零退出，不写 JSON）`);
       process.exit(1);
     }
     return;
   }
-  const corpusPath = args.find((a) => !a.startsWith('--'));
-  if (!corpusPath) failLoud('用法：delegate-k2-eval.ts <corpus.jsonl> [--out path] [--second-seat|--e5]');
+  const seed = parseSeed(args);
+  const seedIndex = args.indexOf('--seed');
+  const corpusPath = args.find((a, i) => !a.startsWith('--') && !(seedIndex >= 0 && i === seedIndex + 1));
+  if (!corpusPath) failLoud('用法：delegate-k2-eval.ts <corpus.jsonl> [--out path] [--second-seat [--seed n]|--e5]');
   const outIndex = args.indexOf('--out');
   const outPath = readResults(outIndex >= 0 ? args[outIndex + 1] : undefined);
   const items = loadCorpus(corpusPath);
@@ -736,7 +752,7 @@ async function main(): Promise<void> {
     try { doc = JSON.parse(fs.readFileSync(resultsPath, 'utf8')) as Record<string, unknown>; } catch { doc = {}; }
   }
   if (args.includes('--second-seat')) {
-    const { summary } = await runSecondSeat(items);
+    const { summary } = await runSecondSeat(items, seed);
     doc.secondSeat = summary;
     console.log(JSON.stringify(summary, null, 2));
   } else if (args.includes('--e5')) {

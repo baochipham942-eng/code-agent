@@ -110,7 +110,7 @@ export function matchDangerousBash(): HookMatcher {
     />\s*\/dev\/sd[a-z]/i, // Writing to disk devices
     /mkfs/i, // Format filesystem
     /dd\s+if=.*of=\/dev/i, // dd to device
-    /chmod\s+-R?\s+777/i, // chmod 777
+    /chmod\s+(?:-\S+\s+)*777/i, // chmod 777, also 7777 (zero or more option words in between, e.g. -R, -f, -v)
     /:\s*\(\)\s*{\s*:\s*\|\s*:\s*&\s*}\s*;/i, // Fork bomb
   ];
 

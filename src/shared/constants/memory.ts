@@ -198,6 +198,14 @@ export const ROLE_ASSETS = {
    *  6 = 探查 + 多步读取余量，掐掉长探查拖慢首次醒来。不许挪用 ROLE_PROACTIVITY.WAKE_MAX_ITERATIONS，
    *  那是按「逐个检查产物」多步工作流设计的 15 轮预算，砍它会把巡检醒来掐断在半途）。 */
   FIRST_WAKE_MAX_ITERATIONS: 6,
+  /** 已删角色回收站根目录名（相对 getUserConfigDir()）：~/.code-agent/roles-trash/（N-ROLE-CREATE-DIRECT-DELETE） */
+  TRASH_DIR_NAME: 'roles-trash',
+  /** 回收站保留天数：过期条目在下次 trash/restore 时惰性清理（不新增定时器） */
+  TRASH_RETENTION_DAYS: 30,
+  /** 回收站条目元数据文件名：roles-trash/<trashId>/meta.json（roleId + deletedAt） */
+  TRASH_META_FILENAME: 'meta.json',
+  /** 回收站条目里的角色定义文件名：agents/<roleId>.md 移入后改名存放 */
+  TRASH_AGENT_FILENAME: 'agent.md',
 } as const;
 
 /** 角色主动性（cadence 触发器 + 醒来循环，内部文档） */

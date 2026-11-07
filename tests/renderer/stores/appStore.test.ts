@@ -25,6 +25,8 @@ describe('appStore', () => {
       showSettings: false,
       showCapabilityHub: false,
       capabilityHubTab: 'experts',
+      expertPanelTab: 'discover',
+      expertDetailRoleId: null,
       showCronCenter: false,
       settingsInitialTab: null,
       settingsMemoryFocus: null,
@@ -166,6 +168,26 @@ describe('appStore', () => {
   it('redirects capabilities deep links to the capability hub (2026-07 方案 9C)', () => {
     useAppStore.getState().openSettingsTab('capabilities');
     expect(useAppStore.getState()).toMatchObject({ showSettings: false, showCapabilityHub: true, capabilityHubTab: 'experts' });
+  });
+
+  it('resets the expert inner tab when opening the capability hub from another primary page', () => {
+    useAppStore.setState({ showCapabilityHub: false, expertDetailRoleId: null, expertPanelTab: 'mine' });
+
+    useAppStore.getState().openCapabilityHub('experts');
+
+    expect(useAppStore.getState()).toMatchObject({ showCapabilityHub: true, expertPanelTab: 'discover' });
+  });
+
+  it('keeps the expert inner tab when returning from expert detail', () => {
+    useAppStore.setState({ showCapabilityHub: false, expertDetailRoleId: '自定义客服', expertPanelTab: 'mine' });
+
+    useAppStore.getState().setShowCapabilityHub(true);
+
+    expect(useAppStore.getState()).toMatchObject({
+      showCapabilityHub: true,
+      expertDetailRoleId: null,
+      expertPanelTab: 'mine',
+    });
   });
 
   it('opens capability settings with a typed focus target', () => {

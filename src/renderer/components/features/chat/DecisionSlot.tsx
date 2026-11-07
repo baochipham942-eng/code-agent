@@ -249,6 +249,11 @@ export function DecisionSlot({
 }: DecisionSlotProps) {
   const { t } = useI18n();
   const currentSessionId = useSessionStore((state) => state.currentSessionId);
+  const isCronRunRecordSession = useSessionStore((state) => {
+    if (!state.currentSessionId) return false;
+    const kind = state.sessions?.find((session) => session.id === state.currentSessionId)?.origin?.kind;
+    return kind === 'cron' || kind === 'heartbeat';
+  });
   const sessionMessages = useSessionStore((state) => state.messages);
   const [resolvedTurnId, setResolvedTurnId] = useState<string | null>(null);
   const {
@@ -256,12 +261,16 @@ export function DecisionSlot({
     pendingPermissionSessionId,
     queuedPermissionRequests = {},
   } = useAppStore();
-  const candidates = visibleCandidates(
-    pendingPermissionRequest,
-    pendingPermissionSessionId,
-    queuedPermissionRequests,
-    currentSessionId,
-  );
+  // 定时任务运行记录会话已由首气泡下方的 CronRunSessionStatusBar 原地承接「等你批准 · 批准/拒绝」，
+  // 底部不再叠一张重复的 PermissionCard。
+  const candidates = isCronRunRecordSession
+    ? []
+    : visibleCandidates(
+      pendingPermissionRequest,
+      pendingPermissionSessionId,
+      queuedPermissionRequests,
+      currentSessionId,
+    );
   const current = candidates[0];
   const [collapsed, setCollapsed] = useState(false);
   const interruptionVisible = streamInterruption

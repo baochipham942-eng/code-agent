@@ -95,6 +95,19 @@ describe('protocolAdapter — buildProtocolContext', () => {
     expect(typeof ctx.logger.info).toBe('function');
   });
 
+  it('Neo Tag 外部触发标记穿过 protocol 与 legacy 适配层', () => {
+    const neoTag = { runId: 'tag-run-1' } as LegacyToolContext['neoTag'];
+    const legacy = { ...makeLegacyCtx('/tmp/workdir'), neoTag } as LegacyToolContext;
+    const ctx = buildProtocolContext({
+      sessionId: 'sess-tag',
+      workingDirectory: '/tmp/workdir',
+      legacyCtx: legacy,
+    });
+
+    expect(ctx.neoTag).toBe(neoTag);
+    expect(buildLegacyCtxFromProtocol(ctx).neoTag).toBe(neoTag);
+  });
+
   it('sessionId 缺失时退回 protocol-unknown', () => {
     const legacy = makeLegacyCtx('/tmp/workdir');
     const ctx = buildProtocolContext({

@@ -1,9 +1,8 @@
 // ============================================================================
 // N-FIX-DELIVERABLE-FOLDER-WRONG-SESSION：两个无文件夹聊天必须各自拿到自己的产出目录。
-// 根因：renderer 新建会话默认继承全局当前工作目录，而上一个聊天首轮规划出的
-// 任务_MMDD_<标题> 会被回写成这个全局值，新会话带着它创建 → 共用别人的目录。
-// 入口过滤 dropForeignPlannedSessionWorkDirectory + 规划/重规划/撞名改道串起来，
-// 用一张内存「会话表」模拟会话行回写，覆盖：并发、前一个已落盘、标题后到、改道。
+// renderer 新建普通会话必须传空目录，然后由这里的规划/重规划/撞名改道链路
+// 为每个会话分配独立的 任务_MMDD_<标题> 目录。用一张内存「会话表」
+// 模拟会话行回写，覆盖：并发、前一个已落盘、标题后到、改道。
 // ============================================================================
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
@@ -29,7 +28,6 @@ import {
   planSessionWorkDirectory,
 } from '../../../../src/host/config/sessionWorkDirectory';
 import {
-  dropForeignPlannedSessionWorkDirectory,
   listSessionWorkDirectoryReservations,
 } from '../../../../src/host/config/sessionWorkDirectoryReservations';
 
@@ -47,41 +45,39 @@ describe('two folderless chats get distinct work directories', () => {
   });
 
   /** 模拟「新建会话 → 首轮 preflight 规划 → 回写会话行」 */
-  async function startChat(id: string, inherited: string | undefined, title: string): Promise<string> {
-    const created = await dropForeignPlannedSessionWorkDirectory(inherited, { env });
-    rows.set(id, created);
-    if (created) return created;
+  async function startChat(id: string, title: string): Promise<string> {
+    rows.set(id, undefined);
     const reservedPaths = await listSessionWorkDirectoryReservations({ env, exceptSessionId: id });
     const planned = await planSessionWorkDirectory({ sessionTitle: title, userMessage: title, env, reservedPaths });
     rows.set(id, planned);
     return planned;
   }
 
-  it('B created while the app-level directory is still A\'s planned folder plans its own (A on disk)', async () => {
-    const a = await startChat('A', undefined, '写一篇文章');
+  it('B starts folderless and plans its own directory while A is already on disk', async () => {
+    const a = await startChat('A', '写一篇文章');
     await materializeSessionWorkDirectory(a);
-    const b = await startChat('B', a, '写一篇文章');
+    const b = await startChat('B', '写一篇文章');
     expect(b).not.toBe(a);
     expect(path.dirname(b)).toBe(path.dirname(a));
   });
 
-  it('same, with A\'s folder never materialized (pure Q&A so far)', async () => {
-    const a = await startChat('A', undefined, '写一篇文章');
-    const b = await startChat('B', a, '写一篇文章');
+  it('B starts folderless and plans its own directory while A is only reserved in its session row', async () => {
+    const a = await startChat('A', '写一篇文章');
+    const b = await startChat('B', '写一篇文章');
     expect(b).not.toBe(a);
   });
 
   it('two concurrent first turns with the same title plan different folders', async () => {
     const [a, b] = await Promise.all([
-      startChat('A', undefined, '写一篇文章'),
-      startChat('B', undefined, '写一篇文章'),
+      startChat('A', '写一篇文章'),
+      startChat('B', '写一篇文章'),
     ]);
     expect(a).not.toBe(b);
   });
 
   it('replan by a late smart title never lands on another session\'s folder', async () => {
-    const a = await startChat('A', undefined, '写一篇文章');
-    const b = await startChat('B', a, '整理会议纪要');
+    const a = await startChat('A', '写一篇文章');
+    const b = await startChat('B', '整理会议纪要');
     const replannedA = await maybeReplanSessionWorkDirectory({
       workingDirectory: a,
       sessionTitle: '整理会议纪要',
@@ -106,12 +102,4 @@ describe('two folderless chats get distinct work directories', () => {
     expect(diverted).not.toBe(shared);
   });
 
-  it('keeps a user-chosen ordinary project folder and an unrecorded planned folder', async () => {
-    const project = path.join(tempHome, 'my-project');
-    rows.set('A', project);
-    await expect(dropForeignPlannedSessionWorkDirectory(project, { env })).resolves.toBe(project);
-    const planned = await planSessionWorkDirectory({ sessionTitle: '孤儿目录', env });
-    await expect(dropForeignPlannedSessionWorkDirectory(planned, { env })).resolves.toBe(planned);
-    await expect(dropForeignPlannedSessionWorkDirectory(undefined, { env })).resolves.toBeUndefined();
-  });
 });

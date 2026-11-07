@@ -138,12 +138,12 @@ export async function executeCreateSession(
     useAppStore.getState().closeSecondaryPages();
   }
   try {
-    const inheritedWorkingDirectory =
-      options?.workingDirectory !== undefined
-        ? options.workingDirectory
-        : useAppStore.getState().workingDirectory;
+    // appStore.workingDirectory mirrors the active session. Reusing it implicitly would bind a
+    // plain new chat to the previous chat's planned 任务_MMDD_ folder. Workspace/group entry
+    // points opt in by passing workingDirectory explicitly; every other new chat starts folderless.
+    const newSessionWorkingDirectory = options?.workingDirectory ?? null;
     const onboardingDefaultEnginePromise = !options?.engine
-      ? readOnboardingDefaultEngine(inheritedWorkingDirectory).catch(() => null)
+      ? readOnboardingDefaultEngine(newSessionWorkingDirectory).catch(() => null)
       : Promise.resolve(null);
     const nextTitle = title?.trim() || '新对话';
     if (nextTitle === '新对话') {
@@ -155,7 +155,7 @@ export async function executeCreateSession(
         currentSessionId: get().currentSessionId,
         messages: get().messages,
         todos: get().todos,
-        workingDirectory: inheritedWorkingDirectory,
+        workingDirectory: newSessionWorkingDirectory,
       });
       if (reusableSession) {
         const onboardingDefaultEngine = await onboardingDefaultEnginePromise;
@@ -221,7 +221,7 @@ export async function executeCreateSession(
     set({ isLoading: true, error: null });
     const session = await invokeSession<Session | null>('create', {
       title: nextTitle,
-      workingDirectory: inheritedWorkingDirectory,
+      workingDirectory: newSessionWorkingDirectory,
       engine: options?.engine ?? null,
       ...(options?.expertRoleId ? { expertRoleId: options.expertRoleId } : {}),
       // 首句话建会话即带 'off'（无竞态）：host 侧 create 白名单校验后落库

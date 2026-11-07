@@ -12,7 +12,7 @@ import {
 export const ALMA_MCP_REGISTRY_URL = 'https://ravitemer.github.io/mcp-registry/registry.json';
 export const ALMA_PLUGIN_REGISTRY_URL = 'https://raw.githubusercontent.com/yetone/alma-plugins/main/registry.json';
 
-export type AlmaRegistryKind = 'mcp' | 'plugin';
+type AlmaRegistryKind = 'mcp' | 'plugin';
 
 export interface AlmaRegistryAuditSnapshot {
   kind: AlmaRegistryKind;

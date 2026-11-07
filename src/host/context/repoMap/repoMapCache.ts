@@ -129,11 +129,3 @@ export async function getRepoMap(config: RepoMapConfig): Promise<RepoMapResult> 
   return rankAndFormat(state.entries, config.tokenBudget);
 }
 
-/** 强制清除缓存（用于测试或手动刷新） */
-export function invalidateRepoMapCache(rootDir?: string): void {
-  if (rootDir) {
-    cacheInstances.delete(path.resolve(rootDir));
-  } else {
-    cacheInstances.clear();
-  }
-}

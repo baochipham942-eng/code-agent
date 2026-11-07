@@ -186,6 +186,12 @@ export class CronCloudRuntime {
       if (!remoteJobId) throw new Error('Cloud cron job could not be synchronized.');
       return await this.client.runJob(remoteJobId);
     } catch (error) {
+      // 底因（英文原始报文）不进 execution.error——会跟界面语言混排（FB-547）；但排查
+      // 线索不能丢，与 recordFailure 同款格式先落一行日志再抛固定句。
+      console.warn(
+        `[CronService] Cloud job operation failed for ${definition.id}:`,
+        error instanceof Error ? error.message : String(error),
+      );
       throw new Error(this.deps.unavailableMessage(), { cause: error });
     }
   }

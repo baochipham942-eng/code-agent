@@ -164,7 +164,7 @@ function applySnapshotStatus(
   for (const id of snapshot.retained) statusById.set(id, 'retain');
 }
 
-export function mergeInterventionSnapshots(
+function mergeInterventionSnapshots(
   base: ContextInterventionSnapshot,
   override: ContextInterventionSnapshot,
 ): ContextInterventionSnapshot {
@@ -185,28 +185,6 @@ export function mergeInterventionSnapshots(
   }
 
   return merged;
-}
-
-export function applyInterventionsToTranscript<T extends { id: string }>(
-  transcript: readonly T[],
-  interventions: ContextInterventionSnapshot,
-): T[] {
-  const byId = new Map(transcript.map((message) => [message.id, message]));
-  const excluded = new Set(interventions.excluded);
-  const pinned = interventions.pinned
-    .map((messageId) => byId.get(messageId))
-    .filter((value): value is T => value !== undefined && !excluded.has(value.id));
-  const retained = interventions.retained
-    .map((messageId) => byId.get(messageId))
-    .filter((value): value is T => value !== undefined && !excluded.has(value.id));
-  const base = transcript.filter((message) => !excluded.has(message.id));
-  const seen = new Set<string>();
-
-  return [...pinned, ...retained, ...base].filter((message) => {
-    if (seen.has(message.id)) return false;
-    seen.add(message.id);
-    return true;
-  });
 }
 
 let contextInterventionStateSingleton: ContextInterventionState | null = null;

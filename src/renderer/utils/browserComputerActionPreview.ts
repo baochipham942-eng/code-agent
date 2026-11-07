@@ -15,7 +15,7 @@ import {
   type BrowserComputerCatalogTool,
 } from '@shared/utils/browserComputerActionCatalog';
 
-export type BrowserComputerActionRisk = BrowserComputerCatalogRisk;
+type BrowserComputerActionRisk = BrowserComputerCatalogRisk;
 
 export interface BrowserComputerActionPreview {
   surface: 'browser' | 'computer';

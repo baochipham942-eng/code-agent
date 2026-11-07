@@ -35,9 +35,6 @@ export const ARTIFACT_PREVIEW_HEALTH = {
   ],
 } as const;
 
-export type ArtifactPreviewHealthViewportName =
-  (typeof ARTIFACT_PREVIEW_HEALTH.VIEWPORTS)[number]['name'];
-
 export const ARTIFACT_PREVIEW_VISION = {
   TIMEOUT_MS: 30_000,
   MIN_CONFIDENCE: 0.45,

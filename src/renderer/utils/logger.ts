@@ -2,13 +2,6 @@
  * Renderer 进程日志服务
  */
 
-export enum LogLevel {
-  DEBUG = 0,
-  INFO = 1,
-  WARN = 2,
-  ERROR = 3,
-}
-
 /** 非 Error 值直接 String() 会得到无信息的 "[object Object]"（dogfood 实测 Agent error 就这样丢了正文）。 */
 export function formatNonErrorValue(error: unknown): string {
   if (typeof error === 'string') return error;
@@ -67,5 +60,3 @@ class Logger {
 export function createLogger(context: string): Logger {
   return new Logger(context);
 }
-
-export const logger = new Logger();

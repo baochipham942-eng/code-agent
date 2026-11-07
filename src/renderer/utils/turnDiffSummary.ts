@@ -13,7 +13,7 @@ import { aggregateEditArgsText } from '@shared/utils/editToolArgs';
 import { measureStreamingPerformanceTiming } from './streamingPerformanceMetrics';
 import { diffLines } from 'diff';
 
-export const FILE_WRITE_TOOLS = ['Edit', 'Write', 'edit_file', 'write_file'];
+const FILE_WRITE_TOOLS = ['Edit', 'Write', 'edit_file', 'write_file'];
 
 export type FileChange = TurnDiffFileChange;
 

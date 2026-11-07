@@ -1,8 +1,8 @@
 import type { Task, TaskOutputRef } from '@shared/contract/backgroundTask';
 import type { ScriptRunSnapshot } from '@shared/contract/scriptRun';
 
-export type SessionReplayEvidenceType = 'replay' | 'trace';
-export type SessionReplayEvidenceActionKind = 'sessionReplay' | 'file' | 'url' | 'copy';
+type SessionReplayEvidenceType = 'replay' | 'trace';
+type SessionReplayEvidenceActionKind = 'sessionReplay' | 'file' | 'url' | 'copy';
 
 export interface SessionReplayEvidence {
   id: string;

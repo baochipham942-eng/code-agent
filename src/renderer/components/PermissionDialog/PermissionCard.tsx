@@ -35,6 +35,8 @@ import {
 import { defaultPermissionViewMode, isDangerousRequestShape, isSafeDefaultDeny, permissionSummary } from './permissionPresentation';
 import { isSandboxEscalation, sandboxEscalationDeniedPath, sandboxEscalationQuestion } from './sandboxEscalationPresentation';
 import { SensitiveStepHandbackCard } from './SensitiveStepHandbackCard';
+import { classifyPermissionDelivery } from './permissionDelivery';
+import { logPermissionClickExit } from '../../services/permissionClickLog';
 
 // 将共享类型的 PermissionRequest 转换为本地类型
 function normalizeRequest(
@@ -103,19 +105,6 @@ function toMemoryRequest(request: PermissionRequest): PermissionRequestForMemory
       toolName: request.details.toolName,
     },
   };
-}
-
-/**
- * 审批应答有没有真的送达宿主。两条投递链的失败形状不同：web → {success:false, error}，
- * Electron 式 → {outcome: 非 delivered}（AGENT_PERMISSION_RESPONSE 的注册类型写的是
- * Promise<void>，与实现不符，所以这里按 unknown 收窄）。最常见现场是手机已先答、
- * island 里这条已不存在——那种点击绝不能记成本机的决定。
- */
-function isUndeliveredResponse(result: unknown): boolean {
-  if (typeof result !== 'object' || result === null) return false;
-  const record = result as { success?: unknown; outcome?: unknown };
-  if (record.success === false) return true;
-  return typeof record.outcome === 'string' && record.outcome !== 'delivered';
 }
 
 interface PermissionCardProps {
@@ -225,12 +214,21 @@ export function PermissionCard({
 
   const handleApproval = useCallback(
     async (level: ApprovalLevel, updatedArgs?: Record<string, unknown>) => {
-      if (!request || settled) return;
+      if (!request || settled) {
+        logPermissionClickExit({ requestId: request?.id, stage: 'swallowed:no-request-or-settled', sessionId: request?.sessionId });
+        return;
+      }
 
       const requestSnapshot = requestOverride ?? pendingPermissionRequest;
       const requestSessionId = requestOverride ? sessionIdOverride ?? null : pendingPermissionSessionId;
-      if (processedRequestRef.current === request.id) return;
-      if (!claimApprovalResponse(request.id)) return;
+      if (processedRequestRef.current === request.id) {
+        logPermissionClickExit({ requestId: request.id, stage: 'swallowed:already-processed', sessionId: request.sessionId });
+        return;
+      }
+      if (!claimApprovalResponse(request.id)) {
+        logPermissionClickExit({ requestId: request.id, stage: 'swallowed:claim-rejected', sessionId: request.sessionId });
+        return;
+      }
       processedRequestRef.current = request.id;
 
       try {
@@ -266,7 +264,8 @@ export function PermissionCard({
         );
         // 未送达（手机先答 / 已超时删除 / 台账写不进）：不记成本机决定、不留卡，
         // 明说「已在其他设备处理」——静默吞掉等于让用户对着一张已失效的卡反复点。
-        if (isUndeliveredResponse(outcome)) {
+        if (classifyPermissionDelivery(outcome) !== 'ok') {
+          logPermissionClickExit({ requestId: request.id, stage: 'undelivered', sessionId: request.sessionId, error: outcome });
           releaseApprovalResponse(request.id);
           dismissPermissionRequest(request.id);
           toast.error(t.decisionCard.permission.settledElsewhere);
@@ -283,7 +282,8 @@ export function PermissionCard({
         } else if (!requestOverride) {
           setPendingPermissionRequest(null);
         }
-      } catch {
+      } catch (error) {
+        logPermissionClickExit({ requestId: request.id, stage: 'card-catch', sessionId: request.sessionId, error });
         processedRequestRef.current = null;
         releaseApprovalResponse(request.id);
         if (!requestOverride) {

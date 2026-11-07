@@ -4,10 +4,11 @@ import type { ToolSchema } from '../../../protocol/tools';
 export const proposeRoleSchema: ToolSchema = {
   name: 'propose_role',
   description:
-    'Draft a new persistent role (subagent) from the conversation and queue it for user confirmation. ' +
+    'Draft a new persistent role (subagent) from the conversation. ' +
     'Use ONLY inside a "建角色 / create role" conversation where the user wants to create a new role. ' +
     'You interview the user about what the role does, then call this tool with the assembled definition. ' +
-    'The draft is NOT saved automatically — it surfaces a confirmation card; the user must approve it. ' +
+    'The host independently reads the latest real user message: an explicit direct-create request may be installed immediately; ' +
+    'otherwise the tool surfaces a confirmation card. Never add or infer a direct-create argument. ' +
     'If the tool returns an error (e.g. duplicate name), adjust and call again. ' +
     'Call this again with a refined definition each time the user asks to change something before confirming.',
   outputSchema: { type: 'string' },

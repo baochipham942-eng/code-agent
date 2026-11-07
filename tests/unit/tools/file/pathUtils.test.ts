@@ -9,6 +9,7 @@ import path from 'node:path';
 import {
   confineEvalPath,
   expandTilde,
+  isChatUploadPath,
   resolvePath,
 } from '../../../../src/host/tools/file/pathUtils';
 
@@ -169,6 +170,65 @@ describe('Path Utilities', () => {
 
       expect(() => confineEvalPath(target, sandbox)).not.toThrow();
       expect(confineEvalPath(target, sandbox)).toBe(path.join(sandbox, 'x.md'));
+    });
+  });
+
+  // --------------------------------------------------------------------------
+  // isChatUploadPath
+  //
+  // macOS os.tmpdir() 返回 /var/...（软链别名），realpath 是 /private/var/...。
+  // 上传回执 / document-evidence 锚常以 realpath 形态回到 Read 工具
+  // （realrun20：/private/var/folders/…/T/code-agent-uploads/…/sales.csv 重读
+  // ENOENT 却没吃到「上传已过期」提示）。用真实临时目录 + 软链构造同样的
+  // 「词法根 ≠ 规范根」形态，不许手拼假路径。
+  // --------------------------------------------------------------------------
+  describe('isChatUploadPath', () => {
+    const originalTmpdir = process.env.TMPDIR;
+    let lexicalTmp: string;
+    let canonicalTmp: string;
+
+    beforeEach(() => {
+      // 目录先在原始 tmpdir 下建好，再改 TMPDIR——os.tmpdir() 每次调用现读 env。
+      // base 本身可能就在 /var 软链层下（macOS vitest tmp），先规范化出真身，
+      // 保证「词法根 ≠ 规范根」的形态和 macOS 生产一致。
+      const base = fs.realpathSync.native(createTemporaryDirectory('chat-upload-'));
+      canonicalTmp = path.join(base, 'real-tmp');
+      lexicalTmp = path.join(base, 'lex-tmp');
+      fs.mkdirSync(path.join(canonicalTmp, 'code-agent-uploads'), { recursive: true });
+      fs.symlinkSync(canonicalTmp, lexicalTmp);
+      process.env.TMPDIR = lexicalTmp;
+      expect(os.tmpdir()).toBe(lexicalTmp);
+      expect(fs.realpathSync.native(lexicalTmp)).toBe(canonicalTmp);
+      expect(canonicalTmp).not.toBe(path.resolve(lexicalTmp));
+    });
+
+    afterEach(() => {
+      if (originalTmpdir === undefined) delete process.env.TMPDIR;
+      else process.env.TMPDIR = originalTmpdir;
+    });
+
+    it('accepts the lexical tmpdir form of an upload path', () => {
+      expect(isChatUploadPath(path.join(lexicalTmp, 'code-agent-uploads', 'uuid-1', 'a.csv'))).toBe(true);
+    });
+
+    it('accepts the realpath (canonical) form even when the uploaded file is gone', () => {
+      // 重启后 webServer 清空上传目录内容：uuid 目录与文件都没了，只剩根。
+      const realpathForm = path.join(canonicalTmp, 'code-agent-uploads', 'uuid-1', 'a.csv');
+      expect(fs.existsSync(realpathForm)).toBe(false);
+      expect(isChatUploadPath(realpathForm)).toBe(true);
+    });
+
+    it('accepts the realpath form when the upload root itself is gone too', () => {
+      fs.rmSync(path.join(canonicalTmp, 'code-agent-uploads'), { recursive: true, force: true });
+      const realpathForm = path.join(canonicalTmp, 'code-agent-uploads', 'uuid-1', 'a.csv');
+      expect(fs.existsSync(path.join(canonicalTmp, 'code-agent-uploads'))).toBe(false);
+      expect(isChatUploadPath(realpathForm)).toBe(true);
+    });
+
+    it('rejects non-upload paths in either form', () => {
+      expect(isChatUploadPath(path.join(canonicalTmp, 'other', 'a.csv'))).toBe(false);
+      expect(isChatUploadPath(path.join(lexicalTmp, 'a.csv'))).toBe(false);
+      expect(isChatUploadPath('/etc/hosts')).toBe(false);
     });
   });
 });

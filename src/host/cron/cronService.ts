@@ -47,6 +47,7 @@ import { getEventBus } from '../services/eventing/bus';
 import { persistCronMissedTrace } from './cronMissedTrace';
 import {
   assertExecutionLocationConstraints,
+  assertAgentTypeOnSave,
   computeCronFireJitterMs,
   decideOneTimeJobStartup,
   intervalToCron,
@@ -282,7 +283,7 @@ export class CronService implements Disposable {
         );
       }
     }
-    assertSupportedEveryScheduleUnit(definition.schedule);
+    assertSupportedEveryScheduleUnit(definition.schedule); assertAgentTypeOnSave(definition.action);
 
     const runsOn = definition.runsOn ?? 'local';
     assertExecutionLocationConstraints({ ...definition, runsOn });
@@ -353,7 +354,7 @@ export class CronService implements Disposable {
     };
     // 重新启用已停用任务：运行计数清零、摘掉停用原因（N-CRON-BUDGET-EXPOSE）；只改 maxRuns 不动计数。
     if (updates.enabled === true && !existingJob.definition.enabled) rearmCronRunLimit(updatedJob);
-    assertSupportedEveryScheduleUnit(updatedJob.schedule);
+    assertSupportedEveryScheduleUnit(updatedJob.schedule); assertAgentTypeOnSave(updates.action, existingJob.definition.action);
     assertExecutionLocationConstraints(updatedJob);
     assertEventScheduleConstraints(updatedJob);
 
@@ -1032,7 +1033,7 @@ export class CronService implements Disposable {
           updateJob: (jobId, updates) => this.updateJob(jobId, updates),
           deliverCronResult: (job, result, execId) => this.deliverCronResult(job, result, execId),
           recordSessionId: (execId, sessionId) => this.recordExecutionSessionId(definition.id, execId, sessionId),
-        }, definition, action, executionId, eventPayloadBlock);
+        }, definition, action, executionId, eventPayloadBlock, timeout);
       }
 
       case 'webhook': {

@@ -83,6 +83,7 @@ describe('fast gate fail-closed contracts', () => {
       'perf-journey-cold-start',
       'perf-journey-first-token',
       'perf-journey-long-session',
+      'perf-journey-long-session-scroll',
       'perf-journey-session-switch',
     ];
     for (const id of journeyIds) {
@@ -93,7 +94,7 @@ describe('fast gate fail-closed contracts', () => {
     const unrelated = selectTests(policy, ['src/host/prompts/old.ts']);
     expect(unrelated.matchedRules).not.toEqual(expect.arrayContaining(journeyIds));
   });
-  it('a MessageBubble or TurnBasedTraceView edit selects exactly one journey probe', () => {
+  it('keeps MessageBubble in one probe and selects both trace entry/scroll probes', () => {
     const bubble = selectTests(policy, ['src/renderer/components/features/chat/MessageBubble/MessageContent.tsx']);
     expect(bubble.matchedRules.filter((id) => id.startsWith('perf-journey-'))).toEqual(['perf-journey-first-token']);
     expect(bubble.files).toContain('tests/scripts/perfJourneyFirstToken.test.ts');
@@ -101,8 +102,12 @@ describe('fast gate fail-closed contracts', () => {
     expect(bubble.files).not.toContain('tests/scripts/perfJourneySessionSwitch.test.ts');
 
     const trace = selectTests(policy, ['src/renderer/components/features/chat/TurnBasedTraceView.tsx']);
-    expect(trace.matchedRules.filter((id) => id.startsWith('perf-journey-'))).toEqual(['perf-journey-long-session']);
+    expect(trace.matchedRules.filter((id) => id.startsWith('perf-journey-'))).toEqual([
+      'perf-journey-long-session',
+      'perf-journey-long-session-scroll',
+    ]);
     expect(trace.files).toContain('tests/scripts/perfJourneyLongSession.test.ts');
+    expect(trace.files).toContain('tests/scripts/perfJourneyLongSessionScroll.test.ts');
     expect(trace.files).not.toContain('tests/scripts/perfJourneySessionSwitch.test.ts');
     expect(trace.files).not.toContain('tests/scripts/perfJourneyFirstToken.test.ts');
   });

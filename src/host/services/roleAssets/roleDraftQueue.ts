@@ -3,7 +3,8 @@
 //
 // 模型在"建角色"会话里通过 propose_role 工具起草角色定义，落到
 // ~/.code-agent/role-drafts/<id>/（与 roles/ 平级，不会被 agentRegistry 扫描）。
-// 严禁自动入库：只有用户通过 IPC 确认后才写入 agents/<roleId>.md + 建 roles/<roleId>/。
+// 普通草稿只有用户通过 IPC 确认后才入库；用户原话明确要求直接创建时，
+// propose_role 复用本模块的 prepare + install 安全路径，不写待确认草稿。
 //
 // 镜像 services/skills/skillDraftQueue.ts 的范式（草稿 → 聊天卡确认 → 落盘）。
 // 与 skill 草稿不同：角色创建是用户主动发起（非 telemetry 蒸馏），
@@ -135,19 +136,12 @@ export interface EnqueueRoleDraftResult {
   reason?: string;
 }
 
-/**
- * 把模型起草的角色定义入队为草稿。
- *
- * 两种模式：
- * - 新建（editingRoleId 缺省）：拒绝同名持久化角色（不能造重名）。
- * - 改已有（editingRoleId 有值）：跳过同名去重（改已有就是要同名），改为校验
- *   editingRoleId 对应角色真实存在；本期不支持改名，editingRoleId !== roleId 直接拒。
- *
- * 拒绝入队（draft=null）的情况：roleId 非法 / 缺 systemPrompt /
- * （新建）已存在同名持久化角色 /（改已有）目标角色不存在 / 改名 /
- * 队列里已有同名待确认草稿。
- */
-export async function enqueueRoleDraft(input: {
+export interface PrepareRoleDraftResult extends EnqueueRoleDraftResult {
+  /** 仅 draft 非空时存在；直接创建路径用它在任何队列写入前过安装安全闸。 */
+  agentMd?: string;
+}
+
+export interface RoleDraftInput {
   roleId: string;
   description: string;
   category?: SkillCategory;
@@ -158,7 +152,21 @@ export async function enqueueRoleDraft(input: {
   timestamp?: number;
   /** 有值 = 对话式改已有角色（覆盖该角色定义，绝不动其记忆/履历） */
   editingRoleId?: string;
-}): Promise<EnqueueRoleDraftResult> {
+}
+
+/**
+ * 校验并组装角色草稿；不写任何文件。入队与直接创建共用这道重名/形状闸。
+ *
+ * 两种模式：
+ * - 新建（editingRoleId 缺省）：拒绝同名持久化角色（不能造重名）。
+ * - 改已有（editingRoleId 有值）：跳过同名去重（改已有就是要同名），改为校验
+ *   editingRoleId 对应角色真实存在；本期不支持改名，editingRoleId !== roleId 直接拒。
+ *
+ * 拒绝入队（draft=null）的情况：roleId 非法 / 缺 systemPrompt /
+ * （新建）已存在同名持久化角色 /（改已有）目标角色不存在 / 改名 /
+ * 队列里已有同名待确认草稿。
+ */
+export async function prepareRoleDraft(input: RoleDraftInput): Promise<PrepareRoleDraftResult> {
   const createdAt = input.timestamp ?? Date.now();
   const roleId = input.roleId?.trim();
   const editingRoleId = input.editingRoleId?.trim() || undefined;
@@ -195,9 +203,6 @@ export async function enqueueRoleDraft(input: {
   }
 
   const id = sanitizeDraftId(roleId, createdAt);
-  const draftDir = path.join(getRoleDraftsDir(), id);
-  await fs.mkdir(draftDir, { recursive: true });
-
   const tools = input.tools ?? [];
   const meta: RoleDraftMeta = {
     id,
@@ -221,43 +226,47 @@ export async function enqueueRoleDraft(input: {
     systemPrompt: input.systemPrompt,
   });
 
-  await fs.writeFile(path.join(draftDir, DRAFT_AGENT_FILENAME), agentMd, 'utf-8');
-  await fs.writeFile(path.join(draftDir, DRAFT_META_FILENAME), JSON.stringify(meta, null, 2), 'utf-8');
+  return { draft: meta, agentMd };
+}
 
-  logger.info('Role draft enqueued (pending user confirmation)', { id, roleId });
-  return { draft: meta };
+export async function enqueueRoleDraft(input: RoleDraftInput): Promise<EnqueueRoleDraftResult> {
+  const prepared = await prepareRoleDraft(input);
+  if (!prepared.draft || prepared.agentMd === undefined) return prepared;
+
+  const draftDir = path.join(getRoleDraftsDir(), prepared.draft.id);
+  await fs.mkdir(draftDir, { recursive: true });
+  await fs.writeFile(path.join(draftDir, DRAFT_AGENT_FILENAME), prepared.agentMd, 'utf-8');
+  await fs.writeFile(
+    path.join(draftDir, DRAFT_META_FILENAME),
+    JSON.stringify(prepared.draft, null, 2),
+    'utf-8',
+  );
+
+  logger.info('Role draft enqueued (pending user confirmation)', {
+    id: prepared.draft.id,
+    roleId: prepared.draft.roleId,
+  });
+  return { draft: prepared.draft };
 }
 
 /**
- * 用户确认草稿：把 agent.md 写入 ~/.code-agent/agents/<roleId>.md + 建 roles/<roleId>/ 骨架。
- * agentRegistry 的 chokidar watcher 会自动捡到新文件并广播 agents:changed。
+ * 安装已校验形状的角色定义。确认 IPC 与直接创建共用这一条安全/落盘路径。
  */
-export async function confirmRoleDraft(
-  id: string,
+export async function installRoleDraft(
+  meta: RoleDraftMeta,
+  agentMd: string,
 ): Promise<{ success: boolean; roleId?: string; agentMdPath?: string; error?: string }> {
-  const draftDir = path.join(getRoleDraftsDir(), path.basename(id));
-  const metaPath = path.join(draftDir, DRAFT_META_FILENAME);
-
-  let meta: RoleDraftMeta;
-  try {
-    meta = JSON.parse(await fs.readFile(metaPath, 'utf-8')) as RoleDraftMeta;
-  } catch {
-    return { success: false, error: `草稿不存在：${id}` };
-  }
-
   if (!isSafeRoleId(meta.roleId)) {
     return { success: false, error: `草稿角色名非法：${meta.roleId}` };
   }
 
   try {
-    const agentMd = await fs.readFile(path.join(draftDir, DRAFT_AGENT_FILENAME), 'utf-8');
-
     // fail-closed 安全闸：落盘前过内容扫描，命中危险命令 / 明文密钥则拒绝。
-    // 草稿留在队列，用户可查看后放弃（与 skillDraftQueue 同策略）。
+    // confirm 调用方会保留草稿；直接创建调用方尚未写过草稿或正式资产。
     const guard = scanSkillContent(agentMd);
     if (guard.verdict === 'block') {
       logger.warn('Role draft blocked by content guard', {
-        id,
+        id: meta.id,
         findings: guard.findings.map((f) => f.kind),
       });
       return {
@@ -293,22 +302,59 @@ export async function confirmRoleDraft(
     if (!isEdit && meta.userExpectation?.trim()) {
       writeRolePersonalization(meta.roleId, { userExpectation: meta.userExpectation.trim() });
     }
-    await fs.rm(draftDir, { recursive: true, force: true });
-
     // 新建角色 → 入队一次「首次醒来」（只读介绍 + 可委托建议）。改已有不入队。
     // 入队失败绝不把一次成功的 confirm 变成失败——只记日志。
     if (!isEdit) {
       try {
         const { enqueueFirstWake } = await import('./roleFirstWake');
         const firstWake = await enqueueFirstWake(meta.roleId);
-        logger.info('First wake enqueued after role confirm', { id, roleId: meta.roleId, enqueued: firstWake.enqueued });
+        logger.info('First wake enqueued after role install', {
+          id: meta.id,
+          roleId: meta.roleId,
+          enqueued: firstWake.enqueued,
+        });
       } catch (error) {
-        logger.warn('First wake enqueue failed (confirm unaffected)', { id, roleId: meta.roleId, error: String(error) });
+        logger.warn('First wake enqueue failed (install unaffected)', {
+          id: meta.id,
+          roleId: meta.roleId,
+          error: String(error),
+        });
       }
     }
 
-    logger.info('Role draft confirmed and installed', { id, roleId: meta.roleId, isEdit, agentMdPath });
+    logger.info('Role draft installed', { id: meta.id, roleId: meta.roleId, isEdit, agentMdPath });
     return { success: true, roleId: meta.roleId, agentMdPath };
+  } catch (error) {
+    const message = error instanceof Error ? error.message : 'Unknown error';
+    logger.error('Failed to install role draft', { id: meta.id, error: message });
+    return { success: false, error: message };
+  }
+}
+
+/**
+ * 用户确认草稿：把 agent.md 写入 ~/.code-agent/agents/<roleId>.md + 建 roles/<roleId>/ 骨架。
+ * agentRegistry 的 chokidar watcher 会自动捡到新文件并广播 agents:changed。
+ */
+export async function confirmRoleDraft(
+  id: string,
+): Promise<{ success: boolean; roleId?: string; agentMdPath?: string; error?: string }> {
+  const draftDir = path.join(getRoleDraftsDir(), path.basename(id));
+  const metaPath = path.join(draftDir, DRAFT_META_FILENAME);
+
+  let meta: RoleDraftMeta;
+  try {
+    meta = JSON.parse(await fs.readFile(metaPath, 'utf-8')) as RoleDraftMeta;
+  } catch {
+    return { success: false, error: `草稿不存在：${id}` };
+  }
+
+  try {
+    const agentMd = await fs.readFile(path.join(draftDir, DRAFT_AGENT_FILENAME), 'utf-8');
+    const installed = await installRoleDraft(meta, agentMd);
+    if (!installed.success) return installed;
+    await fs.rm(draftDir, { recursive: true, force: true });
+    logger.info('Role draft confirmed', { id, roleId: meta.roleId });
+    return installed;
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Unknown error';
     logger.error('Failed to confirm role draft', { id, error: message });

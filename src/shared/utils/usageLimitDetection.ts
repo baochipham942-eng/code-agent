@@ -21,7 +21,9 @@ const SOURCE_TEXT_LIMIT = 4000;
 const ZONELESS_OFFSET = '+08:00';
 
 const USAGE_LIMIT_WORDING = /已达到[^。\n]{0,16}上限|使用上限|限额将|额度将|usage limit|\b(?:5|five)[- ]hour (?:limit|window|quota)/i;
-const PROVIDER_QUOTA_CODE = /["']?code["']?\s*[:=]\s*["']?(?:1308|1310)\b|错误码\s*(?:1308|1310)\b|\b(?:1308|1310)\b/;
+// 错误码只认结构化形态（code 字段 / 中文「错误码」措辞）：裸数字 1308/1310 会撞上端口、
+// token 数、毫秒数（connect ECONNREFUSED 127.0.0.1:1308），把网络错误报成「额度用尽」。
+const PROVIDER_QUOTA_CODE = /["']?code["']?\s*[:=]\s*["']?(?:1308|1310)\b|错误码\s*(?:1308|1310)\b/;
 const WINDOW_TEXT = /(\d+\s*个?\s*小时)|(\d+\s*-?\s*hours?)|(每周|每月|周额度|月额度)|\b(weekly|monthly)\b/i;
 const RESET_TIME = /(?:将在|将于|将|重置时间[:：]?|resets?(?:\s+(?:at|on))?)\s*(\d{4}-\d{2}-\d{2}[T ]\d{2}:\d{2}(?::\d{2})?(?:\.\d+)?)\s*(Z|[+-]\d{2}:?\d{2})?|(\d{4}-\d{2}-\d{2}[T ]\d{2}:\d{2}(?::\d{2})?(?:\.\d+)?)\s*(Z|[+-]\d{2}:?\d{2})?\s*重置/i;
 

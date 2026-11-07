@@ -14,7 +14,6 @@
 
 import type {
   HookContext,
-  HookResult,
   PlanningHooksConfig,
   PlanningRulesConfig,
 } from './types';
@@ -106,7 +105,7 @@ export class HooksEngine {
   /**
    * Session Start Hook
    */
-  async onSessionStart(): Promise<HookResult> {
+  async onSessionStart(): Promise<AggregatedHookResult> {
     resetObserverState();
     return this.runHooksForPoint('session_start', {});
   }
@@ -114,9 +113,9 @@ export class HooksEngine {
   /**
    * Pre-Tool Use Hook
    */
-  async preToolUse(context: HookContext): Promise<HookResult> {
+  async preToolUse(context: HookContext): Promise<AggregatedHookResult> {
     if (!this.hooksConfig.preToolUse) {
-      return { shouldContinue: true };
+      return { shouldContinue: true, decisions: [], observerErrors: [] };
     }
     return this.runHooksForPoint('pre_tool_use', context);
   }
@@ -124,9 +123,9 @@ export class HooksEngine {
   /**
    * Post-Tool Use Hook
    */
-  async postToolUse(context: HookContext): Promise<HookResult> {
+  async postToolUse(context: HookContext): Promise<AggregatedHookResult> {
     if (!this.hooksConfig.postToolUse) {
-      return { shouldContinue: true };
+      return { shouldContinue: true, decisions: [], observerErrors: [] };
     }
 
     // Log errors to error tracker
@@ -144,9 +143,9 @@ export class HooksEngine {
   /**
    * Stop Hook
    */
-  async onStop(): Promise<HookResult> {
+  async onStop(): Promise<AggregatedHookResult> {
     if (!this.hooksConfig.onStop) {
-      return { shouldContinue: true };
+      return { shouldContinue: true, decisions: [], observerErrors: [] };
     }
     return this.runHooksForPoint('on_stop', {});
   }
@@ -154,9 +153,9 @@ export class HooksEngine {
   /**
    * Error Hook
    */
-  async onError(context: HookContext): Promise<HookResult> {
+  async onError(context: HookContext): Promise<AggregatedHookResult> {
     if (!this.hooksConfig.onError) {
-      return { shouldContinue: true };
+      return { shouldContinue: true, decisions: [], observerErrors: [] };
     }
 
     // Log error to tracker

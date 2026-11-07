@@ -10,6 +10,7 @@ import {
   nextFrame,
   publishJourneyError,
   publishJourneyResult,
+  waitForCommitSettlement,
 } from './journey-probe-instrument';
 
 const instrument = createJourneyInstrument();
@@ -52,6 +53,7 @@ function SessionSwitchSurface(): React.ReactElement {
       if (document.querySelector('[data-testid="session-switch-skeleton"]')) {
         throw new Error('session-switch: skeleton still visible after session B');
       }
+      await waitForCommitSettlement(instrument);
       if (!cancelled) {
         publishJourneyResult('session-switch', instrument, {
           from: 'session-a',

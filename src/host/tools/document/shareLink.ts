@@ -4,7 +4,7 @@ import type {
   DeliverableShareLink,
   DeliverableShareLinkInfo,
 } from '../../../shared/contract/deliverable';
-import { SHARE_SERVICE, SHARE_SERVICE_TIMEOUTS } from '../../../shared/constants/shareService';
+import { SHARE_SERVICE, SHARE_SERVICE_TIMEOUTS, resolveShareBaseUrl } from '../../../shared/constants/shareService';
 import { getConfigService } from '../../services/core/configService';
 import {
   listPublishedVersions,
@@ -51,8 +51,7 @@ function getServiceContext(): { baseUrl: string; token: string } {
   const configService = getConfigService();
   const token = configService?.getServiceApiKey('neo-share')?.trim();
   if (!token) throw new Error('Share service token not configured');
-  const configuredBaseUrl = configService?.getSettings().shareService?.baseUrl?.trim();
-  const baseUrl = (configuredBaseUrl || SHARE_SERVICE.DEFAULT_BASE_URL).replace(/\/+$/, '');
+  const baseUrl = resolveShareBaseUrl(configService?.getSettings().shareService?.baseUrl);
   return { baseUrl, token };
 }
 
@@ -77,14 +76,21 @@ async function shareRequest(
   token: string,
   init: RequestInit,
 ): Promise<ShareApiResponse> {
-  const response = await fetch(url, {
-    ...init,
-    headers: {
-      Authorization: `Bearer ${token}`,
-      ...init.headers,
-    },
-    signal: AbortSignal.timeout(SHARE_SERVICE_TIMEOUTS.REQUEST_MS),
-  });
+  let response: Response;
+  try {
+    response = await fetch(url, {
+      ...init,
+      headers: {
+        Authorization: `Bearer ${token}`,
+        ...init.headers,
+      },
+      signal: AbortSignal.timeout(SHARE_SERVICE_TIMEOUTS.REQUEST_MS),
+    });
+  } catch (error) {
+    throw new Error(`Share service unavailable: ${error instanceof Error ? error.message : String(error)}`, { cause: error });
+  }
+  if (response.status === 401) throw new Error('Share service token rejected');
+  if (response.status >= 500) throw new Error(`Share service unavailable: HTTP ${response.status}`);
   if (!response.ok) {
     const detail = await response.text();
     throw new Error(`Share service request failed (${response.status}): ${detail.slice(0, 200)}`);

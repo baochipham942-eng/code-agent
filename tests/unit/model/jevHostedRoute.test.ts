@@ -205,13 +205,15 @@ describe('限流错误码 → blocked-until 映射', () => {
       JSON.stringify({ error: 'jev_global_fuse', message: 'fuse' }),
       { status: 503 },
     ));
+    const before = Date.now();
     const error = await systemOne({ command: 'x' }, QUESTIONS, {}).catch((e: Error & { code?: string }) => e);
-    expect(error.code).toBe('JEV_HOSTED_GLOBAL_FUSE');
     const now = Date.now();
-    expect(getJevHostedBlock(now)).toMatchObject({
-      blockReason: 'global_fuse',
-      blockedUntil: now + JEV_HOSTED_FUSE_RETRY_AFTER_MS,
-    });
+    expect(error.code).toBe('JEV_HOSTED_GLOBAL_FUSE');
+    const block = getJevHostedBlock(now);
+    expect(block?.blockReason).toBe('global_fuse');
+    // 退避起点是调用途中的时刻，不能和调用后再取的 now 比到毫秒
+    expect(block!.blockedUntil).toBeGreaterThanOrEqual(before + JEV_HOSTED_FUSE_RETRY_AFTER_MS);
+    expect(block!.blockedUntil).toBeLessThanOrEqual(now + JEV_HOSTED_FUSE_RETRY_AFTER_MS);
     const fuseWarns = loggerWarns.filter((args) => String(args[0]).includes('全局熔断'));
     expect(fuseWarns).toHaveLength(1);
   });

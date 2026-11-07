@@ -1,9 +1,9 @@
 // ============================================================================
-// propose_role — 对话式建角色：模型起草角色定义 → 入队草稿 → 弹确认卡
+// propose_role — 对话式建角色：模型起草角色定义 → host 判定直接安装或弹确认卡
 //
 // 模型在"建角色"会话里访谈完用户后调用本工具。工具把定义落成草稿
-// （~/.code-agent/role-drafts/<id>/），并发射 role_draft_pending 事件让聊天
-// 渲染确认卡。严禁自动入库：用户点确认（roles.ipc confirmDraft）才落 agents/<id>.md。
+// 用户自己的最新消息明确要求直接创建时，host 走与确认 IPC 共用的安装安全路径；
+// 其余请求仍入队草稿并发射 role_draft_pending。
 // 镜像 skillDraftQueue + skill_draft_pending 事件的范式（role-creation-flow §5）。
 // ============================================================================
 
@@ -17,7 +17,16 @@ import type {
   ToolSchema,
 } from '../../../protocol/tools';
 import type { SkillCategory } from '../../../../shared/contract/skillRepository';
-import { enqueueRoleDraft } from '../../../services/roleAssets/roleDraftQueue';
+import type { Message, SessionOrigin } from '../../../../shared/contract';
+import {
+  enqueueRoleDraft,
+  installRoleDraft,
+  prepareRoleDraft,
+} from '../../../services/roleAssets/roleDraftQueue';
+import { buildRoleCreatedSummary } from '../../../services/roleAssets/roleCreatedSummary';
+import { shouldCreateRoleDirectly } from '../../../services/roleAssets/roleCreationIntent';
+import { getSessionManager } from '../../../services/infra/sessionManager';
+import { getPermissionModeManager } from '../../../permissions/modes';
 import { findUnknownToolNames, getKnownToolNames, hasProtocolToolRegistry } from '../../knownToolNames';
 import { proposeRoleSchema } from './proposeRole.schema';
 
@@ -26,6 +35,37 @@ const schema: ToolSchema = proposeRoleSchema;
 function toStringArray(value: unknown): string[] {
   if (!Array.isArray(value)) return [];
   return value.filter((v): v is string => typeof v === 'string' && v.trim().length > 0).map((v) => v.trim());
+}
+
+function latestRealUserText(messages: readonly Message[]): string | null {
+  return [...messages]
+    .reverse()
+    .find((message) => message.role === 'user' && message.visibility !== 'rewound' && !message.isMeta)
+    ?.content.trim() || null;
+}
+
+function isExternalOrigin(origin: SessionOrigin | undefined): boolean {
+  return origin !== undefined && origin.kind !== 'manual' && origin.kind !== 'retry';
+}
+
+async function shouldInstallDirectly(ctx: ToolContext, editingRoleId: string | undefined): Promise<boolean> {
+  if (editingRoleId || ctx.neoTag || getPermissionModeManager().isUnattendedSession(ctx.sessionId)) return false;
+  try {
+    const sessionManager = getSessionManager();
+    const [messages, session] = await Promise.all([
+      sessionManager.getMessages(ctx.sessionId),
+      sessionManager.getSession(ctx.sessionId, 1),
+    ]);
+    if (isExternalOrigin(session?.origin)) return false;
+    const latestUserText = latestRealUserText(messages);
+    return latestUserText !== null && shouldCreateRoleDirectly(latestUserText);
+  } catch (error) {
+    ctx.logger.warn('propose_role direct-intent lookup failed; falling back to confirmation', {
+      sessionId: ctx.sessionId,
+      error: String(error),
+    });
+    return false;
+  }
 }
 
 class ProposeRoleHandler implements ToolHandler<Record<string, unknown>, string> {
@@ -89,7 +129,7 @@ class ProposeRoleHandler implements ToolHandler<Record<string, unknown>, string>
 
     onProgress?.({ stage: 'starting', detail: `起草角色「${roleId}」` });
 
-    const { draft, reason } = await enqueueRoleDraft({
+    const draftInput = {
       roleId,
       description,
       category,
@@ -98,11 +138,59 @@ class ProposeRoleHandler implements ToolHandler<Record<string, unknown>, string>
       userExpectation,
       sessionId: ctx.sessionId,
       editingRoleId,
-    });
+    };
+
+    const direct = await shouldInstallDirectly(ctx, editingRoleId);
+    if (direct) {
+      const prepared = await prepareRoleDraft(draftInput);
+      if (!prepared.draft || prepared.agentMd === undefined) {
+        return { ok: false, error: prepared.reason ?? 'Role draft validation failed', code: 'DRAFT_REJECTED' };
+      }
+      const installed = await installRoleDraft(prepared.draft, prepared.agentMd);
+      if (!installed.success) {
+        return { ok: false, error: installed.error ?? 'Role installation failed', code: 'DRAFT_REJECTED' };
+      }
+
+      const summary = buildRoleCreatedSummary(prepared.draft);
+      ctx.emit({
+        type: 'role_created_direct',
+        data: {
+          sessionId: ctx.sessionId,
+          roleId: prepared.draft.roleId,
+          displayName: prepared.draft.roleId,
+          canDo: summary.canDo,
+          willNotDo: summary.willNotDo,
+        },
+      });
+      ctx.logger.info('propose_role installed directly from explicit user intent', {
+        roleId: prepared.draft.roleId,
+      });
+      onProgress?.({ stage: 'completing', percent: 100 });
+      return {
+        ok: true,
+        output:
+          'The host already installed this role and queued its first wake. ' +
+          'Do not announce that it was created, do not repeat its name, and do not add a confirmation message. ' +
+          'End this role-authoring turn so the first-wake message can take over.',
+        meta: {
+          roleId: prepared.draft.roleId,
+          sessionId: ctx.sessionId,
+          displayName: prepared.draft.roleId,
+          canDo: summary.canDo,
+          willNotDo: summary.willNotDo,
+          category: prepared.draft.category,
+          tools: prepared.draft.tools,
+          directCreated: true,
+          endRunWithoutAssistant: true,
+        },
+      };
+    }
+
+    const { draft, reason } = await enqueueRoleDraft(draftInput);
 
     if (!draft) {
       // 入队被拒（重名/非法）——把原因回给模型，让它换名或调整后重试
-      return { ok: false, error: reason ?? '草稿入队失败', code: 'DRAFT_REJECTED' };
+      return { ok: false, error: reason ?? 'Role draft enqueue failed', code: 'DRAFT_REJECTED' };
     }
 
     // 发射事件 → 聊天渲染确认卡（RoleDraftNotifications 订阅 role_draft_pending）

@@ -29,11 +29,9 @@ import { useSessionAgentRows } from '../../../hooks/useSessionAgentRows';
 import { deriveAgentMergeState } from '../../../utils/agentMergeState';
 import { memberProgressAnchor } from '../../../utils/memberProgressAnchor';
 import type { AgentRow } from '../../../utils/agentRows';
-import { useRightPanelTabsStore } from '../../../stores/rightPanelTabsStore';
 
 /** 打开右侧「专家」一级页签。 */
-function openSessionAgentsPanel(sessionId: string | null): void {
-  if (sessionId) useRightPanelTabsStore.getState().setExpertsDismissed(sessionId, false);
+function openSessionAgentsPanel(): void {
   useAppStore.getState().openWorkbenchTab('experts', { source: 'user' });
 }
 
@@ -190,6 +188,15 @@ export const SessionMemberBar: React.FC<{ sessionId: string | null }> = ({ sessi
   const text = t.expert.memberBar;
   const setViewingMemberId = useMemberViewStore((state) => state.setViewingMemberId);
   const { rows, conflicts } = useSessionAgentRows(sessionId);
+  // 定时任务运行记录会话（origin cron/heartbeat 且带 origin.id → CronRunSessionStatusBar 已挂载）：
+  // 终态下的「1 个代理 · 完成/失败」与第一条气泡下的运行状态行重复，且带内部术语，隐藏 chip；
+  // 若确实还有超出主运行的后台代理仍在工作/等待，保留 chip。普通会话不改动。
+  const hasCronRunStatusLine = useSessionStore((state) => {
+    if (!sessionId) return false;
+    const session = state.sessions?.find((item) => item.id === sessionId);
+    const kind = session?.origin?.kind;
+    return (kind === 'cron' || kind === 'heartbeat') && Boolean(session?.origin?.id?.trim());
+  });
 
   // 换会话必须退出成员视图，否则会拿上一个会话的成员去渲染这一个
   useEffect(() => { setViewingMemberId(null); }, [sessionId, setViewingMemberId]);
@@ -202,6 +209,7 @@ export const SessionMemberBar: React.FC<{ sessionId: string | null }> = ({ sessi
   const mergeState = standby ? null : deriveAgentMergeState(rows, conflicts);
 
   if (rows.length === 0) return null;
+  if (hasCronRunStatusLine && working.length === 0 && waiting.length === 0) return null;
 
   // 「N 个代理工作中 · 名字」。名字说明谁在干活；工具步人话不进折叠条。
   const firstWorking = working[0];
@@ -230,7 +238,7 @@ export const SessionMemberBar: React.FC<{ sessionId: string | null }> = ({ sessi
     <button /* ds-allow:button: 折叠 chip 是整行摘要入口（头像叠+两行信息），Button primitive 无此形态 */
       type="button"
       data-testid="session-member-bar-collapsed"
-      onClick={() => openSessionAgentsPanel(sessionId)}
+      onClick={openSessionAgentsPanel}
       className="mb-1.5 flex w-full items-center gap-1.5 px-2 text-left text-[11px] text-zinc-500 hover:text-zinc-300"
     >
       <span className="flex -space-x-1.5">

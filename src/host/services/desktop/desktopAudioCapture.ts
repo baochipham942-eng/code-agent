@@ -1113,7 +1113,9 @@ function startFifoCapture(fifoPath: string): boolean {
   }
 }
 
-function sweepCapturedAudio(): void {
+// 过期录音清扫的统一入口：采集启动/定时器走它，webStartupRetention 的启动期
+// 兜底也走它（采集关着的机器否则永远不清理，录音无限堆积）。
+export function sweepCapturedAudio(): void {
   const sqlitePath = getSqlitePath();
   if (sqlitePath) ensureAudioTable(sqlitePath);
   sweepAudioRetention({ sqlitePath, audioDir: getAudioDir(), now: Date.now() });

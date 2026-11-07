@@ -14,12 +14,14 @@ import React, { useCallback, useEffect, useState } from 'react';
 import type { CronUrgency, PermissionResponse, SessionAutomationRecord } from '@shared/contract';
 import type { ParkedApprovalInboxItem } from '@shared/contract/pendingApproval';
 import { isCronUrgency } from '@shared/cronUrgency';
+import { isCronPermissionDeniedMarker } from '@shared/cronPermissionDenied';
 import { Check, CircleCheck, Cloud, ExternalLink, Inbox, MessageSquareText, ShieldAlert, ShieldCheck, X } from 'lucide-react';
 import { sessionAutomationClient } from '../../../services/sessionAutomationClient';
 import ipcService from '../../../services/ipcService';
 import { IPC_CHANNELS } from '@shared/ipc';
 import { CRON_REVIEW_INBOX_TIMEOUTS } from '@shared/constants';
 import { createLogger } from '../../../utils/logger';
+import { localizeParkedApprovalClosureText } from '../../../utils/toolExecutionPresentation';
 import { useSessionStore } from '../../../stores/sessionStore';
 import { useAppStore } from '../../../stores/appStore';
 import { useCronStore } from '../../../stores/cronStore';
@@ -225,7 +227,8 @@ export const AutomationReviewInbox: React.FC<AutomationReviewInboxProps> = ({ on
                       >
                         <div className="truncate text-sm text-zinc-200">{item.displayTool ?? item.tool}</div>
                         <div className="text-[11px] text-zinc-500">
-                          {cc.parkedVoidedLabel}：{item.voidReason}
+                          {/* 收口句按当前语言展示（老行持久化的是中文原句）；非收口文本原样保留 */}
+                          {cc.parkedVoidedLabel}：{localizeParkedApprovalClosureText(item.voidReason, t) ?? item.voidReason}
                         </div>
                       </div>
                     );
@@ -373,6 +376,8 @@ export const AutomationReviewInbox: React.FC<AutomationReviewInboxProps> = ({ on
                         const urgencyRaw = record.config?.pendingReview?.urgencyRaw;
                         const digest = record.config?.pendingReview?.digest;
                         const maxRunsReached = record.config?.pendingReview?.maxRunsReached;
+                        // 需处理（N-CRON-RUN-COMPLETED-BUT-DENIED）：被拒且无产出的运行带琥珀徽章。
+                        const permissionDenied = isCronPermissionDeniedMarker(record.config?.pendingReview?.permissionDenied);
                         const resultSessionId = reviewResultSessionId(record);
                         const hasPendingApproval = Boolean(
                           resultSessionId
@@ -393,6 +398,14 @@ export const AutomationReviewInbox: React.FC<AutomationReviewInboxProps> = ({ on
                                   data-testid="automation-urgency-badge"
                                 >
                                   {cc.inboxUrgencyBadge}
+                                </span>
+                              )}
+                              {permissionDenied && (
+                                <span
+                                  className="inline-flex shrink-0 items-center rounded-full bg-amber-500/15 px-2 py-0.5 text-[10px] text-badge-warning"
+                                  data-testid="automation-review-permission-denied"
+                                >
+                                  {cc.permissionDeniedBadge}
                                 </span>
                               )}
                               {isCloud && (

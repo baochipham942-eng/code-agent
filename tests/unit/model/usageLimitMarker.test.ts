@@ -48,6 +48,21 @@ describe('getModelUsageLimitFailureMarker', () => {
     expect(getModelUsageLimitFailureMarker(error)).toMatchObject({ code: 'MODEL_USAGE_LIMIT', windowText: '5 小时', resetAt: RESET_INSTANT });
   });
 
+  it('⑥ 结构化错误码形态仍认：`code: 1310` 与中文「错误码 1308」', () => {
+    expect(getModelUsageLimitFailureMarker(apiCallError({ statusCode: 400, responseBody: '{"error":{"code":1310,"message":"quota window exhausted"}}' })))
+      .toMatchObject({ code: 'MODEL_USAGE_LIMIT' });
+    expect(getModelUsageLimitFailureMarker(new Error('AI_APICallError: code: 1310, retry after window reset')))
+      .toMatchObject({ code: 'MODEL_USAGE_LIMIT' });
+    expect(getModelUsageLimitFailureMarker(new Error('请求失败，错误码 1308，请稍后重试')))
+      .toMatchObject({ code: 'MODEL_USAGE_LIMIT' });
+  });
+
+  it('⑦ 裸数字 1308/1310 不算错误码：端口 / token 数 / 毫秒文本不产生 usage-limit 标记', () => {
+    expect(getModelUsageLimitFailureMarker(new Error('connect ECONNREFUSED 127.0.0.1:1308'))).toBeUndefined();
+    expect(getModelUsageLimitFailureMarker(apiCallError({ statusCode: 500, responseBody: 'used 1308 tokens this turn' }))).toBeUndefined();
+    expect(getModelUsageLimitFailureMarker(new Error('request timed out after 1310 ms'))).toBeUndefined();
+  });
+
   it('② 解析不出时间时仍是 usage limit，只是不带 resetAt', () => {
     const error = apiCallError({ statusCode: 429, responseBody: '{"error":{"code":"1308","message":"已达到使用上限"}}' });
     const marker = getModelUsageLimitFailureMarker(error);

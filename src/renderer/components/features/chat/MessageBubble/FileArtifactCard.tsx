@@ -19,6 +19,7 @@ import {
   type SessionMediaContext,
 } from '@shared/utils/sessionMediaAssets';
 import { useAppStore } from '../../../../stores/appStore';
+import { useSessionStore } from '../../../../stores/sessionStore';
 import { buildTurnArtifactDeliverableCards } from '../../../../utils/deliverables';
 import { DeliverableCardList } from './DeliverableCardList';
 import { DiffView } from '../../../DiffView';
@@ -113,6 +114,10 @@ function pickIcon(ext: string): React.ReactNode {
 export const FileArtifactCard: React.FC<Props> = ({ items, mediaContext, fileChangesByPath }) => {
   const [expandedMedia, setExpandedMedia] = useState<SessionMediaAsset | null>(null);
   const openFilePreview = useAppStore((state) => state.openPreview);
+  // 会话工作目录：只喂给交付卡去重键（相对/绝对同一文件折叠），展示与打开目标不变。
+  const currentSessionWorkingDirectory = useSessionStore(
+    (state) => state.sessions.find((session) => session.id === state.currentSessionId)?.workingDirectory ?? null,
+  );
 
   const { mediaEntries, deliverableCards } = useMemo(() => {
     const nextMediaEntries: Array<{
@@ -137,9 +142,9 @@ export const FileArtifactCard: React.FC<Props> = ({ items, mediaContext, fileCha
 
     return {
       mediaEntries: nextMediaEntries,
-      deliverableCards: buildTurnArtifactDeliverableCards(nonMediaItems),
+      deliverableCards: buildTurnArtifactDeliverableCards(nonMediaItems, currentSessionWorkingDirectory),
     };
-  }, [items, mediaContext]);
+  }, [items, mediaContext, currentSessionWorkingDirectory]);
 
   if (mediaEntries.length === 0 && deliverableCards.length === 0) return null;
 

@@ -99,6 +99,48 @@ describe('browser/computer consequence approval tier', () => {
     expect(permissionRequests).toHaveLength(1);
   });
 
+  it.each([
+    { action: 'click', selector: '#details' },
+    { action: 'navigate', url: 'http://127.0.0.1/' },
+    { action: 'get_content' },
+    { action: 'type', selector: '#q', text: 'hi' },
+  ])('Browser tool: ordinary action runs without approval: $action', async (params) => {
+    setSurfaceTool('Browser');
+    expect((await executor.execute('Browser', params, {})).success).toBe(true);
+    expect(permissionRequests).toHaveLength(0);
+  });
+
+  it.each([
+    { action: 'upload_file', uploadFilePath: '/tmp/report.pdf' },
+    { action: 'open', url: 'http://127.0.0.1/' },
+  ])('Browser tool: external-side-effect action asks exactly once: $action', async (params) => {
+    setSurfaceTool('Browser');
+    expect((await executor.execute('Browser', params, {})).success).toBe(true);
+    expect(permissionRequests).toHaveLength(1);
+  });
+
+  it('Browser tool: an unregistered action is denied by the catalog', async () => {
+    setSurfaceTool('Browser');
+    const result = await executor.execute('Browser', { action: 'frobnicate' }, {});
+    expect(result.success).toBe(false);
+    expect(result.error).toContain('not registered in the consequence catalog');
+    expect(result.metadata).toMatchObject({
+      hostReason: { code: HostReasonCode.PermissionUnregisteredActionBlocked },
+    });
+    expect(permissionRequests).toHaveLength(0);
+    expect(resolverState.execute).not.toHaveBeenCalled();
+  });
+
+  it('Browser tool: a high-risk catalog entry stays denied', async () => {
+    setSurfaceTool('Browser');
+    const result = await executor.execute('Browser', { action: 'clear_cookies' }, {});
+    expect(result.success).toBe(false);
+    expect(result.metadata).toMatchObject({
+      hostReason: { code: HostReasonCode.PermissionHighRiskActionBlocked },
+    });
+    expect(permissionRequests).toHaveLength(0);
+  });
+
   it('covers stateful computer_use, Computer alias, and gui_agent at the same decision point', async () => {
     setSurfaceTool('computer_use');
     expect((await executor.execute('computer_use', { operation: 'observe' }, {})).success).toBe(true);

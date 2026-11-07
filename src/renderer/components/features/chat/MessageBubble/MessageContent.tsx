@@ -46,6 +46,7 @@ import {
   stripRawHtmlOutsideCode,
 } from './messageContentParts';
 import { CronRunMessageFrame, useIsCronRunSession } from './CronRunMessageFrame';
+import { stripCronPromptDecoration } from '@shared/cronRunMessage';
 
 /**
  * 把"本地 HTML 文件"的 href 解析成可预览的路径；非本地 HTML 返回 null。
@@ -569,17 +570,21 @@ export const MessageContent: React.FC<MessageContentProps> = memo(function Messa
   // For user messages, render as plain text (no markdown processing)
   // 使用 span 而非 div，避免复制时末尾多出换行符
   if (isUser) {
+    // cron/heartbeat 运行记录的首条用户消息存的是「任务 + host 注入的机器尾段」
+    // （模型必须收到完整 prompt，存储不动）；气泡只显示任务本身。老记录同样带尾段，
+    // 在渲染层切割即可新旧同治，fork 出的续聊子会话复制的前缀也一并干净。
+    const displayContent = stripCronPromptDecoration(content);
     // 核心功能触发词（@neo / /goal / /workflow）上色，正文逐字符不变
-    const trigger = parseLeadingTriggerToken(content);
+    const trigger = parseLeadingTriggerToken(displayContent);
     return (
-      <span className="text-sm leading-relaxed whitespace-pre-wrap break-words block">
+      <span className="text-sm leading-relaxed whitespace-pre-wrap break-words block" data-testid="user-message-content">
         {trigger ? (
           <>
             {trigger.prefix}
             <span className={trigger.className} data-testid={`trigger-token-${trigger.kind}`}>{trigger.token}</span>
             {trigger.rest}
           </>
-        ) : content}
+        ) : displayContent}
       </span>
     );
   }

@@ -17,16 +17,25 @@ import {
 } from '../../../shared/contract/companionPush';
 import { applyCompanionSchema } from '../core/database/migrations/companion';
 import type { CompanionGateway } from './CompanionGateway';
+import type { DesktopPresenceProbe } from './desktopPresence';
 import { dispatchCompanionPush, unwrapPushToken, wrapPushToken, type PushSendRequest } from './companionPushProviders';
 
 type SqlRow = Record<string, unknown>;
 type OutboxState = 'pending' | 'sent' | 'skipped' | 'expired' | 'failed';
+
+/**
+ * 普通推送种类（N-NOTIFY-PRESENCE-HEARTBEAT）：桌面在场时入队即跳过、pending 行被
+ * 单向已读命中时跳过。approval(pending) / error 是紧急类，永不在乎在场信号。
+ */
+const PRESENCE_SUPPRESSIBLE_KINDS = new Set(['agent_complete', 'agent_cancelled']);
 
 export interface CompanionPushOutboxDeps {
   now?: () => number;
   wrapKey: Buffer;
   apnsKeyPath?: string | null;
   send?: (request: PushSendRequest) => Promise<CompanionPushDispatchResult>;
+  /** 桌面在场信号；缺席 = 功能未接线，行为与引入前完全一致。 */
+  presence?: DesktopPresenceProbe;
 }
 
 export function loadPushWrapKeySync(dataDirectory: string): Buffer {
@@ -103,6 +112,8 @@ export class CompanionPushOutbox {
     if (!event.sessionId) return;
     const titleKey = companionPushTitleKey(event.kind, event.payload);
     if (!titleKey) return;
+    // 桌面在场（N-NOTIFY-PRESENCE-HEARTBEAT）：用户就在电脑前，普通完成/取消不吵手机。
+    if (PRESENCE_SUPPRESSIBLE_KINDS.has(event.kind) && this.deps.presence?.isActive(now)) return;
     const kind = event.kind as GeneralizedPushPayload['kind'];
     for (const device of this.gateway.activeDevices()) {
       if (!this.gateway.canAccessSession(device.deviceId, event.sessionId)) continue;
@@ -162,6 +173,12 @@ export class CompanionPushOutbox {
     if (!this.gateway.isUsableDevice(deviceId)) { mark('skipped'); return; }
     const sessionId = String(row.session_id);
     if (!this.gateway.canAccessSession(deviceId, sessionId)) { mark('skipped'); return; }
+    // 单向已读（N-NOTIFY-PRESENCE-HEARTBEAT）：入队后桌面已经看过这个会话，pending 的
+    // 手机推送就不发了（>= created_at：看到的时间不早于事件落队时间才算「看过了它」）。
+    if (PRESENCE_SUPPRESSIBLE_KINDS.has(kind)) {
+      const viewedAt = this.deps.presence?.lastViewedAt(sessionId);
+      if (viewedAt !== null && viewedAt !== undefined && viewedAt >= Number(row.created_at)) { mark('skipped'); return; }
+    }
     const registration = this.db.prepare('SELECT * FROM companion_push_registrations WHERE device_id = ?').get(deviceId) as SqlRow | undefined;
     if (!registration) { mark('failed'); return; }
     const token = unwrapPushToken(String(registration.token_wrap), this.deps.wrapKey);

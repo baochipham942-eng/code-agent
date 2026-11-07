@@ -230,27 +230,6 @@ const WorkbenchViewLauncher: React.FC<WorkbenchViewLauncherProps> = ({
   );
 };
 
-/** 常驻于 App：空右栏时 WorkbenchTabs 未挂载，专家出现仍要能自动开页。 */
-export const ExpertWorkbenchAutoOpen: React.FC = () => {
-  const currentSessionId = useSessionStore((state) => state.currentSessionId);
-  const workbenchTabs = useAppStore((state) => state.workbenchTabs);
-  const openWorkbenchTab = useAppStore((state) => state.openWorkbenchTab);
-  const expertsDismissed = useRightPanelTabsStore((state) => (
-    currentSessionId ? Boolean(state.expertsDismissedBySession[currentSessionId]) : false
-  ));
-  const { rows } = useSessionAgentRows(currentSessionId);
-
-  useEffect(() => {
-    if (!currentSessionId || rows.length === 0 || expertsDismissed || workbenchTabs.includes('experts')) return;
-    openWorkbenchTab('experts', {
-      source: 'auto',
-      activate: workbenchTabs.length === 0,
-    });
-  }, [currentSessionId, rows.length, expertsDismissed, workbenchTabs, openWorkbenchTab]);
-
-  return null;
-};
-
 export const WorkbenchTabs: React.FC<{ children?: React.ReactNode; focusable?: boolean }> = ({ children, focusable = false }) => {
   const { t } = useI18n();
   const workbenchTabs = useAppStore((s) => s.workbenchTabs);
@@ -261,7 +240,6 @@ export const WorkbenchTabs: React.FC<{ children?: React.ReactNode; focusable?: b
   const developerMode = useAppStore((s) => s.developerMode);
   const logsPinned = useRightPanelTabsStore((s) => s.logsPinned);
   const setLogsPinned = useRightPanelTabsStore((s) => s.setLogsPinned);
-  const setExpertsDismissed = useRightPanelTabsStore((s) => s.setExpertsDismissed);
   // 专注模式（2026-08-01 工单①）：只在右栏独立成列时（App 传 focusable）提供开关；
   // 窄屏 workbench 借住在聊天列里，没有「收起聊天列」的对象，不给开关。
   // 状态在 workbenchFocusStore（不塞进 appStore：god-file 棘轮红线，且只是布局瞬时态）。
@@ -414,7 +392,6 @@ export const WorkbenchTabs: React.FC<{ children?: React.ReactNode; focusable?: b
       if (!currentSessionId) return;
       claimDesignCanvasForSession(currentSessionId);
     }
-    if (id === 'experts' && currentSessionId) setExpertsDismissed(currentSessionId, false);
     openWorkbenchTab(id, { source: 'user' });
     setMenuOpen(false);
   };
@@ -425,7 +402,6 @@ export const WorkbenchTabs: React.FC<{ children?: React.ReactNode; focusable?: b
       setPendingClose(meta);
       return;
     }
-    if (meta.id === 'experts' && currentSessionId) setExpertsDismissed(currentSessionId, true);
     closeWorkbenchTab(meta.id);
   };
 

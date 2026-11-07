@@ -13,6 +13,7 @@ import { createCLIAgent } from '../../../src/cli/adapter';
 import { buildQueuedAgentRunBody, createAgentRouter } from '../../../src/web/routes/agent';
 import { OrchestratorPermissionIsland } from '../../../src/host/agent/orchestratorPermissions';
 import { HostReasonCode, type Message } from '../../../src/shared/contract';
+import { getModelAuthFailureMarker } from '../../../src/host/model/errorClassifier';
 import type { PendingOperation, RunCheckpoint, RunEngineRef, RunOwnerLease } from '../../../src/shared/contract/durableRun';
 import type { DurableCheckpointInput, PrepareOperationInput, PrepareToolOperationInput } from '../../../src/host/runtime/durableRunKernel';
 import {
@@ -591,6 +592,93 @@ describe('createAgentRouter', () => {
     const errors = publish.mock.calls.filter(([, kind]) => kind === 'error');
     expect(errors).toHaveLength(1);
     expect(errors[0][2]).toMatchObject({ event: { code: 'RUN_FAILED', failure } });
+  });
+
+  // N-QUOTA-429-PLAIN-NOTICE-FU1：runFinalizer 失败先发终态 error 再抛出，路由 catch 又无条件
+  // 补发一条 → 同一轮 renderer 渲染两张同款红卡（父单 web 构建假供应商实测）。钉两条失败出口：
+  // ① 引擎已发终态 error：流上只许一条 error，保留引擎那条（带 failure 标记 + 真跑模型）；
+  // ② 引擎没发过（直接抛）：catch 补发的一条是唯一一条，派生标记（401 → MODEL_AUTH）不丢。
+  // 两出口手机侧 RUN_FAILED 仍恰好一条、失败终态仍落库（③，刷新后 AgentErrorCard 不丢）。
+  describe('/api/run 失败轮 error 事件去重（N-QUOTA-429-PLAIN-NOTICE-FU1）', () => {
+    function collectSSEEvents(raw: string, eventName: string): Record<string, unknown>[] {
+      const frames: Record<string, unknown>[] = [];
+      const lines = raw.split('\n');
+      for (let i = 0; i < lines.length; i++) {
+        if (lines[i].trim() !== `event: ${eventName}`) continue;
+        const dataLine = lines.slice(i + 1).find((line) => line.trim().startsWith('data:'));
+        if (dataLine) frames.push(JSON.parse(dataLine.trim().slice(5).trim()) as Record<string, unknown>);
+      }
+      return frames;
+    }
+
+    async function runFailingTurn(
+      sessionId: string,
+      engine: (onEvent: (event: { type: string; data?: unknown }) => void) => Promise<void>,
+      publish: NonNullable<Parameters<typeof createAgentRouter>[0]['publishCompanionEvent']>,
+    ): Promise<string> {
+      mockCreateAgentLoop.mockImplementationOnce((_config, onEvent: (event: { type: string; data?: unknown }) => void) => ({
+        run: vi.fn(() => engine(onEvent)),
+        cancel: mockCancel,
+      }));
+      await startAgentApi({ publishCompanionEvent: publish });
+      const response = await fetch(`${baseUrl}/api/run`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ prompt: '去重验证', sessionId }),
+      });
+      expect(response.ok).toBe(true);
+      // 失败轮 catch/finally 走完会 endResponseIfOpen，text() 在流收线时返回
+      return await response.text();
+    }
+
+    const failedAssistantMessage = (sessionId: string) =>
+      (sessionMessages.get(sessionId) ?? []).find((message) => message.role === 'assistant'
+        && (message.metadata as { agentError?: { category?: string } } | undefined)?.agentError);
+
+    it('① 引擎发终态 error 后抛出：SSE 流恰好一条 error，保留引擎那条带 failure 的（修前两条）', async () => {
+      await closeServer();
+      const publish = vi.fn();
+      const thrown = Object.assign(new Error('401 Unauthorized API key'), { statusCode: 401 });
+      // 前提自证：401 真能派生标记（与 runFinalizer 同一条链）
+      const marker = getModelAuthFailureMarker(thrown);
+      expect(marker).toMatchObject({ code: 'MODEL_AUTH' });
+      const engineFailure = { ...marker, provider: marker?.provider ?? 'glm-coding', model: marker?.model ?? 'glm-5.3' };
+      const raw = await runFailingTurn('dedup-engine-emitted', async (onEvent) => {
+        // 镜像 runFinalizer 失败分支：先发带标记、带这一轮真跑模型的终态 error，再抛出
+        onEvent({ type: 'error', data: { message: thrown.message, code: 'RUN_FAILED', details: { provider: 'glm-coding', model: 'glm-5.3' }, failure: engineFailure } });
+        throw thrown;
+      }, publish);
+
+      const errors = collectSSEEvents(raw, 'error');
+      expect(errors).toHaveLength(1);
+      expect(errors[0]).toMatchObject({ failure: { code: 'MODEL_AUTH', provider: 'glm-coding', model: 'glm-5.3' } });
+
+      const companionErrors = publish.mock.calls.filter(([, kind]) => kind === 'error');
+      expect(companionErrors).toHaveLength(1);
+      expect(companionErrors[0][2]).toMatchObject({ event: { code: 'RUN_FAILED', failure: engineFailure } });
+
+      expect(failedAssistantMessage('dedup-engine-emitted')?.metadata).toMatchObject({
+        agentError: expect.objectContaining({ category: 'auth' }),
+      });
+    });
+
+    it('② 引擎未发终态 error 直接抛：SSE 流恰好一条 error，catch 派生标记仍在', async () => {
+      await closeServer();
+      const publish = vi.fn();
+      const raw = await runFailingTurn('dedup-direct-throw', async () => {
+        throw Object.assign(new Error('401 Unauthorized API key'), { statusCode: 401 });
+      }, publish);
+
+      const errors = collectSSEEvents(raw, 'error');
+      expect(errors).toHaveLength(1);
+      expect(errors[0]).toMatchObject({ message: '401 Unauthorized API key', failure: { code: 'MODEL_AUTH' } });
+
+      const companionErrors = publish.mock.calls.filter(([, kind]) => kind === 'error');
+      expect(companionErrors).toHaveLength(1);
+      expect(companionErrors[0][2]).toMatchObject({ event: { code: 'RUN_FAILED', failure: { code: 'MODEL_AUTH' } } });
+
+      expect(failedAssistantMessage('dedup-direct-throw')).toBeTruthy();
+    });
   });
 
   // N-MOBILE-SOURCE-CONTEXT：手机发起的轮次模型要知道用户在手机上；桌面发起的不能带
@@ -2509,6 +2597,107 @@ describe('createAgentRouter', () => {
       }],
       ['session:list-updated', undefined],
     ]);
+  });
+
+  // N-RUN-CONCURRENT-PERSIST-FAIL-FU1：新会话的 kickoff running 写必须落在建行之后。
+  // 原实现 opening 处写 status，而新会话行要到 try 内 prePersistUserMessage 才建，
+  // assertAccessibleSession 必抛 Session not found ⇒ 真机每个新会话一条
+  // 「Failed to persist session status running」WARN。这里钉两件事：
+  // ① 新会话全程无这条 WARN；② running 写确实发生在建行之后且终态照旧收线。
+  it('new session defers the kickoff running write until the row exists (no failed-persist warn)', async () => {
+    const rows = new Map<string, Record<string, unknown>>();
+    const writeOrder: string[] = [];
+    const fakeSessionManager = {
+      getSession: vi.fn(async (id: string) => rows.get(id) ?? null),
+      updateSession: vi.fn(async (id: string, updates: Record<string, unknown>) => {
+        if (typeof updates.status === 'string') writeOrder.push(`update:${updates.status}`);
+        rows.set(id, { ...(rows.get(id) ?? {}), ...updates });
+      }),
+      addMessageToSession: vi.fn(async (id: string) => {
+        writeOrder.push('insertRow');
+        if (!rows.has(id)) rows.set(id, { id });
+      }),
+      getMessages: vi.fn(async () => []),
+    };
+    await closeServer();
+    await startAgentApi({ tryGetSessionManager: async () => fakeSessionManager });
+    setDbAvailable(true);
+
+    // 阻住 agentLoop，在建行后、终态前观察中间态
+    let releaseRun: (() => void) | undefined;
+    mockCreateAgentLoop.mockImplementationOnce(() => ({
+      run: vi.fn(() => new Promise<void>((resolve) => { releaseRun = resolve; })),
+      cancel: mockCancel,
+    }));
+
+    const sessionId = 'session-new-running-after-row';
+    const response = await fetch(`${baseUrl}/api/run`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ prompt: '新会话 running 补写', sessionId }),
+    });
+    expect(response.ok).toBe(true);
+
+    try {
+      // 行建好后 running 才写进去（补写发生在 pre-persist 建行之后）
+      await vi.waitFor(() => expect(writeOrder).toContain('update:running'));
+      expect(writeOrder.indexOf('insertRow')).toBeLessThan(writeOrder.indexOf('update:running'));
+      expect(rows.get(sessionId)).toMatchObject({ status: 'running' });
+
+      // opening 的失败持久化 WARN 一条都不能有（真机基线：每新会话一条）
+      expect(logger.warn.mock.calls.flat().join('\n')).not.toContain('Failed to persist session status');
+      // 'session:updated' 广播在状态真的写进去之后照常发
+      expect(mockBroadcastSSE.mock.calls).toContainEqual([
+        'session:updated',
+        expect.objectContaining({ sessionId, updates: expect.objectContaining({ status: 'running' }) }),
+      ]);
+    } finally {
+      releaseRun?.();
+    }
+    await response.text();
+
+    await vi.waitFor(() => expect(rows.get(sessionId)).toMatchObject({ status: 'completed' }));
+    expect(writeOrder.filter((entry) => entry === 'update:running')).toHaveLength(1);
+    expect(logger.warn.mock.calls.flat().join('\n')).not.toContain('Failed to persist session status');
+  });
+
+  // 老会话（行已存在）的 kickoff running 必须维持在 opening 原地写（与今天同一点），
+  // 且不产生第二笔补写。
+  it('existing session still writes running at the opening, before pre-persist inserts the user message', async () => {
+    const rows = new Map<string, Record<string, unknown>>();
+    const writeOrder: string[] = [];
+    const fakeSessionManager = {
+      getSession: vi.fn(async (id: string) => rows.get(id) ?? null),
+      updateSession: vi.fn(async (id: string, updates: Record<string, unknown>) => {
+        if (typeof updates.status === 'string') writeOrder.push(`update:${updates.status}`);
+        rows.set(id, { ...(rows.get(id) ?? {}), ...updates });
+      }),
+      addMessageToSession: vi.fn(async (id: string) => {
+        writeOrder.push('insertRow');
+        if (!rows.has(id)) rows.set(id, { id });
+      }),
+      getMessages: vi.fn(async () => []),
+    };
+    rows.set('session-existing-running-opening', { id: 'session-existing-running-opening', title: 'Existing' });
+    await closeServer();
+    await startAgentApi({ tryGetSessionManager: async () => fakeSessionManager });
+    setDbAvailable(true);
+    mockRun.mockResolvedValueOnce(undefined);
+
+    const response = await fetch(`${baseUrl}/api/run`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ prompt: '老会话原地写 running', sessionId: 'session-existing-running-opening' }),
+    });
+    expect(response.ok).toBe(true);
+    await response.text();
+
+    await vi.waitFor(() => expect(rows.get('session-existing-running-opening')).toMatchObject({ status: 'completed' }));
+    // running 在 opening 写（早于 pre-persist 的 user 消息落库），且只有这一笔
+    expect(writeOrder.indexOf('update:running')).toBeGreaterThanOrEqual(0);
+    expect(writeOrder.indexOf('update:running')).toBeLessThan(writeOrder.indexOf('insertRow'));
+    expect(writeOrder.filter((entry) => entry === 'update:running')).toHaveLength(1);
+    expect(logger.warn.mock.calls.flat().join('\n')).not.toContain('Failed to persist session status');
   });
 
   // 工单行为不变清单 #5：路由缓存 push 保留 thinking/contentParts/artifacts/metadata，user attachments 也保留。

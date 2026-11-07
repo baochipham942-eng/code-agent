@@ -33,6 +33,17 @@ const logger = createLogger('ParkedApprovalHydration');
 /** 停车挂起类审批的 kind 全集；plan/launch 各有自己的 gate hydrate，不在此列。 */
 const PARKED_KINDS = ['tool_approval', 'directory_access', 'channel_pairing'] as const;
 
+/**
+ * 幸存行收件箱标题的「重启前发起 · 」前缀：标记与剥离共用同一常量，保证幂等（FB-599）。
+ * 幸存行每次启动 hydrate 都会重写标题——存量行已带着上次重启的前缀，直接拼会一层层堆叠
+ * （真实设备连续重启后出现「重启前发起 · 重启前发起 · … · Bash」）；标记前先剥掉打头的
+ * 前缀串再补恰好一枚，displayTool 恒为「一枚前缀 + 工具名」。
+ */
+const RESTART_ORIGIN_PREFIX = '重启前发起 · ';
+const RESTART_ORIGIN_PREFIX_RUN = new RegExp(
+  `^(?:${RESTART_ORIGIN_PREFIX.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')})+`,
+);
+
 interface ParkedApprovalHydrationDeps {
   /** 幸存判据要读会话台账；缺省（测试/DB 未就绪）时 tool_approval 一律按不可存活收口。 */
   loadSessionMessages?: (sessionId: string) => Message[] | null;
@@ -192,14 +203,17 @@ export function hydrateApprovalGatesAtBoot(
   return { plan, launch, parked, survived: survivors.length };
 }
 
-/** 幸存行的收件箱标题：displayTool 前缀「重启前发起」，其余 payload 原样保留。 */
+/**
+ * 幸存行的收件箱标题：displayTool 标记为「重启前发起 · <tool>」（幂等，前缀恰一枚），
+ * 其余 payload 原样保留。
+ */
 function markSurvivorRestartOrigin(
   repo: PendingApprovalRepository,
   row: PendingApprovalRecord,
   payload: Partial<ToolApprovalPayload> | null,
 ): void {
   const tool = payload?.displayTool ?? payload?.tool ?? 'unknown';
-  const marked = `重启前发起 · ${tool}`;
+  const marked = `${RESTART_ORIGIN_PREFIX}${tool.replace(RESTART_ORIGIN_PREFIX_RUN, '')}`;
   try {
     repo.insert({
       id: row.id,

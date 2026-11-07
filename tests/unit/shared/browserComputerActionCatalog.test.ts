@@ -8,6 +8,7 @@ import {
   isBrowserScopedComputerUseAction,
 } from '../../../src/shared/utils/browserComputerActionCatalog';
 import { browserActionSchema } from '../../../src/host/plugins/builtin/browserControl/browserAction.schema';
+import { browserSchema } from '../../../src/host/plugins/builtin/browserControl/browser.schema';
 import { computerUseSchema } from '../../../src/host/plugins/builtin/computerUse/computerUse.schema';
 import { computerSchema } from '../../../src/host/plugins/builtin/computerUse/computer.schema';
 import { guiAgentSchema } from '../../../src/host/plugins/builtin/computerUse/guiAgent.schema';
@@ -65,6 +66,21 @@ describe('browser/computer action catalog', () => {
     expect(guiAgentSchema.inputSchema.required).toContain('task');
     expect(getStrictBrowserComputerActionCatalogEntry('gui_agent', 'run', { action: 'run' }))
       .toMatchObject({ tool: 'gui_agent', action: 'run', consequence: 'external_side_effect' });
+  });
+
+  it('covers every action exposed by the model-facing Browser tool', () => {
+    const actions = stringEnum(browserSchema as unknown as typeof browserActionSchema, 'action');
+    expect(actions.length).toBeGreaterThan(0);
+    for (const action of actions) {
+      expect(
+        getStrictBrowserComputerActionCatalogEntry('Browser', action, { action }),
+        `Browser.${action} 未在 catalog 中声明后果等级`,
+      ).not.toBeNull();
+    }
+    for (const action of ['open', 'nav_back', 'nav_forward', 'refresh', 'close_window', 'newTab', 'switchTab']) {
+      expect(getStrictBrowserComputerActionCatalogEntry('Browser', action, { action }))
+        .toMatchObject({ consequence: 'external_side_effect' });
+    }
   });
 
   it('describes browser file actions without changing approval ownership', () => {

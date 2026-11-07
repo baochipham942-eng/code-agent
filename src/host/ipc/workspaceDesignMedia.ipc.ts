@@ -16,7 +16,7 @@ import { estimateImageCostCny } from '../../shared/media/imageCost';
 import { estimateVideoCostCny } from '../../shared/media/videoCost';
 import { estimateMusicCostCny } from '../../shared/media/musicCost';
 import { DESIGN_IMAGE_MODELS } from '../../shared/constants';
-import { imageEngineForModel, imageModelById, videoModelById } from '../../shared/constants/visualModels';
+import { IMAGE_MULTI_REF, imageEngineForModel, imageModelById, videoModelById } from '../../shared/constants/visualModels';
 import { DESIGN_FLUX_MODEL } from '../../shared/constants/pricing';
 import type { ExpandDirection, ExpandScales } from '../services/media/imageGenerationService';
 import {
@@ -153,6 +153,8 @@ export async function handleGenerateDesignImage(
     model?: string;
     /** 参考图（base64 dataURL）：存在时走 wanx description_edit 垫图，而非纯文生图。 */
     referenceImageDataUrl?: string;
+    /** 多参考图（1-3 张 dataURL，按选中顺序）：与 referenceImageDataUrl 并存；1 张走 wanx，2-3 张走 qwen 多图编辑。 */
+    referenceImageDataUrls?: string[];
     /** 付费命令幂等键（WP3-1）：同 commandId 的自动重放返回缓存产物不再计费；缺省保持既有行为。 */
     commandId?: string;
   },
@@ -174,6 +176,8 @@ async function generateDesignImageOnce(
     outputPath: string;
     model?: string;
     referenceImageDataUrl?: string;
+    /** 多参考图（1-3 张 dataURL，按选中顺序）：与 referenceImageDataUrl 并存；1 张走 wanx，2-3 张走 qwen 多图编辑。 */
+    referenceImageDataUrls?: string[];
   },
   getSettings: () => AppSettings | null,
 ): Promise<{ path: string; actualModel: string; costCny: number }> {
@@ -183,6 +187,14 @@ async function generateDesignImageOnce(
     throw new Error('generateDesignImage 需要 prompt 与 outputPath');
   }
   assertWithinDesignDir(payload.outputPath, 'outputPath');
+  // 参考图归一：数组字段优先，其次旧单图字段；超上限在任何付费调用之前拦下。
+  const referenceUrls = (payload.referenceImageDataUrls?.length
+    ? payload.referenceImageDataUrls
+    : payload.referenceImageDataUrl ? [payload.referenceImageDataUrl] : []
+  ).filter((url) => typeof url === 'string' && url.length > 0);
+  if (referenceUrls.length > IMAGE_MULTI_REF.MAX_REFERENCE_IMAGES) {
+    throw new Error(`参考图最多 ${IMAGE_MULTI_REF.MAX_REFERENCE_IMAGES} 张（收到 ${referenceUrls.length} 张）`);
+  }
 
   // 桥接模型（多模态桥接 Spec 1）：`provider:model` id（唯一含冒号的来源）→ 复用 openai-compat，
   // 端点取自源聊天 provider 的 baseUrl+key（key 在 host 内解析，不出 host）。内置/custom id 不含
@@ -195,7 +207,7 @@ async function generateDesignImageOnce(
     const entry = deriveBridgedVisualModels(settings).find((m) => m.id === payload.model && m.mediaType === 'image');
     if (!entry) throw new Error(`未知或不支持的桥接图像模型 ${payload.model}`);
     // 参考图垫图是 wanx description_edit 专属能力；桥接走纯文生图，撞进来显式拒绝（与 custom 一致）。
-    if (payload.referenceImageDataUrl) {
+    if (referenceUrls.length) {
       throw new Error('桥接图像模型暂不支持参考图垫图（仅文生图）');
     }
     const { baseUrl, apiKey } = resolveBridgedEndpoint(entry.sourceProvider, settings);
@@ -220,16 +232,21 @@ async function generateDesignImageOnce(
 
   // 参考图垫图：以用户贴入的参考图为底走 wanx description_edit（万相专属能力，故固定 wanx 引擎）。
   // 路径守卫/空 prompt 已上拦，编排（key 校验 + 出图 + 下载）下沉到 service，handler 只负责落盘。
-  if (payload.referenceImageDataUrl) {
-    // 审计修订1：参考图垫图绕过 model 路由固定走 wanx——自定义模型只声明 t2i，撞进来显式拦。
+  if (referenceUrls.length) {
+    // 审计修订1：参考图垫图绕过 model 路由固定走 wanx/qwen——自定义模型只声明 t2i，撞进来显式拦。
     if (custom) {
       throw new Error(`自定义模型 ${custom.label} 不支持参考图垫图（仅文生图）`);
     }
-    const { generateImageFromReference } = await import('../services/media/imageGenerationService');
-    const { imageData, actualModel } = await generateImageFromReference({
-      prompt: payload.prompt,
-      referenceImageDataUrl: payload.referenceImageDataUrl,
-    });
+    // 1 张保持万相 description_edit；2-3 张走百炼 qwen 多图编辑（costCny 按实际模型计价）。
+    const { imageData, actualModel } = referenceUrls.length === 1
+      ? await (await import('../services/media/imageGenerationService')).generateImageFromReference({
+        prompt: payload.prompt,
+        referenceImageDataUrl: referenceUrls[0],
+      })
+      : await (await import('../services/media/imageMultiRefService')).generateImageFromReferences({
+        prompt: payload.prompt,
+        referenceImageDataUrls: referenceUrls,
+      });
     const refBuf = Buffer.from(imageData.replace(/^data:[^;]+;base64,/, ''), 'base64');
     await writeFileWithinDesignDir(payload.outputPath, refBuf);
     return { path: payload.outputPath, actualModel, costCny: estimateImageCostCny(actualModel) };

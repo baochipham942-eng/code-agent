@@ -2,6 +2,7 @@
 // 价格一律经 shared/media/*Cost.ts 查 pricing.ts 单一真源，本文件不持有价格字面量。
 // 模型取 rawArgs.model（价表认识的 id 才认），否则用工具默认模型；说「参考」是因为
 // provider 可能回退（如 CogView → FLUX），实际计费以账单为准。
+import { IMAGE_MULTI_REF } from '@shared/constants/visualModels';
 import { IMAGE_PRICING_CNY, MUSIC_PRICING_CNY, VIDEO_PRICING_CNY_PER_SEC } from '@shared/constants/pricing';
 import {
   GENERATION_TOOL_DEFAULT_MODELS,
@@ -44,7 +45,12 @@ export function estimateMediaPriceCny(
           ? 1
           : 0;
       if (count < 1) return null;
-      const model = pricedModelId(args?.model, IMAGE_PRICING_CNY, GENERATION_TOOL_DEFAULT_MODELS.image);
+      // 2-3 张参考图走 qwen 多图编辑（单价高于默认）；0/1 张保持原计价。
+      const refs = args?.reference_images;
+      const multiRef = Array.isArray(refs) && refs.length >= 2;
+      const model = multiRef
+        ? IMAGE_MULTI_REF.MODEL
+        : pricedModelId(args?.model, IMAGE_PRICING_CNY, GENERATION_TOOL_DEFAULT_MODELS.image);
       const unitPriceCny = estimateImageCostCny(model);
       return { kind: 'image', count, unitPriceCny, totalCny: unitPriceCny * count };
     }

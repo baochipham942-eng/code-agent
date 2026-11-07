@@ -104,6 +104,22 @@ export function sha256File(absolutePath: string): string {
 }
 
 /**
+ * 参考图指纹：0 张 → null；1 张 → {path, contentSha256}（与多参考图扩展前的旧形状逐字节
+ * 一致，旧账目继续可复用）；2-3 张 → 按数组顺序的 [{path, contentSha256}, ...]
+ * （N-IMAGE-MULTI-REF-IMPL——多图顺序影响产出，首张相同、后缀不同的参考组不得互撞）。
+ */
+function referenceFingerprint(referencePaths: string[]): unknown {
+  if (referencePaths.length === 0) return null;
+  if (referencePaths.length === 1) {
+    return { path: referencePaths[0], contentSha256: sha256File(referencePaths[0]) };
+  }
+  return referencePaths.map((referencePath) => ({
+    path: referencePath,
+    contentSha256: sha256File(referencePath),
+  }));
+}
+
+/**
  * 对"会影响产出"的参数做稳定归一后取 sha256：
  * prompts（保持顺序）、aspect_ratio、style、expand_prompt、output_file_path、
  * 参考图路径 + 参考图内容哈希。默认路径（未传 output_file_path）的时间戳派生路径
@@ -116,9 +132,7 @@ export function computeImageGenerateFingerprint(params: ImageGenerateFingerprint
     style: params.style ?? null,
     expandPrompt: params.expandPrompt === true,
     outputFilePath: params.outputFilePath ?? null,
-    reference: params.referencePaths[0]
-      ? { path: params.referencePaths[0], contentSha256: sha256File(params.referencePaths[0]) }
-      : null,
+    reference: referenceFingerprint(params.referencePaths),
   };
   return sha256Hex(JSON.stringify(normalized));
 }

@@ -217,6 +217,10 @@ export const IMAGE_PRICING_CNY: Record<string, number> = {
   // 保守估值，待真实账单验证后校正
   [DESIGN_FLUX_MODEL]: 0.10,
   'gpt-image-2': 0.25,
+  // 多参考图编辑（2-3 张，IMAGE_MULTI_REF.MODEL 同名）：北京刊例 0.5 元/张，
+  // 价格页 2026-10-29 快照（页未标更新日期，上线前应复核；新加坡区 0.5504 未采）。
+  // 出处：docs/research/2026-10-image-multi-ref-probe.md §①。
+  'qwen-image-2.0-pro': 0.5,
   default: 0.14,
 };
 

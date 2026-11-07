@@ -90,3 +90,19 @@ export function firstSelectedImageNode(
   const id = context?.nodes.find((node) => node.type === 'image')?.id;
   return id ? nodes.find((node) => node.id === id && isImageNode(node) && !node.discarded) : undefined;
 }
+
+/** 选中的图片节点（选择顺序），最多 limit 个；图 1/2/3 的指代顺序即此顺序。 */
+export function selectedImageNodes(
+  nodes: readonly CanvasNode[],
+  context: DesignSelectionContext | null | undefined,
+  limit: number,
+): CanvasNode[] {
+  const picked: CanvasNode[] = [];
+  for (const sel of context?.nodes ?? []) {
+    if (sel.type !== 'image') continue;
+    const node = nodes.find((n) => n.id === sel.id && isImageNode(n) && !n.discarded);
+    if (node) picked.push(node);
+    if (picked.length >= limit) break;
+  }
+  return picked;
+}

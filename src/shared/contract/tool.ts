@@ -175,6 +175,8 @@ export interface JSONSchemaProperty {
   minimum?: number;
   /** 数组属性的最大条目数；handler 校验强制，schema 侧供模型可见 */
   maxItems?: number;
+  /** 数组属性的最小条目数；handler 校验强制，schema 侧供模型可见 */
+  minItems?: number;
   items?: JSONSchemaProperty;
   properties?: Record<string, JSONSchemaProperty>;
   required?: string[];

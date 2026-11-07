@@ -40,6 +40,13 @@ import {
   downloadImageAsBase64,
   type ImageEngine,
 } from '../../../services/media/imageGenerationService';
+import { generateImageFromReferences } from '../../../services/media/imageMultiRefService';
+import {
+  referenceMimeType,
+  readReferencesAsDataUrls,
+  multiRefEngineLabel,
+} from './imageGenerateReferences';
+import { IMAGE_MULTI_REF } from '../../../../shared/constants/visualModels';
 import { readChatCompletionText } from '../typedResponseGuards';
 import { parseChatCompletionHttpBody } from '../../../model/parseSseChatCompletion';
 import {
@@ -186,10 +193,15 @@ function buildBriefing(params: {
   expandPrompt: boolean;
   engineLabel: string;
   outputPath: string;
+  /** ≥2 张参考图：比例由多图端点钦定跟随最后一张参考图，模型切 qwen 多图编辑。 */
+  referenceCount?: number;
 }): string {
+  const multiRef = (params.referenceCount ?? 0) >= 2;
   const lines = [
     `我理解你要的是：${params.prompt}`,
-    `· 画面比例 ${aspectRatioLabel(params.aspectRatio)}，出图模型 ${params.engineLabel}`,
+    multiRef
+      ? `· 画面比例跟随最后一张参考图（共 ${params.referenceCount} 张，图1/图2/图3 按给出顺序），出图模型 ${multiRefEngineLabel()}`
+      : `· 画面比例 ${aspectRatioLabel(params.aspectRatio)}，出图模型 ${params.engineLabel}`,
   ];
   const styleLabel = params.style ? STYLE_LABELS[params.style] : undefined;
   if (styleLabel) lines.push(`· 风格 ${styleLabel}`);
@@ -226,12 +238,16 @@ function buildVerdict(params: {
   generationTimeMs: number;
   imagePath?: string;
   sizeBytes?: number;
+  /** 多参考图：比例跟随最后一张参考图，与所要 aspect_ratio 无从比对，只报实测尺寸。 */
+  ratioFollowsLastReference?: boolean;
 }): string {
   const lines: string[] = [];
 
   if (params.dimensions) {
     const { width, height } = params.dimensions;
-    const matches = aspectRatioMatches(width, height, params.aspectRatio);
+    const matches = params.ratioFollowsLastReference
+      ? undefined
+      : aspectRatioMatches(width, height, params.aspectRatio);
     if (matches === true) {
       lines.push(`· 实际尺寸 ${width}×${height}，与你要的 ${params.aspectRatio} 相符`);
     } else if (matches === false) {
@@ -379,22 +395,6 @@ function indexedOutputPath(basePath: string, index: number, count: number): stri
     : `${basePath}-${index}`;
 }
 
-function referenceMimeType(referencePath: string): string {
-  switch (path.extname(referencePath).toLowerCase()) {
-    case '.jpg':
-    case '.jpeg':
-      return 'image/jpeg';
-    case '.webp':
-      return 'image/webp';
-    default:
-      return 'image/png';
-  }
-}
-
-function readReferenceAsDataUrl(referencePath: string): string {
-  return `data:${referenceMimeType(referencePath)};base64,${fs.readFileSync(referencePath).toString('base64')}`;
-}
-
 function validateImageGenerateArgs(
   args: Record<string, unknown>,
   ctx: ToolContext,
@@ -429,30 +429,38 @@ function validateImageGenerateArgs(
     return { ok: false, error: 'reference_images must be an array of workspace paths' };
   }
   const referenceValues = rawReferences === undefined ? [] : rawReferences;
-  if (referenceValues.length > 1) {
-    return { ok: false, error: 'reference_images cannot contain more than 1 item' };
+  // 上限闸（N-IMAGE-MULTI-REF-IMPL）：schema minItems 1 / maxItems 3，超过 3 张在这里
+  // 用中文报出实际上限，让模型能带着「最多 3 张」自行重试；付费调用前拦下。
+  if (rawReferences !== undefined && referenceValues.length === 0) {
+    return { ok: false, error: `reference_images 需要 1-${IMAGE_MULTI_REF.MAX_REFERENCE_IMAGES} 张参考图（收到 0 张）；不需要参考图时省略该参数` };
+  }
+  if (referenceValues.length > IMAGE_MULTI_REF.MAX_REFERENCE_IMAGES) {
+    return {
+      ok: false,
+      error: `reference_images 最多 ${IMAGE_MULTI_REF.MAX_REFERENCE_IMAGES} 张参考图（收到 ${referenceValues.length} 张），请挑最关键的 ${IMAGE_MULTI_REF.MAX_REFERENCE_IMAGES} 张重试`,
+    };
   }
 
   const referencePaths: string[] = [];
   for (const reference of referenceValues) {
     if (typeof reference !== 'string' || reference.length === 0) {
-      return { ok: false, error: 'reference_images items must be non-empty strings' };
+      return { ok: false, error: `reference_images 的每一项都必须是非空路径字符串（最多 ${IMAGE_MULTI_REF.MAX_REFERENCE_IMAGES} 张）` };
     }
     const resolved = resolveReadableWorkspacePath(reference, ctx);
-    if (!resolved) return { ok: false, error: `reference image "${reference}" must be inside the workspace` };
+    if (!resolved) return { ok: false, error: `参考图 "${reference}" 必须位于工作区内` };
     const extension = path.extname(resolved).toLowerCase();
     if (!['.png', '.jpg', '.jpeg', '.webp'].includes(extension)) {
-      return { ok: false, error: `reference image "${reference}" must be a png, jpg, jpeg, or webp file` };
+      return { ok: false, error: `参考图 "${reference}" 必须是 png / jpg / jpeg / webp 文件` };
     }
     let stat: fs.Stats;
     try {
       stat = fs.statSync(resolved);
     } catch {
-      return { ok: false, error: `reference image "${reference}" does not exist` };
+      return { ok: false, error: `参考图 "${reference}" 不存在` };
     }
-    if (!stat.isFile()) return { ok: false, error: `reference image "${reference}" does not exist` };
+    if (!stat.isFile()) return { ok: false, error: `参考图 "${reference}" 不存在` };
     if (stat.size > 10 * 1024 * 1024) {
-      return { ok: false, error: `reference image "${reference}" exceeds the 10 MB limit` };
+      return { ok: false, error: `参考图 "${reference}" 超过 10 MB 上限` };
     }
     referencePaths.push(resolved);
   }
@@ -711,6 +719,7 @@ export async function executeImageGenerate(
         expandPrompt: params.expandPrompt,
         engineLabel,
         outputPath: firstOutputPath,
+        referenceCount: params.referencePaths.length,
       }));
       if (ctx.currentToolCallId) {
         ctx.emit({
@@ -724,9 +733,9 @@ export async function executeImageGenerate(
       }
     }
     briefed = true;
-    const referenceDataUrl = params.referencePaths[0]
-      ? readReferenceAsDataUrl(params.referencePaths[0])
-      : undefined;
+    // 参考图按数组顺序整批读一次（图1/图2/图3 语义依赖顺序）；≥2 张走 qwen 多图编辑。
+    const multiRef = params.referencePaths.length >= 2;
+    const referenceDataUrls = readReferencesAsDataUrls(params.referencePaths);
     const batch = await runImageGenerateBatch({
       requests: params.prompts.map((prompt, index) => ({ index: index + 1, prompt })),
       signal: ctx.abortSignal,
@@ -759,13 +768,19 @@ export async function executeImageGenerate(
         } else if (params.style) {
           finalPrompt = unexpandedPrompt;
         }
-        const generated = referenceDataUrl
-          ? await generateImageFromReference({
+        const generated = multiRef
+          ? await generateImageFromReferences({
             prompt: finalPrompt,
-            referenceImageDataUrl: referenceDataUrl,
+            referenceImageDataUrls: referenceDataUrls,
             outerSignal: ctx.abortSignal,
           })
-          : await generateImage(engine, fluxModel, finalPrompt, params.aspectRatio, ctx.abortSignal);
+          : referenceDataUrls.length === 1
+            ? await generateImageFromReference({
+              prompt: finalPrompt,
+              referenceImageDataUrl: referenceDataUrls[0],
+              outerSignal: ctx.abortSignal,
+            })
+            : await generateImage(engine, fluxModel, finalPrompt, params.aspectRatio, ctx.abortSignal);
         let imageBase64 = generated.imageData;
         if (isRemoteImageData(imageBase64)) {
           try {
@@ -828,7 +843,7 @@ export async function executeImageGenerate(
             isAdmin,
             autoPersisted: !params.outputFilePath,
             ...(params.referencePaths.length
-              ? { referencesUsed: '1 of ' + params.referencePaths.length }
+              ? { referencesUsed: `${params.referencePaths.length} of ${params.referencePaths.length}` }
               : {}),
             ...mediaArtifactMetadata,
           },
@@ -841,8 +856,9 @@ export async function executeImageGenerate(
           generationTimeMs,
           imagePath: workspaceRelativePath(outputPath, ctx),
           sizeBytes: imageBuffer.length,
+          ratioFollowsLastReference: multiRef,
         }) + (params.referencePaths.length
-          ? '\n· references used: 1 of ' + params.referencePaths.length
+          ? `\n· references used: ${params.referencePaths.length} of ${params.referencePaths.length}`
           : '');
         if (process.env.CODE_AGENT_CLI_MODE === 'true' && fs.existsSync(outputPath)) {
           const openCmd = process.platform === 'darwin' ? 'open' : 'xdg-open';

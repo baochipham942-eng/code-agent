@@ -9,11 +9,14 @@
 // ============================================================================
 
 import { createLogger } from '../services/infra/logger';
-import { DEFAULT_MODELS, MODEL_FEATURES, QUICK_LANE_LOW_REASONING_EFFORT_MODELS, QUICK_MODEL_AUTH_BLACKLIST_MS } from '../../shared/constants';
+import { DEFAULT_MODELS, DEFAULT_PROVIDER, MODEL_API_ENDPOINTS, MODEL_FEATURES, QUICK_LANE_LOW_REASONING_EFFORT_MODELS, QUICK_MODEL_AUTH_BLACKLIST_MS } from '../../shared/constants';
 import { getConfigService } from '../services/core/configService';
 import { normalizeApiKey } from '../services/core/configHelpers';
 import { getProviderLimiter } from './concurrencyLimiter';
 import { isZhipuFreeModel, resolveProviderApiKey, resolveProviderBaseUrl } from './providers/providerResolution';
+import { resolveConfiguredDefaultProvider } from '../../shared/modelDefaults';
+import { resolveProviderProtocol } from '../../shared/modelRuntime';
+import { resolveModelCapabilities } from './modelCapabilityMatrix';
 import { getMemoryModelOverride, type MemoryModelOverride } from './memoryModelOverrideScope';
 import type { ModelConfig, ModelProvider } from '../../shared/contract';
 import { applyOutboundSecretMask } from '../security/outboundSecretMask';
@@ -82,7 +85,7 @@ interface QuickModelConfig {
   disableThinking: boolean;
   /** 不能关思考的推理模型（如 glm-5.3，见 QUICK_LANE_LOW_REASONING_EFFORT_MODELS）改发低推理档 */
   reasoningEffort?: 'low';
-  routeSource: 'memory' | 'fast' | 'code' | 'env';
+  routeSource: 'memory' | 'fast' | 'code' | 'default' | 'env';
 }
 
 let quickModelAuthFailure: QuickModelAuthFailure | null = null;
@@ -209,8 +212,13 @@ function resolveRole(
   provider: string,
   model: string,
   routeSource: QuickModelConfig['routeSource'],
+  misses?: string[],
 ): QuickModelConfig | null {
-  if (isProviderExplicitlyDisabled(provider)) return null;
+  const label = `${routeSource} ${provider}/${model}`;
+  if (isProviderExplicitlyDisabled(provider)) {
+    misses?.push(`${label}: provider disabled`);
+    return null;
+  }
 
   const identityConfig = { provider: provider as ModelProvider, model } as ModelConfig;
   const modelConfig = {
@@ -219,11 +227,20 @@ function resolveRole(
     baseUrl: isZhipuFreeModel(identityConfig) ? undefined : getConfiguredProviderBaseUrl(provider),
   } as ModelConfig;
   const apiKey = resolveProviderApiKey(modelConfig, { trustConfigKey: false });
-  if (!apiKey) return null;
-  if (isAuthBlacklisted(provider, model, apiKey)) return null;
+  if (!apiKey) {
+    misses?.push(`${label}: no key`);
+    return null;
+  }
+  if (isAuthBlacklisted(provider, model, apiKey)) {
+    misses?.push(`${label}: key blacklisted after auth failure`);
+    return null;
+  }
 
   const baseUrl = resolveProviderBaseUrl({ ...modelConfig, apiKey });
-  if (!baseUrl) return null;
+  if (!baseUrl) {
+    misses?.push(`${label}: no endpoint`);
+    return null;
+  }
 
   const reasoningEffort = quickLaneReasoningEffort(model);
   return {
@@ -261,6 +278,40 @@ function resolveMemoryOverride(override: MemoryModelOverride): QuickModelConfig 
   };
 }
 
+/**
+ * 用户默认 provider 是自配的 custom-* 中转（不在内置端点表里）时，用它自己的
+ * 端点 + key + model 作 quick 车道候选。内置 provider 不走这里（由 routing.* 管）。
+ *
+ * 协议门：quick 车道只会说 OpenAI /chat/completions + Bearer（executeQuickAttempt）。
+ * 主 loop 会按协议把 claude / responses 中转改道到各自的 adapter
+ * （modelRouter.getDynamicCustomProvider），本车道没有对应线格式——放进去就是错格式
+ * 请求：401/403 会把主聊天还在用的 key 拉黑（quickAuthBlacklist）并污染
+ * quickModelAuthFailure 诊断，其余形状则是恒定 http_error。判定与主 loop 同源：
+ * 声明协议（settings.models.providers[id].protocol，缺省 openai）+ 能力矩阵按模型
+ * 改道 Responses 的行（矩阵 responses 且声明非 claude → responses）。
+ */
+function resolveDefaultCustomProvider(misses: string[]): QuickModelConfig | null {
+  const settings = getConfigService().getSettings().models;
+  const provider = resolveConfiguredDefaultProvider(settings, DEFAULT_PROVIDER) as string;
+  if ((MODEL_API_ENDPOINTS as Record<string, string>)[provider]) return null;
+  const providerSettings = settings.providers?.[provider];
+  const model = providerSettings?.model;
+  if (!model) {
+    misses.push(`default ${provider}: no model configured`);
+    return null;
+  }
+  const declaredProtocol = resolveProviderProtocol(provider, providerSettings);
+  const matrixProtocol = resolveModelCapabilities(provider as ModelProvider, model).protocol;
+  if (declaredProtocol !== 'openai' || matrixProtocol === 'responses') {
+    const effectiveProtocol = matrixProtocol === 'responses' && declaredProtocol !== 'claude'
+      ? 'responses'
+      : declaredProtocol;
+    misses.push(`default ${provider}: protocol '${effectiveProtocol}' unsupported by quick lane (OpenAI-compatible only)`);
+    return null;
+  }
+  return resolveRole(provider, model, 'default', misses);
+}
+
 function pushUniqueCandidate(resolved: QuickModelConfig[], candidate: QuickModelConfig | null): void {
   if (!candidate) return;
   if (resolved.some((current) => (
@@ -280,6 +331,7 @@ function pushUniqueCandidate(resolved: QuickModelConfig[], candidate: QuickModel
  */
 function initializeQuickModelCandidates(route: 'quick' | 'memory' = 'quick'): QuickModelConfig[] {
   const resolved: QuickModelConfig[] = [];
+  const misses: string[] = [];
   try {
     if (route === 'memory') {
       const override = getMemoryModelOverride();
@@ -289,11 +341,12 @@ function initializeQuickModelCandidates(route: 'quick' | 'memory' = 'quick'): Qu
     if (route === 'memory' && routing.memory) {
       pushUniqueCandidate(
         resolved,
-        resolveRole(routing.memory.provider, routing.memory.model, 'memory'),
+        resolveRole(routing.memory.provider, routing.memory.model, 'memory', misses),
       );
     }
-    pushUniqueCandidate(resolved, resolveRole(routing.fast.provider, routing.fast.model, 'fast'));
-    pushUniqueCandidate(resolved, resolveRole(routing.code.provider, routing.code.model, 'code'));
+    pushUniqueCandidate(resolved, resolveRole(routing.fast.provider, routing.fast.model, 'fast', misses));
+    pushUniqueCandidate(resolved, resolveRole(routing.code.provider, routing.code.model, 'code', misses));
+    if (resolved.length === 0) pushUniqueCandidate(resolved, resolveDefaultCustomProvider(misses));
   } catch (error) {
     logger.warn(`${route === 'memory' ? 'Memory' : 'Quick'} model config resolution failed, falling back to env`, {
       error: String(error),
@@ -310,10 +363,13 @@ function initializeQuickModelCandidates(route: 'quick' | 'memory' = 'quick'): Qu
     const envApiKey = isFreeQuick
       ? normalizeApiKey(process.env.ZHIPU_OFFICIAL_API_KEY) || normalizeApiKey(process.env.ZHIPU_API_KEY)
       : normalizeApiKey(process.env.ZHIPU_API_KEY);
+    if (!envApiKey) misses.push(`env zhipu/${DEFAULT_MODELS.quick}: no ZHIPU_API_KEY in environment`);
     if (!envApiKey && normalizeApiKey(process.env.ZHIPU_OFFICIAL_API_KEY) && !warnedOfficialKeyOnly) {
       warnedOfficialKeyOnly = true;
       logger.warn(`Quick env fallback skipped: only ZHIPU_OFFICIAL_API_KEY set but ${DEFAULT_MODELS.quick} is not a free-tier model; set ZHIPU_API_KEY`);
     }
+    if (envApiKey && isProviderExplicitlyDisabled('zhipu')) misses.push(`env zhipu/${DEFAULT_MODELS.quick}: provider disabled`);
+    else if (envApiKey && isAuthBlacklisted('zhipu', DEFAULT_MODELS.quick, envApiKey)) misses.push(`env zhipu/${DEFAULT_MODELS.quick}: key blacklisted after auth failure`);
     if (!isProviderExplicitlyDisabled('zhipu') && envApiKey && !isAuthBlacklisted('zhipu', DEFAULT_MODELS.quick, envApiKey)) {
       const baseUrl = resolveProviderBaseUrl({ ...quickModelConfig, apiKey: envApiKey });
       if (baseUrl) {
@@ -332,9 +388,10 @@ function initializeQuickModelCandidates(route: 'quick' | 'memory' = 'quick'): Qu
 
   const [primary] = resolved;
   if (!primary) {
-    logger.warn(route === 'memory'
-      ? 'Memory model unavailable: no memory-model key, no fast-model key, no main-model key, no Zhipu key'
-      : 'Quick model unavailable: no fast-model key, no main-model key, no Zhipu key');
+    logger.warn(
+      `${route === 'memory' ? 'Memory' : 'Quick'} model unavailable: ${misses.join('; ') || 'no route attempted'}`,
+      { misses },
+    );
     delete lastResolvedLogKeys[route];
     return [];
   }
@@ -418,7 +475,11 @@ async function executeQuickAttempt(
   try {
     // 出云密钥掩码（N-PROMPT-SECRET-MASK）：快模型旁路（建议/归档判断等）也带会话原文，
     // 开关开时同样掩码、回包还原；掩码失败落入下方 catch → 失败结果，不发请求。
-    const outboundMask = applyOutboundSecretMask([{ role: 'user', content: prompt }]);
+    const outboundMask = applyOutboundSecretMask(
+      [{ role: 'user', content: prompt }],
+      undefined,
+      { provider: config.provider, model: config.model },
+    );
     const body: Record<string, unknown> = {
       model: config.model,
       messages: outboundMask?.messages ?? [{ role: 'user', content: prompt }],

@@ -159,7 +159,10 @@ describe('无人值守审批超时进终态', () => {
       details: { path: '/tmp/rejected.txt' },
       sessionId,
     });
-    await Promise.resolve();
+    // 无人值守文件写在停车前先过写授权判定（N-RESIDENT-SCHEDULE-KEEPALIVE-DAEMON-FU1），
+    // 排空微任务链再取停车事件 id（本 describe 挂了假计时器，setImmediate 也被假掉，
+    // 用 advanceTimersByTimeAsync(0) 做同构 flush）。
+    await vi.advanceTimersByTimeAsync(0);
 
     const requestId = (onEvent.mock.calls[0]?.[0] as { data?: { id?: string } })?.data?.id;
     expect(requestId).toBeTruthy();

@@ -29,6 +29,11 @@ import type {
   StreamChunk,
 } from '../model/types';
 import { getConfigService } from '../services/core/configService';
+import {
+  recordOutboundMaskedRequest,
+  type OutboundMaskReplacementRecord,
+  type OutboundMaskRequestMeta,
+} from './outboundSecretMaskRecorder';
 
 /** redact 回调里标记「值在这里」的哨兵——真实文本里不会出现（NUL 包裹）。 */
 const MASK_SENTINEL = '\u0000__NEO_OUTBOUND_SECRET__\u0000';
@@ -51,6 +56,13 @@ const processMaskKey = randomBytes(32);
 /** 占位符→原值映射。只在内存；进程重启即失效（重启后旧占位符本来就不再产生）。 */
 const placeholderToValue = new Map<string, string>();
 
+/**
+ * 本次 applyOutboundSecretMask 的替换回执收集槽（N-PROMPT-SECRET-MASK-FU2）：非 null
+ * 期间 placeholderFor 每产出一个占位符就追加一条 {kind, placeholder}。窗口全程同步
+ * （maskModelMessages 无 await），并发请求不会串账。只存占位符形态，绝不存原值。
+ */
+let replacementReceipt: OutboundMaskReplacementRecord[] | null = null;
+
 function placeholderFor(entry: { type: string }, rawValue: string): string {
   // 后跑的规则（如 url-query-token）可能命中已含内层占位符的文本（sk-{{…}}）：
   // 入映射前先展开内层，保证映射值恒为原文，回包只需还原一层。
@@ -59,6 +71,7 @@ function placeholderFor(entry: { type: string }, rawValue: string): string {
   const placeholder = `{{SECRET_${entry.type.toUpperCase()}_${digest}}}`;
   // 8 hex 的键控摘要理论上可碰撞：先到先得，碰撞时后到的值仍被掩码（占位符不复用原值）。
   if (!placeholderToValue.has(placeholder)) placeholderToValue.set(placeholder, value);
+  replacementReceipt?.push({ kind: entry.type.toUpperCase(), placeholder });
   return placeholder;
 }
 
@@ -135,6 +148,34 @@ const BEARER_PATTERN = /\bBearer (?=[A-Za-z0-9._~+/=-]*\d)([A-Za-z0-9._~+/=-]{20
  */
 const CARD_PATTERN = /(?<![\dA-Za-z.]|[\dA-Za-z]-)\d(?:[ -]?\d){12,18}(?![\dA-Za-z]|-[\dA-Za-z]|\.\d)/g;
 
+/**
+ * 邮箱：local@domain.tld，TLD >=2 个字母；前面不得紧贴 local 字符，后面不得紧贴域名字符
+ * （句末句号放行）。`@scope/pkg`、`pkg@1.2.3`、`@decorator` 因缺 local 或 TLD 不会命中。
+ */
+const EMAIL_PATTERN = /(?<![A-Za-z0-9._%+-])[A-Za-z0-9_%+-][A-Za-z0-9._%+-]*@((?:[A-Za-z0-9](?:[A-Za-z0-9-]*[A-Za-z0-9])?\.)+[A-Za-z]{2,})(?![A-Za-z0-9_-])/g;
+/** URL userinfo（`https://user:pw@host`）：前缀落在 scheme:// 之后、host 之前——交给凭据规则，不当邮箱。 */
+const URL_USERINFO_PREFIX = /[a-z][a-z0-9+.-]*:\/\/[^\s/@]*$/i;
+/** RFC 2606/6761 保留域名：文档示例，不是真实地址。 */
+const RESERVED_EMAIL_DOMAIN = /(?:^|\.)example\.(?:com|org|net)$|\.(?:example|test|invalid|localhost)$/;
+/** `name@2x.png` 类资源文件名：域名首段是 `<数字>x` 且尾段是常见图片/媒体扩展名。 */
+const ASSET_FILE_DOMAIN = /^\d+x\.(?:png|jpe?g|gif|webp|svg|avif|heic|bmp|ico|mp4|mov)$/;
+/** 代码属性 / 文件名尾巴（`x@pytest.fixture`、`docs@AGENTS.md`）：小清单，不是完整 TLD 库。 */
+const CODE_TAIL_LABELS = new Set([
+  'md', 'mdx', 'ts', 'tsx', 'js', 'jsx', 'mjs', 'cjs', 'json', 'py', 'rs', 'go', 'yml', 'yaml', 'toml',
+  'txt', 'sh', 'lock', 'log', 'cfg', 'ini', 'css', 'html',
+  'fixture', 'cache', 'property', 'setter', 'getter', 'wraps', 'dataclass', 'staticmethod', 'classmethod',
+  'abstractmethod', 'parametrize', 'skip', 'skipif', 'xfail', 'cached_property', 'lru_cache',
+]);
+
+function isEmailCandidate(text: string, offset: number, matched: string, domain: string): boolean {
+  const local = matched.slice(0, matched.length - domain.length - 1);
+  if (local.toLowerCase() === 'git') return false; // git@host SSH 远程
+  const lower = domain.toLowerCase();
+  if (RESERVED_EMAIL_DOMAIN.test(lower) || ASSET_FILE_DOMAIN.test(lower)) return false;
+  if (CODE_TAIL_LABELS.has(lower.slice(lower.lastIndexOf('.') + 1))) return false;
+  return !URL_USERINFO_PREFIX.test(text.slice(0, offset));
+}
+
 function maskPrivateRules(text: string): string {
   let output = text.replace(BEARER_PATTERN, (_matched, token: string) =>
     `Bearer ${placeholderFor({ type: 'bearer_token' }, token)}`);
@@ -142,6 +183,13 @@ function maskPrivateRules(text: string): string {
     const digits = matched.replace(/[ -]/g, '');
     if (!passesLuhn(digits) || !hasKnownCardIssuer(digits)) return matched;
     return placeholderFor({ type: 'card_number' }, matched);
+  });
+  output = output.replace(EMAIL_PATTERN, (matched: string, domain: string, offset: number, whole: string) => {
+    // JSON 文本里 `\n`/`\t` 转义的字母会被吞进 local 部分：把它留在占位符之外，免得产出非法的 `\{` 转义。
+    const lead = offset > 0 && whole[offset - 1] === '\\' && /[ntrbf]/.test(matched[0]) ? 1 : 0;
+    const email = matched.slice(lead);
+    if (email.startsWith('@') || !isEmailCandidate(whole, offset + lead, email, domain)) return matched;
+    return matched.slice(0, lead) + placeholderFor({ type: 'email' }, email);
   });
   return output;
 }
@@ -400,10 +448,12 @@ const RESTORE_FAILED_MESSAGE = 'Outbound secret masking could not restore the mo
 /**
  * 开关关（或缺省/settings 不可读）→ undefined，调用方走原样路径（请求字节不变）。
  * 开关开 → 立即掩码出云消息（失败抛带 code 的错误，请求中止，绝不明文外发）。
+ * meta（可选 provider/model）只进替换回执（N-PROMPT-SECRET-MASK-FU2），不影响掩码本身。
  */
 export function applyOutboundSecretMask(
   messages: ModelMessage[],
   onStream?: StreamCallback,
+  meta?: OutboundMaskRequestMeta,
 ): OutboundSecretMaskSession | undefined {
   let enabled: boolean;
   try {
@@ -415,11 +465,17 @@ export function applyOutboundSecretMask(
   if (!enabled) return undefined;
 
   let masked: ModelMessage[];
+  const replacements: OutboundMaskReplacementRecord[] = [];
+  replacementReceipt = replacements;
   try {
     masked = maskModelMessages(messages);
   } catch (error) {
     throw new Error(MASK_FAILED_MESSAGE, { cause: error });
+  } finally {
+    replacementReceipt = null;
   }
+  // 回执只记真发生替换的请求（空清单在 recorder 里是 no-op），且只含占位符形态。
+  recordOutboundMaskedRequest(replacements, meta);
 
   return {
     messages: masked,

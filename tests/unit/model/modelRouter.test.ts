@@ -454,7 +454,7 @@ describe('ModelRouter', () => {
       expect(fallback).not.toBeNull();
     });
 
-    it('should route Xiaomi MiMo text models to MiMo Omni for vision fallback', () => {
+    it('should route Xiaomi MiMo text models to MiMo v2.6 Flash for vision fallback', () => {
       const originalConfig: ModelConfig = {
         provider: 'xiaomi',
         model: 'mimo-v2.5-pro',
@@ -466,7 +466,7 @@ describe('ModelRouter', () => {
 
       expect(fallback).toMatchObject({
         provider: 'xiaomi',
-        model: 'mimo-v2-omni',
+        model: 'mimo-v2.6-flash',
         apiKey: 'xiaomi-key',
       });
       expect(router.getModelInfo(fallback!.provider, fallback!.model)?.supportsVision).toBe(true);

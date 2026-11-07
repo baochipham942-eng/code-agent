@@ -7,7 +7,7 @@
 import type { ToolStatus } from './styles';
 import type { ToolCall } from '@shared/contract';
 import type { Translations } from '../../../../../i18n';
-import { humanizeToolFailureReason, resolveToolTerminalOutcomeKey } from '../../../../../utils/toolExecutionPresentation';
+import { humanizeToolFailureReason, resolveParkedApprovalClosureCopy, resolveToolTerminalOutcomeKey } from '../../../../../utils/toolExecutionPresentation';
 import { resolveStreamInterruptionOutcomeKey } from '../../../../../i18n/outcomeWords';
 import type { StreamInterruptionReason } from '@shared/contract';
 
@@ -52,6 +52,8 @@ export function getToolStatusLabel(
       }
       return enrichCompletedLabel(toolCall, t);
     case 'error': {
+      const notRun = resolveParkedApprovalClosureCopy(toolCall, t);
+      if (notRun) return notRun;
       const outcome = t.outcomeWords[resolveToolTerminalOutcomeKey(toolCall)].timeline;
       const reason = humanizeToolFailureReason(toolCall, t);
       if (reason === outcome.label || reason === `${outcome.label} · ${outcome.reason}`) return reason;

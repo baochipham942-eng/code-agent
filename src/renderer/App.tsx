@@ -25,7 +25,7 @@ import { isDesktopShellMode, isTauriMode } from './utils/platform';
 import { ProjectCollaborationPage } from './components/features/projectCollaboration';
 import { ProjectSpacePage } from './components/features/projectSpace';
 import { DevServerLauncher } from './components/LivePreview/DevServerLauncher';
-import { ExpertWorkbenchAutoOpen, WorkbenchTabs } from './components/WorkbenchTabs';
+import { WorkbenchTabs } from './components/WorkbenchTabs';
 import { WorkbenchViewContent } from './components/WorkbenchViewContent';
 import { PromptManagerModal } from './components/features/prompts/PromptManagerModal';
 import { FullScreenPage } from './components/features/shared/FullScreenPage';
@@ -41,6 +41,7 @@ import { MemoryLearningProvider } from './components/features/memory';
 import { ToastContainer } from './components/Toast';
 import { ProviderStatusNotice } from './components/ProviderStatusNotice';
 import { SessionExpiredNotice } from './components/SessionExpiredNotice';
+import { ServerConnectionBanner } from './components/ServerConnectionBanner';
 import { BudgetAlertNotice } from './components/BudgetAlertNotice';
 import { CompanionPairRequestCard } from './components/CompanionPairRequestCard';
 import { VoiceBudgetAlertNotice } from './components/VoiceBudgetAlertNotice';
@@ -85,8 +86,10 @@ import { whenInitialSessionStateSettled } from './stores/sessionStore';
 import { useAppIpcListeners } from './hooks/useAppIpcListeners';
 import { useInAppValidationBridge } from './hooks/useInAppValidationBridge';
 import { useLedgerDeepLink } from './hooks/useLedgerDeepLink';
+import { useDesktopPresence } from './hooks/useDesktopPresence';
 import { useI18n } from './hooks/useI18n';
 import { useCronOsNotification } from './hooks/useCronOsNotification';
+import { isSecondaryPageActive } from './utils/secondaryPageActive';
 import { InternalFeatureWorkspaceRegistration, PluginUiActivationPolicyBootstrap, ShellOverlaySlotHost, WorkspacePageSlotHost } from './slots/productSlotHosts';
 
 const logger = createLogger('App');
@@ -153,6 +156,7 @@ export const App: React.FC = () => {
   useConnectorRequiredWatcher(); // 连接卡 pending 时盯连接状态，连上后追加续跑消息
   useInAppValidationBridge(); // browser-control 共用验证链路，不依赖内部评测包
   useLedgerDeepLink(); // ?open=automation|role：冷启动切会话会关掉二级页，钩子里补摊一次
+  useDesktopPresence(); // 桌面在场心跳（N-NOTIFY-PRESENCE-HEARTBEAT）：host 用它压掉普通完成推送的手机震动
   const {
     showSettings,
     showPromptManager,
@@ -689,13 +693,12 @@ export const App: React.FC = () => {
   // 知识记忆整窗页 2026-08-02 退役（内容并入设置 → 记忆）。
   // 设置页 2026-07-30 起是 overlay 整窗覆盖（X5.5-B1），本就不是 inline 页；仍留在名单里
   // 只为压住底下的顶栏不随设置开关抖动（覆盖层在位时它反正不可见）。
-  const inlineSecondaryPageActive = Boolean(
-    expertDetailRoleId || showLibraryPanel
-    || showCapabilityHub || showCronCenter || showLocalOpsPanel || showInAppValidation || activeInternalFeatureId
-    || showProjectSpacePage
-    || showSettings || showPromptManager || showLab || showTimeCapabilityCenter
-    || showActivityPanel || showProjectCollaborationPage || showDesktopPanel
-  );
+  const inlineSecondaryPageActive = isSecondaryPageActive({
+    expertDetailRoleId, showLibraryPanel, showCapabilityHub, showCronCenter, showLocalOpsPanel,
+    showInAppValidation, activeInternalFeatureId, showProjectSpacePage, showSettings,
+    showPromptManager, showLab, showTimeCapabilityCenter, showActivityPanel,
+    showProjectCollaborationPage, showDesktopPanel,
+  });
 
   const renderWorkbenchContent = (focusable = false) => (
     <div className="flex flex-col h-full bg-zinc-900">
@@ -720,9 +723,11 @@ export const App: React.FC = () => {
       <VoiceBudgetAlertNotice />
       <CompanionPairRequestCard />
       <RuntimeNotices />
-      <ExpertWorkbenchAutoOpen />
       <SessionExpiredNotice />
       <div className="h-screen flex flex-col bg-zinc-950 text-zinc-200">
+        {/* 后台服务死亡期间的顶部「重连中」横幅（N-WEBSERVER-DEATH-SUPERVISE-BANNER）；
+            ok 态整条不渲染，恢复后随一次性 reload 自己消失。 */}
+        <ServerConnectionBanner />
         {/* 左右结构（2026-07-27 拍板「右侧标题栏和下面样式上打通」，参照 Codex）：
             左栏一块面（zinc-950）+ 一条竖分隔线 + 右栏一块面（zinc-900），
             右栏顶栏与右栏内容共用同一底色、同一左右边界 ⇒ 顶栏读作右栏的一部分，

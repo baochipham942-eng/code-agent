@@ -19,6 +19,7 @@ import { createHash } from 'node:crypto';
 import type { Message } from '../../shared/contract';
 import type { ToolApprovalPayload } from '../../shared/contract/pendingApproval';
 import { INTERACTION_TIMEOUTS } from '../../shared/constants';
+import { PARKED_APPROVAL_CLOSURE_SENTENCES } from '../../shared/parkedApprovalClosure';
 import { sanitizeToolCallsForHistory } from './messageHandling/converter';
 import { persistedToolCall, toolResultEvidence } from '../runtime/ledgerToolExecution';
 
@@ -90,7 +91,7 @@ export type ParkedToolApprovalSurvival =
   | { survive: true; sessionId: string; toolCallId: string; argsFingerprint: string }
   | {
     survive: false;
-    reason: 'expired_after_restart_24h' | 'args_unavailable';
+    reason: 'expired_after_restart_24h' | 'args_unavailable' | 'run_ended_after_restart';
     /** 机器可读的细分成因；当前只有 cwd 解析失败一种（启动收口的 feedback 靠它区分）。 */
     detail?: 'working_directory_unavailable';
   };
@@ -109,6 +110,8 @@ export function classifyParkedToolApprovalForSurvival(input: {
   now: number;
   messages: Message[] | null;
   workingDirectory?: string | null;
+  /** 会话来源 kind（sessions.origin.kind）；cron / heartbeat = 无人值守运行，重启后运行已死。undefined = 不做来源门。 */
+  sessionOriginKind?: string | null;
 }): ParkedToolApprovalSurvival {
   const payload = input.payload as Partial<ToolApprovalPayload> | null;
   if (!payload || typeof payload !== 'object') {
@@ -117,6 +120,10 @@ export function classifyParkedToolApprovalForSurvival(input: {
   const requestedAt = typeof payload.requestedAt === 'number' ? payload.requestedAt : 0;
   if (input.now - requestedAt >= PARKED_APPROVAL_SURVIVAL_WINDOW_MS) {
     return { survive: false, reason: 'expired_after_restart_24h' };
+  }
+  // 无人值守运行（cron / heartbeat）重启后不会被自动续跑，批准只会从台账孤立重放一条命令，没有 agent turn 消费它。
+  if (input.sessionOriginKind === 'cron' || input.sessionOriginKind === 'heartbeat') {
+    return { survive: false, reason: 'run_ended_after_restart' };
   }
   if (!isSurvivalShapedPayload(payload, input.now)) {
     return { survive: false, reason: 'args_unavailable' };
@@ -145,6 +152,20 @@ export function classifyParkedToolApprovalForSurvival(input: {
   };
 }
 
+/**
+ * 收口原因 → 写进台账 denied 结果的一句大白话（用户重开会话时在工具步骤上看到的就是它）。
+ * 后续收件箱工单复用本函数，名称与签名保持稳定。
+ */
+export function describeParkedApprovalClosure(
+  reason: 'expired_after_restart_24h' | 'args_unavailable' | 'run_ended_after_restart',
+  detail?: 'working_directory_unavailable',
+): string {
+  if (reason === 'run_ended_after_restart') return PARKED_APPROVAL_CLOSURE_SENTENCES.runEndedAfterRestart;
+  if (reason === 'expired_after_restart_24h') return PARKED_APPROVAL_CLOSURE_SENTENCES.expiredAfterRestart24h;
+  if (detail === 'working_directory_unavailable') return PARKED_APPROVAL_CLOSURE_SENTENCES.workingDirectoryUnavailable;
+  return PARKED_APPROVAL_CLOSURE_SENTENCES.argsUnavailable;
+}
+
 /** 安全解析 payloadJson；坏行当 null 处理（判据侧全部落 args_unavailable）。 */
 export function parseParkedApprovalPayload(payloadJson: string): Partial<ToolApprovalPayload> | null {
   try {
@@ -167,13 +188,14 @@ export function listSurvivingParkedToolCallIds(
   messages: Message[],
   now: number,
   workingDirectory: string | null,
+  sessionOriginKind?: string | null,
 ): Set<string> {
   const ids = new Set<string>();
   for (const row of rows) {
     const payload = parseParkedApprovalPayload(row.payloadJson);
     const rowSession = payload?.argsRef?.sessionId ?? payload?.sessionId;
     if (rowSession !== sessionId) continue;
-    const verdict = classifyParkedToolApprovalForSurvival({ payload, now, messages, workingDirectory });
+    const verdict = classifyParkedToolApprovalForSurvival({ payload, now, messages, workingDirectory, sessionOriginKind });
     if (verdict.survive) ids.add(verdict.toolCallId);
   }
   return ids;

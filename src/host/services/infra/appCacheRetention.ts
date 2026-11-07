@@ -1,23 +1,26 @@
 // ============================================================================
-// App Cache Retention - 三个 app 自有缓存目录的保留清理
+// App Cache Retention - 四个 app 自有缓存目录的保留清理
 // ----------------------------------------------------------------------------
 // channel-media（飞书/lark 消息媒体转存，feishuMedia）、托管浏览器页面截图
-// （browserService/screenshots）、appshots（Rust 热键窗口捕捉）三个目录此前
-// 只有写入方、没有回收方，会无限增长。本模块按 age + total-size 双阈值回收，
-// 且只删没有任何会话引用的文件——引用扫描与 pptx 预览清理共用
-// retentionReferenceScan，记账共用 retentionLedger。
+// （browserService/screenshots）、appshots（Rust 热键窗口捕捉）、工具截图
+// （tool-screenshots/<会话>/，screenshot / screenshot_page / PPT visualReview
+// 无显式路径时的落盘）四个目录此前只有写入方、没有回收方，会无限增长。
+// 本模块按 age + total-size 双阈值回收，且只删没有任何会话引用的文件——
+// 引用扫描与 pptx 预览清理共用 retentionReferenceScan，记账共用 retentionLedger。
 //
 // 规矩（owner 口径：宁可漏删，不可误删）：
 //   - 删除前先完成整轮只读引用扫描；扫描抛错/读不全（表缺失/库打不开）→
-//     本轮三个目录一个都不删，记 1 次失败。
+//     本轮四个目录一个都不删，记 1 次失败。
 //   - 引用判定：channel-media = 归一文本含 `channel-media/<相对路径>`；
 //     截图 = 文本含文件基名；appshots = 文本含文件 stem（`appshot-<ms>`，
 //     会话以 attachment id 引用、附件数据落库时已剥离，只剩 id 文本）。
 //   - 候选只认常规文件（symlink/目录一律跳过）；截图目录只认 *.png——
-//     storage_state_*.json（浏览器会话状态，含 cookie）永不触碰。
+//     storage_state_*.json（浏览器会话状态，含 cookie）永不触碰；
+//     工具截图只认 *.png / *.jpg（三个写入方的产物形状）。
 //   - 写入不足 MIN_AGE（24h 地板）的文件一律不动。
 //   - 超龄未引用先删；删后仍超总量上限的，从未引用的最旧候选继续删到 ≤ 上限，
 //     候选耗尽就停——被引用/过新的文件宁可留着超上限。
+//   - 工具截图删完文件后回收根下的空会话目录（根本身永不动）。
 // ============================================================================
 
 import { promises as fsp } from 'fs';
@@ -27,6 +30,7 @@ import { getUserConfigDir } from '../../config/configPaths';
 import { getUserDataPath } from '../../platform/appPaths';
 import { CHANNEL_MEDIA_CACHE_DIRNAME, defaultChannelMediaCacheRoot } from '../../channels/feishu/feishuMedia';
 import { MANAGED_BROWSER_ARTIFACT_DIR } from './browser/managedBrowserHelpers';
+import { getToolScreenshotsRoot, TOOL_SCREENSHOT_EXTENSIONS } from '../../tools/utils/toolScreenshotDir';
 import { createLogger } from './logger';
 import {
   countRetentionFailed,
@@ -44,11 +48,12 @@ const APPSHOT_DIR_NAME = 'appshots';
 /**
  * 引用预筛 needle（宁可多捞，精筛在各 kind 的 isReferenced）：
  * channel-media 引用必含目录名；截图引用必含 `<基名>.png`；appshots 引用
- * （attachment id / 文件名）必含 `appshot-` 前缀。
+ * （attachment id / 文件名）必含 `appshot-` 前缀；工具截图引用必含
+ * `<基名>.png` 或 `<基名>.jpg`。
  */
-const SCAN_NEEDLES: readonly string[] = [CHANNEL_MEDIA_CACHE_DIRNAME, '.png', 'appshot-'];
+const SCAN_NEEDLES: readonly string[] = [CHANNEL_MEDIA_CACHE_DIRNAME, '.png', '.jpg', 'appshot-'];
 
-export type AppCacheDirKind = 'channel-media' | 'screenshots' | 'appshots';
+export type AppCacheDirKind = 'channel-media' | 'screenshots' | 'appshots' | 'tool-screenshots';
 
 export interface AppCacheDirSpec {
   kind: AppCacheDirKind;
@@ -84,9 +89,11 @@ interface CacheDirPolicy {
   isCandidate: (baseName: string) => boolean;
   /** 引用判定（referenceText 已按分隔符归一） */
   isReferenced: (referenceText: string, file: CachedFile) => boolean;
+  /** 删完文件后回收根下的空目录（tool-screenshots 的会话子目录；根本身永不动） */
+  pruneEmptySubdirs?: boolean;
 }
 
-/** 三个目录的缺省根：与各自写入方同一套 data-dir 解析，写入哪棵树就扫哪棵树。 */
+/** 四个目录的缺省根：与各自写入方同一套 data-dir 解析，写入哪棵树就扫哪棵树。 */
 function defaultAppCacheDirs(): AppCacheDirSpec[] {
   return [
     // feishuMedia.buildCacheDir 的缺省根（getUserConfigDir 尊重 CODE_AGENT_DATA_DIR）
@@ -95,6 +102,8 @@ function defaultAppCacheDirs(): AppCacheDirSpec[] {
     { kind: 'screenshots', root: path.join(getUserDataPath(), MANAGED_BROWSER_ARTIFACT_DIR) },
     // Rust appshots_dir()：$CODE_AGENT_DATA_DIR || ~/.code-agent + /appshots（Node 侧同源解析）
     { kind: 'appshots', root: path.join(getUserDataPath(), APPSHOT_DIR_NAME) },
+    // toolScreenshotDir.getToolScreenshotsRoot()：screenshot / screenshot_page / visualReview 的缺省落盘
+    { kind: 'tool-screenshots', root: getToolScreenshotsRoot() },
   ];
 }
 
@@ -127,6 +136,16 @@ function resolvePolicy(spec: AppCacheDirSpec): CacheDirPolicy {
         isCandidate: () => true,
         // 12 位 ms 截断误命中只会多保留（前缀包含），方向安全
         isReferenced: (referenceText, file) => referenceText.includes(file.stem),
+      };
+    case 'tool-screenshots':
+      return {
+        kind: spec.kind,
+        root: spec.root,
+        maxAgeMs: spec.maxAgeMs ?? APP_CACHE_RETENTION.TOOL_SCREENSHOT_MAX_AGE_MS,
+        maxTotalBytes: spec.maxTotalBytes ?? APP_CACHE_RETENTION.TOOL_SCREENSHOT_MAX_TOTAL_BYTES,
+        isCandidate: (baseName) => TOOL_SCREENSHOT_EXTENSIONS.some((ext) => baseName.endsWith(ext)),
+        isReferenced: (referenceText, file) => referenceText.includes(file.baseName),
+        pruneEmptySubdirs: true,
       };
   }
 }
@@ -164,7 +183,7 @@ export async function sweepAppCacheRetention(input?: {
   const dbPath = input?.dbPath ?? path.join(getUserConfigDir(), 'code-agent.db');
   const summary: AppCacheRetentionSummary & RetentionFailureCounter = { deleted: 0, failed: 0 };
 
-  // 删除前先完成整轮只读扫描：读不全就三个目录一个都不删
+  // 删除前先完成整轮只读扫描：读不全就四个目录一个都不删
   let referenceText: string;
   try {
     if (typeof dbPath !== 'string' || dbPath.length === 0) {
@@ -245,7 +264,11 @@ async function sweepCacheDir(
   failures: RetentionFailureCounter,
 ): Promise<number> {
   const files = await listRegularFiles(policy.root);
-  if (files.length === 0) return 0;
+  if (files.length === 0) {
+    // 空树也要收空目录：上一轮删空的会话目录在这里回收
+    if (policy.pruneEmptySubdirs) await pruneEmptySubdirs(policy.root, policy.root, failures);
+    return 0;
+  }
 
   // 删除资格：候选扩展名 + 过 24h 地板 + 未被引用
   const eligible = files.filter((file) =>
@@ -277,7 +300,43 @@ async function sweepCacheDir(
       totalBytes -= file.sizeBytes;
     }
   }
+  if (policy.pruneEmptySubdirs) await pruneEmptySubdirs(policy.root, policy.root, failures);
   return removed.size;
+}
+
+/**
+ * 自底向上回收根下的空目录（tool-screenshots 的会话子目录 / ppt-* per-call 目录）。
+ * 根本身永不动；ENOTEMPTY（还有文件）/ENOENT 静默；其他失败记 1 次失败，不中断其余目录。
+ * symlink 的 Dirent 不算目录 → 天然跳过，不会成环。
+ */
+async function pruneEmptySubdirs(
+  dir: string,
+  root: string,
+  failures: RetentionFailureCounter,
+): Promise<void> {
+  let entries;
+  try {
+    entries = await fsp.readdir(dir, { withFileTypes: true });
+  } catch (error) {
+    if (isNodeError(error, 'ENOENT') && dir === root) return;
+    const reason = error instanceof Error ? error.message : String(error);
+    logger.warn('[应用缓存保留] 列空目录失败', { dir, reason });
+    countRetentionFailed(failures, reason);
+    return;
+  }
+  for (const entry of entries) {
+    if (!entry.isDirectory()) continue;
+    await pruneEmptySubdirs(path.join(dir, entry.name), root, failures);
+  }
+  if (dir === root) return;
+  try {
+    await fsp.rmdir(dir);
+  } catch (error) {
+    if (isNodeError(error, 'ENOTEMPTY') || isNodeError(error, 'ENOENT')) return;
+    const reason = error instanceof Error ? error.message : String(error);
+    logger.warn('[应用缓存保留] 删除空目录失败', { dir, reason });
+    countRetentionFailed(failures, reason);
+  }
 }
 
 async function deleteCachedFile(

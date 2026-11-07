@@ -17,6 +17,7 @@ const h = vi.hoisted(() => ({
     summarizeSessions: vi.fn((ids: string[]): Record<string, unknown> => Object.fromEntries(ids.map((id) => [id, { total: 2, id }]))),
     listPendingReview: vi.fn((): unknown => [{ id: 'p1' }]),
     listParkedApprovals: vi.fn((): unknown => [{ id: 'k1' }]),
+    listAwaitingApprovalRuns: vi.fn((): unknown => [{ jobId: 'j1', executionId: 'e1', requestId: 'r1', requestedAt: 1 }]),
     countPendingReview: vi.fn((): unknown => 3),
     countPendingReviewByTask: vi.fn((): unknown => 3),
     markReviewed: vi.fn((_id: string): unknown => ({ reviewed: true })),
@@ -75,6 +76,14 @@ describe('sessionAutomation.ipc dispatch 特征：只读与兜底', () => {
     expect(await call('countPendingReview')).toEqual({ success: true, data: 3 });
     expect(h.svc.countPendingReviewByTask).toHaveBeenCalledTimes(1);
     expect(h.svc.countPendingReview).not.toHaveBeenCalled();
+  });
+
+  it('listAwaitingApprovalRuns 原样回传（N-CRON-UNATTENDED-BASH-PARK-STUCK 停车可见性）', async () => {
+    expect(await call('listAwaitingApprovalRuns')).toEqual({
+      success: true,
+      data: [{ jobId: 'j1', executionId: 'e1', requestId: 'r1', requestedAt: 1 }],
+    });
+    expect(h.svc.listAwaitingApprovalRuns).toHaveBeenCalledTimes(1);
   });
 
   it('未知 action → UNKNOWN_ACTION + 完整文案', async () => {

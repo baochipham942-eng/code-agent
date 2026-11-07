@@ -200,6 +200,7 @@ export interface AppState {
   showActivityPanel: boolean;
   showCapabilityHub: boolean;
   capabilityHubTab: CapabilityHubTab;
+  expertPanelTab: 'mine' | 'discover';
   showCronCenter: boolean;
   showTimeCapabilityCenter: boolean;
   showFileExplorer: boolean;
@@ -356,6 +357,7 @@ export interface AppState {
   setShowActivityPanel: (show: boolean) => void;
   setShowCapabilityHub: (show: boolean) => void;
   openCapabilityHub: (tab: CapabilityHubTab) => void;
+  setExpertPanelTab: (tab: 'mine' | 'discover') => void;
   /** 回到会话区：关掉互斥表里所有二级页。侧栏选会话/新建任务时调用。 */
   closeSecondaryPages: () => void;
   setShowCronCenter: (show: boolean) => void;

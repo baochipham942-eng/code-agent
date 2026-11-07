@@ -9,15 +9,15 @@ import { FindingsManager } from '../../../src/host/planning/findingsManager';
 import {
   actionCounter,
   getActionCount,
+  getObserversForPoint,
   resetObserverState,
 } from '../../../src/host/planning/hooks/observerHooks';
 import type {
-  AggregatedHookResult,
   HookPoint,
+  ObserverHook,
 } from '../../../src/host/planning/hooks/types';
 import type {
   HookContext,
-  HookResult,
   PlanningConfig,
   TaskPhase,
   TaskPlan,
@@ -25,14 +25,20 @@ import type {
   TaskStepStatus,
 } from '../../../src/host/planning/types';
 
-// The engine's public entry points are declared `Promise<HookResult>`, but the
-// runtime value is the richer AggregatedHookResult — runHooksForPoint really
-// sets decisions/observerErrors. Narrow to that true runtime shape so the
-// decision-channel assertions stay fully typed (no `as any`, no loosened
-// assertions; fixing the production signatures is out of scope for this
-// tests-only ticket).
-const asAggregated = (result: HookResult): AggregatedHookResult =>
-  result as AggregatedHookResult;
+// The observer registry is resolved from the module-level observerHooks list
+// via getObserversForPoint, so the failure-isolation tests below swap that one
+// function for a controllable vi.fn. The factory bakes the real registry as
+// the mock's original implementation (every other export — the shared state
+// helpers and built-in hooks — stays real), and beforeEach mockReset()s back
+// to it.
+vi.mock('../../../src/host/planning/hooks/observerHooks', async (importOriginal) => {
+  const actual = await importOriginal<
+    typeof import('../../../src/host/planning/hooks/observerHooks')
+  >();
+  return { ...actual, getObserversForPoint: vi.fn(actual.getObserversForPoint) };
+});
+
+const getObserversForPointMock = vi.mocked(getObserversForPoint);
 
 // ----------------------------------------------------------------------------
 // Fixtures: real PlanManager + ErrorTracker + FindingsManager over a temp dir
@@ -78,6 +84,7 @@ beforeEach(async () => {
   errorTracker = new ErrorTracker(makeConfig());
   findingsManager = new FindingsManager(makeConfig());
   engine = new HooksEngine(planManager, errorTracker, findingsManager);
+  getObserversForPointMock.mockReset(); // back to the real observer registry
   resetObserverState();
 });
 
@@ -93,13 +100,18 @@ describe('HooksEngine construction and config merging', () => {
       rules: { actionThreshold: 2 },
     });
 
-    // hooks.preToolUse is disabled and short-circuits to a bare result.
-    expect(await tuned.preToolUse({ toolName: 'Read' })).toEqual({ shouldContinue: true });
+    // hooks.preToolUse is disabled and short-circuits to an empty aggregated result.
+    expect(await tuned.preToolUse({ toolName: 'Read' })).toEqual({
+      shouldContinue: true,
+      decisions: [],
+      observerErrors: [],
+    });
 
     // postToolUse stays on by default and still runs its decision hooks.
-    const writeResult = asAggregated(
-      await tuned.postToolUse({ toolName: 'Write', toolResult: { success: true } })
-    );
+    const writeResult = await tuned.postToolUse({
+      toolName: 'Write',
+      toolResult: { success: true },
+    });
     expect(writeResult.decisions.map((d) => d.hookId)).toEqual(['write-operation-reminder']);
 
     // rules.actionThreshold merge: the reminder fires at 2 views, not 5.
@@ -112,12 +124,10 @@ describe('HooksEngine construction and config merging', () => {
     const noDecisions = new HooksEngine(planManager, errorTracker, findingsManager, {
       dualChannel: { enableDecisions: false },
     });
-    const result = asAggregated(
-      await noDecisions.preToolUse({
-        toolName: 'Bash',
-        toolParams: { command: 'rm -rf /tmp/x' },
-      })
-    );
+    const result = await noDecisions.preToolUse({
+      toolName: 'Bash',
+      toolParams: { command: 'rm -rf /tmp/x' },
+    });
     expect(result.shouldContinue).toBe(true);
     expect(result.decisions).toEqual([]);
     expect(result.injectContext).toBeUndefined();
@@ -160,7 +170,7 @@ describe('onSessionStart', () => {
       onBridgeEvent: bridge,
     });
 
-    const result = asAggregated(await sessionEngine.onSessionStart());
+    const result = await sessionEngine.onSessionStart();
 
     expect(getActionCount()).toBe(0);
     expect(result.shouldContinue).toBe(true);
@@ -174,12 +184,10 @@ describe('onSessionStart', () => {
 
 describe('preToolUse', () => {
   it('blocks a dangerous bash command before the other hooks run', async () => {
-    const result = asAggregated(
-      await engine.preToolUse({
-        toolName: 'Bash',
-        toolParams: { command: 'rm -rf /tmp/x' },
-      })
-    );
+    const result = await engine.preToolUse({
+      toolName: 'Bash',
+      toolParams: { command: 'rm -rf /tmp/x' },
+    });
     expect(result.shouldContinue).toBe(false);
     expect(result.decisions).toHaveLength(1);
     expect(result.decisions[0].hookId).toBe('dangerous-bash-block');
@@ -192,12 +200,10 @@ describe('preToolUse', () => {
   });
 
   it('lets a safe bash command through to the critical-tool context hook', async () => {
-    const result = asAggregated(
-      await engine.preToolUse({
-        toolName: 'Bash',
-        toolParams: { command: 'ls -la' },
-      })
-    );
+    const result = await engine.preToolUse({
+      toolName: 'Bash',
+      toolParams: { command: 'ls -la' },
+    });
     expect(result.shouldContinue).toBe(true);
     expect(result.decisions.map((d) => d.hookId)).toEqual(['pre-critical-tool-context']);
     expect(result.decisions[0].decision).toEqual({ allow: true });
@@ -209,7 +215,11 @@ describe('preToolUse', () => {
       hooks: { preToolUse: false },
       onBridgeEvent: bridge,
     });
-    expect(await disabled.preToolUse({ toolName: 'Read' })).toEqual({ shouldContinue: true });
+    expect(await disabled.preToolUse({ toolName: 'Read' })).toEqual({
+      shouldContinue: true,
+      decisions: [],
+      observerErrors: [],
+    });
     expect(bridge).not.toHaveBeenCalled();
   });
 });
@@ -267,7 +277,7 @@ describe('postToolUse error logging', () => {
 
     await tuned.postToolUse(failedRead());
     await tuned.postToolUse(failedRead());
-    const third = asAggregated(await tuned.postToolUse(failedRead()));
+    const third = await tuned.postToolUse(failedRead());
 
     expect(third.decisions.map((d) => d.hookId)).toEqual(['three-strike-rule', 'two-action-rule']);
     expect(third.injectContext).toContain('<three-strike-warning>');
@@ -278,7 +288,7 @@ describe('postToolUse error logging', () => {
 
   it('reminds to update the plan after a successful write and resets the view counter', async () => {
     for (let i = 0; i < 3; i++) actionCounter.observe({ toolName: 'Read' });
-    const result = asAggregated(await engine.postToolUse({ toolName: 'Write', toolResult: { success: true } }));
+    const result = await engine.postToolUse({ toolName: 'Write', toolResult: { success: true } });
     expect(result.decisions.map((d) => d.hookId)).toEqual(['write-operation-reminder']);
     expect(result.injectContext).toContain('File operation completed');
     expect(result.injectContext).toContain('plan_read');
@@ -298,7 +308,7 @@ describe('postToolUse error logging', () => {
 describe('onStop', () => {
   it('blocks the stop with the incomplete list while much work remains', async () => {
     await createPlan(blockingPlan());
-    const result = asAggregated(await engine.onStop());
+    const result = await engine.onStop();
     expect(result.shouldContinue).toBe(false);
     expect(result.decisions).toHaveLength(1);
     expect(result.decisions[0].hookId).toBe('plan-completion-check');
@@ -309,7 +319,7 @@ describe('onStop', () => {
   });
 
   it('allows the stop when no plan exists', async () => {
-    const result = asAggregated(await engine.onStop());
+    const result = await engine.onStop();
     expect(result.shouldContinue).toBe(true);
     expect(result.decisions).toEqual([{ hookId: 'plan-completion-check', decision: { allow: true } }]);
     expect(result.notification).toBeUndefined();
@@ -325,7 +335,7 @@ describe('onStop', () => {
       dualChannel: { decisionTimeout: 1 },
     });
     try {
-      const result = asAggregated(await hung.onStop());
+      const result = await hung.onStop();
       expect(result.shouldContinue).toBe(true);
       expect(result.decisions).toEqual([
         {
@@ -344,7 +354,7 @@ describe('onStop', () => {
 describe('onError', () => {
   it('logs the error with stack and params, then runs the on_error hooks', async () => {
     const boom = new Error('kaboom');
-    const result = asAggregated(await engine.onError({ toolName: 'Bash', error: boom, toolParams: { p: 1 } }));
+    const result = await engine.onError({ toolName: 'Bash', error: boom, toolParams: { p: 1 } });
     const all = await errorTracker.getAll();
     expect(all).toHaveLength(1);
     expect(all[0].toolName).toBe('Bash');
@@ -368,11 +378,16 @@ describe('onError', () => {
     const disabled = new HooksEngine(planManager, errorTracker, findingsManager, {
       hooks: { onStop: false, onError: false, postToolUse: false },
     });
-    expect(await disabled.onError({ error: new Error('kaboom') })).toEqual({ shouldContinue: true });
-    expect(await disabled.onStop()).toEqual({ shouldContinue: true });
+    const disabledResult = {
+      shouldContinue: true,
+      decisions: [],
+      observerErrors: [],
+    };
+    expect(await disabled.onError({ error: new Error('kaboom') })).toEqual(disabledResult);
+    expect(await disabled.onStop()).toEqual(disabledResult);
     expect(
       await disabled.postToolUse({ toolName: 'Bash', toolResult: { success: false, error: 'boom' } })
-    ).toEqual({ shouldContinue: true });
+    ).toEqual(disabledResult);
     expect(await errorTracker.getAll()).toHaveLength(0);
   });
 });
@@ -385,7 +400,7 @@ describe('dual-channel observer behavior', () => {
     const bridge = vi.fn<(point: HookPoint, context: HookContext) => void>();
     noObservers.setBridgeCallback(bridge);
 
-    const result = asAggregated(await noObservers.postToolUse({ toolName: 'Read' }));
+    const result = await noObservers.postToolUse({ toolName: 'Read' });
     expect(getActionCount()).toBe(0); // action-counter observer never ran
     expect(result.observerErrors).toEqual([]);
     expect(result.decisions.map((d) => d.hookId)).toEqual(['two-action-rule']);
@@ -396,24 +411,20 @@ describe('dual-channel observer behavior', () => {
     const sequential = new HooksEngine(planManager, errorTracker, findingsManager, {
       dualChannel: { parallelObservers: false },
     });
-    const result = asAggregated(
-      await sequential.postToolUse({
-        toolName: 'Read',
-        toolResult: { success: false, error: 'boom' },
-      })
-    );
+    const result = await sequential.postToolUse({
+      toolName: 'Read',
+      toolResult: { success: false, error: 'boom' },
+    });
     expect(getActionCount()).toBe(1);
     expect(result.observerErrors).toEqual([]);
     expect(result.decisions.map((d) => d.hookId)).toEqual(['three-strike-rule', 'two-action-rule']);
   });
 
   it('runs observers in parallel by default with the same outcomes', async () => {
-    const result = asAggregated(
-      await engine.postToolUse({
-        toolName: 'Read',
-        toolResult: { success: false, error: 'boom' },
-      })
-    );
+    const result = await engine.postToolUse({
+      toolName: 'Read',
+      toolResult: { success: false, error: 'boom' },
+    });
     expect(getActionCount()).toBe(1);
     expect(result.observerErrors).toEqual([]);
     expect(result.decisions.map((d) => d.hookId)).toEqual(['three-strike-rule', 'two-action-rule']);
@@ -435,7 +446,7 @@ describe('dual-channel observer behavior', () => {
     engine.setBridgeCallback(() => {
       throw new Error('bridge exploded');
     });
-    const result = asAggregated(await engine.preToolUse({ toolName: 'Bash', toolParams: { command: 'ls' } }));
+    const result = await engine.preToolUse({ toolName: 'Bash', toolParams: { command: 'ls' } });
     expect(result.shouldContinue).toBe(true);
     expect(result.decisions.map((d) => d.hookId)).toEqual(['pre-critical-tool-context']);
   });
@@ -458,12 +469,10 @@ describe('decision hook failure isolation', () => {
     const consoleSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
     vi.spyOn(errorTracker, 'getErrorCount').mockRejectedValueOnce(new Error('tracker down'));
 
-    const result = asAggregated(
-      await engine.postToolUse({
-        toolName: 'Read',
-        toolResult: { success: false, error: 'boom' },
-      })
-    );
+    const result = await engine.postToolUse({
+      toolName: 'Read',
+      toolResult: { success: false, error: 'boom' },
+    });
 
     expect(consoleSpy).toHaveBeenCalledWith(
       'Decision hook three-strike-rule failed:',
@@ -472,5 +481,105 @@ describe('decision hook failure isolation', () => {
     expect(result.shouldContinue).toBe(true);
     expect(result.decisions.map((d) => d.hookId)).toEqual(['two-action-rule']);
     expect(result.injectContext).toBeUndefined();
+  });
+});
+
+describe('observer channel failure isolation', () => {
+  // Custom observers injected through the getObserversForPoint mock. The
+  // healthy observer proves the channel keeps running alongside failures.
+  const throwingObserver = (): ObserverHook => ({
+    id: 'throwing-observer',
+    name: 'Throwing Observer',
+    matcher: () => true,
+    observe: async () => {
+      throw new Error('observer exploded');
+    },
+  });
+
+  const hangingObserver = (): ObserverHook => ({
+    id: 'hanging-observer',
+    name: 'Hanging Observer',
+    matcher: () => true,
+    observe: () => new Promise<void>(() => {}),
+  });
+
+  const makeHealthyObserver = () => {
+    const observe = vi.fn<(context: HookContext) => Promise<void>>(async () => {});
+    const observer: ObserverHook = {
+      id: 'healthy-observer',
+      name: 'Healthy Observer',
+      matcher: () => true,
+      observe,
+    };
+    return { observer, observe };
+  };
+
+  it('parallel channel records thrown and timed-out observers while the healthy observer and decisions still run', async () => {
+    const healthy = makeHealthyObserver();
+    getObserversForPointMock.mockReturnValue([healthy.observer, throwingObserver(), hangingObserver()]);
+    const timed = new HooksEngine(planManager, errorTracker, findingsManager, {
+      dualChannel: { observerTimeout: 10 },
+    });
+
+    vi.useFakeTimers();
+    try {
+      const pending = timed.preToolUse({ toolName: 'Bash', toolParams: { command: 'ls -la' } });
+      await vi.advanceTimersByTimeAsync(10);
+      const result = await pending;
+
+      // Promise.allSettled preserves input order, so the rejections land in order.
+      expect(result.observerErrors.map((e) => e.hookId)).toEqual([
+        'throwing-observer',
+        'hanging-observer',
+      ]);
+      expect(result.observerErrors[0].error.message).toBe('observer exploded');
+      expect(result.observerErrors[1].error.message).toBe('Observer hanging-observer timed out');
+      expect(healthy.observe).toHaveBeenCalledOnce();
+      expect(result.decisions.map((d) => d.hookId)).toEqual(['pre-critical-tool-context']);
+      expect(result.shouldContinue).toBe(true);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('sequential channel records thrown and timed-out observers while the healthy observer and decisions still run', async () => {
+    const healthy = makeHealthyObserver();
+    getObserversForPointMock.mockReturnValue([healthy.observer, throwingObserver(), hangingObserver()]);
+    const timed = new HooksEngine(planManager, errorTracker, findingsManager, {
+      dualChannel: { observerTimeout: 10, parallelObservers: false },
+    });
+
+    vi.useFakeTimers();
+    try {
+      const pending = timed.preToolUse({ toolName: 'Bash', toolParams: { command: 'ls -la' } });
+      await vi.advanceTimersByTimeAsync(10);
+      const result = await pending;
+
+      expect(result.observerErrors.map((e) => e.hookId)).toEqual([
+        'throwing-observer',
+        'hanging-observer',
+      ]);
+      expect(result.observerErrors[0].error.message).toBe('observer exploded');
+      expect(result.observerErrors[1].error.message).toBe('Observer hanging-observer timed out');
+      expect(healthy.observe).toHaveBeenCalledOnce();
+      expect(result.decisions.map((d) => d.hookId)).toEqual(['pre-critical-tool-context']);
+      expect(result.shouldContinue).toBe(true);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('observer errors never flip shouldContinue: a thrown observer is recorded and the run stays green', async () => {
+    const healthy = makeHealthyObserver();
+    getObserversForPointMock.mockReturnValue([throwingObserver(), healthy.observer]);
+
+    const result = await engine.postToolUse({ toolName: 'Write', toolResult: { success: true } });
+
+    expect(result.observerErrors).toHaveLength(1);
+    expect(result.observerErrors[0].hookId).toBe('throwing-observer');
+    expect(result.observerErrors[0].error.message).toBe('observer exploded');
+    expect(healthy.observe).toHaveBeenCalledOnce();
+    expect(result.decisions.map((d) => d.hookId)).toEqual(['write-operation-reminder']);
+    expect(result.shouldContinue).toBe(true);
   });
 });

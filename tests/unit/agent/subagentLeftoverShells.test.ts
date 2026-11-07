@@ -3,7 +3,7 @@ import { mkdir, mkdtemp, readFile, rm } from 'node:fs/promises';
 import { createServer, type Server } from 'node:http';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
-import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi, type MockInstance } from 'vitest';
 
 type BackgroundTasks = typeof import('../../../src/host/tools/shell/backgroundTasks');
 type ProtocolRegistry = ReturnType<typeof import('../../../src/host/tools/protocolRegistry').getProtocolRegistry>;
@@ -31,7 +31,7 @@ let SubagentExecutor: typeof import('../../../src/host/agent/subagentExecutor').
 let getConfigService: typeof import('../../../src/host/services/core/configService').getConfigService;
 let getSystemPromptHint: typeof import('../../../src/shared/i18n/sessionTaskSlot').getSystemPromptHint;
 let handoverTimedOutCommand: typeof import('../../../src/host/tools/shell/timeoutHandover').handoverTimedOutCommand;
-let consoleError: ReturnType<typeof vi.spyOn>;
+let consoleError: MockInstance<typeof console.error>;
 const taskIds = new Set<string>();
 const processGroups = new Set<number>();
 
@@ -177,7 +177,7 @@ async function runAgent(input: RunInput) {
               inputSchema: schema.inputSchema,
               outputSchema: schema.outputSchema,
               requiresPermission: schema.requiresPermission ?? false,
-              permissionLevel: schema.permissionLevel,
+              permissionLevel: schema.permissionLevel === 'dangerous' ? 'execute' : schema.permissionLevel,
               readOnly: schema.readOnly,
               touchesWorkDirectory: schema.touchesWorkDirectory,
             } : undefined;

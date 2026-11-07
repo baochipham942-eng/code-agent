@@ -202,6 +202,8 @@ export interface AppState {
   capabilityHubTab: CapabilityHubTab;
   expertPanelTab: 'mine' | 'discover';
   showCronCenter: boolean;
+  /** 一次性请求：自动化中心切到「运行」页（通知点击落到待审批卡）；面板消费后清空。 */
+  cronCenterRunsRequested: boolean;
   showTimeCapabilityCenter: boolean;
   showFileExplorer: boolean;
   voicePasteStatus: 'idle' | 'recording' | 'transcribing' | 'processing';
@@ -361,6 +363,8 @@ export interface AppState {
   /** 回到会话区：关掉互斥表里所有二级页。侧栏选会话/新建任务时调用。 */
   closeSecondaryPages: () => void;
   setShowCronCenter: (show: boolean) => void;
+  openCronCenterRuns: () => void;
+  clearCronCenterRunsRequest: () => void;
   setShowTimeCapabilityCenter: (show: boolean) => void;
   setShowFileExplorer: (show: boolean) => void;
   setVoicePasteStatus: (status: 'idle' | 'recording' | 'transcribing' | 'processing') => void;

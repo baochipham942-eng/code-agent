@@ -346,6 +346,11 @@ vi.mock('../../src/host/services/cloud/cloudConfigService', () => ({
 import { AgentOrchestrator } from '../../src/host/agent/agentOrchestrator';
 import { getPermissionModeManager } from '../../src/host/permissions/modes';
 import { setCustomAgentMapForTest } from '../../src/host/agent/agentRegistry';
+// 存草稿门测试开/关 mail 连接器用：configService 走本文件顶部 vi.mock 的替身（settings
+// 可变），connector registry 用真实单例（darwin 上 configure 注册，行为同
+// sessionCommandCenterBrain.test.ts 的 darwin-only 桥）。
+import { getConfigService } from '../../src/host/services/core/configService';
+import { getConnectorRegistry } from '../../src/host/connectors/registry';
 import { approvalParkEvents } from '../../src/host/agent/approvalParkEvents';
 import type { PendingApprovalRepository } from '../../src/host/services/core/repositories/PendingApprovalRepository';
 import { SteerRejectedError } from '../../src/host/agent/runtime/conversationRuntime';
@@ -2154,6 +2159,9 @@ describe('AgentOrchestrator', () => {
 
   describe('morning brief save-draft role mail tool gate', () => {
     const ROLE = 'save-draft-role';
+    // FB-726：无邮件角色的存草稿轮必须整批撤下的工具名——mail 三件套 + delegate_task + Bash。
+    // 组成核对见 src/host/app/morningBriefSaveDraftTools.ts 的 SAVE_DRAFT_NO_MAIL_REMOVE。
+    const NO_MAIL_ROLE_ABSENT = ['mail', 'mail_send', 'mail_draft', 'delegate_task', 'Bash'] as const;
 
     function registerRole(tools: string[]): void {
       setCustomAgentMapForTest(new Map([[
@@ -2172,9 +2180,20 @@ describe('AgentOrchestrator', () => {
       ]]));
     }
 
-    async function runSaveDraft(roleId?: string): Promise<string[] | undefined> {
+    // 连接器意图扩展是真组成的一部分（FB-726 预载表里有 mail/mail_send/mail_draft）：
+    // 经被 mock 的 configService 开 enabledNative，registry 用真实单例。用完必须关回去——
+    // 文件里后面断言精确名单的用例（named role standing boundary）经同一 configService
+    // 组装，连接器开着会被污染。
+    function setMailConnectorEnabled(enabled: boolean): void {
+      (getConfigService() as unknown as {
+        getSettings(): { connectors: { enabledNative: string[] } };
+      }).getSettings().connectors.enabledNative = enabled ? ['mail'] : [];
+      getConnectorRegistry().configure(enabled ? ['mail'] : []);
+    }
+
+    async function runSaveDraft(roleId?: string, prompt = '存草稿 1'): Promise<string[] | undefined> {
       const { withSessionCommandCenterBrain } = await import('../../src/host/app/sessionCommandCenterBrain');
-      const options = withSessionCommandCenterBrain(roleId ? { agentOverrideId: roleId } : undefined, '存草稿 1');
+      const options = withSessionCommandCenterBrain(roleId ? { agentOverrideId: roleId } : undefined, prompt);
       await (orchestrator as unknown as {
         runStandardAgentLoop(
           content: string,
@@ -2187,18 +2206,20 @@ describe('AgentOrchestrator', () => {
           options?: AgentRunOptions,
         ): Promise<void>;
       }).runStandardAgentLoop(
-        '存草稿 1', mockOnEvent, { provider: 'deepseek', model: 'deepseek-chat' },
+        prompt, mockOnEvent, { provider: 'deepseek', model: 'deepseek-chat' },
         'save-draft-role-session', undefined, undefined, undefined, options as AgentRunOptions,
       );
       return lastAgentLoopConfig()?.allowedToolNames;
     }
 
     afterEach(() => {
+      setMailConnectorEnabled(false);
       setCustomAgentMapForTest(new Map());
     });
 
-    it.each(['off', 'on'] as const)('removes mail_draft for a no-mail role with the standing boundary %s', async (boundary) => {
+    it.each(['off', 'on'] as const)('removes every mail tool, delegate_task and Bash for a no-mail role with the standing boundary %s', async (boundary) => {
       registerRole(['Read']);
+      setMailConnectorEnabled(true);
       if (boundary === 'on') {
         roleBoundaryProbe.mockReturnValue({
           boundaryText: '不允许对外发送',
@@ -2207,7 +2228,12 @@ describe('AgentOrchestrator', () => {
         });
       }
 
-      expect(await runSaveDraft(ROLE)).not.toContain('mail_draft');
+      const tools = await runSaveDraft(ROLE);
+      for (const absent of NO_MAIL_ROLE_ABSENT) {
+        expect(tools).not.toContain(absent);
+      }
+      // 撤单不是清场：角色自己声明的读写面还在，轮次照常能跑。
+      expect(tools).toContain('Read');
     });
 
     it.each([['mail_draft'], ['mail']])('keeps exactly one mail_draft for a role declaring %s', async (mailTool) => {
@@ -2216,8 +2242,31 @@ describe('AgentOrchestrator', () => {
       expect((await runSaveDraft(ROLE))?.filter((tool) => tool === 'mail_draft')).toHaveLength(1);
     });
 
+    // 记录在案的取舍：真有邮件面的角色（声明 mail/mail_draft）不撤 mail_send——
+    // 存草稿轮的收窄只针对没开邮件的角色。mail 工具进面依赖 darwin 上的连接器注册表
+    // （sessionCommandCenterBrain.test.ts 同款桥），非 darwin 整组不出工具名。
+    it.skipIf(process.platform !== 'darwin')('keeps mail_send for a role that really declares mail with the connector enabled', async () => {
+      registerRole(['Read', 'mail']);
+      setMailConnectorEnabled(true);
+
+      const tools = await runSaveDraft(ROLE);
+      expect(tools).toContain('mail_send');
+      expect(tools?.filter((tool) => tool === 'mail_draft')).toHaveLength(1);
+    });
+
     it('keeps exactly one mail_draft when no role is resolved', async () => {
       expect((await runSaveDraft())?.filter((tool) => tool === 'mail_draft')).toHaveLength(1);
+    });
+
+    it.skipIf(process.platform !== 'darwin')('leaves a non-save-draft mail prompt for a no-mail role untouched', async () => {
+      registerRole(['Read']);
+      setMailConnectorEnabled(true);
+
+      const tools = await runSaveDraft(ROLE, '帮我发邮件给 a@b.c，说明会议改期');
+      // 非存草稿轮不归本门管：连接器意图命中带进来的 mail 三件套与 delegate_task 原样在列。
+      for (const present of ['mail', 'mail_send', 'mail_draft', 'delegate_task']) {
+        expect(tools).toContain(present);
+      }
     });
   });
 

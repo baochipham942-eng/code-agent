@@ -98,9 +98,10 @@ describe('SESSION_COMMAND_CENTER_BRAIN_CONTEXT design notice', () => {
 
   it('routes an explicitly named command method to a background task with positive wording', () => {
     expect(SESSION_COMMAND_CENTER_BRAIN_CONTEXT).toContain('用户明确点名 Bash、终端、命令行或脚本执行形式时');
+    expect(SESSION_COMMAND_CENTER_BRAIN_CONTEXT).toContain('必须调用 delegate_task');
     expect(SESSION_COMMAND_CENTER_BRAIN_CONTEXT).toContain('这条点名路由优先于 3a');
     expect(SESSION_COMMAND_CENTER_BRAIN_CONTEXT).toContain('把用户的命令意图完整写入 prompt');
-    expect(SESSION_COMMAND_CENTER_BRAIN_CONTEXT).toContain('delegate_task 返回 accepted 后');
+    expect(SESSION_COMMAND_CENTER_BRAIN_CONTEXT).toContain('工具回包 accepted 后');
     expect(SESSION_COMMAND_CENTER_BRAIN_CONTEXT).toContain('正在后台任务中运行');
     expect(SESSION_COMMAND_CENTER_BRAIN_CONTEXT).toContain('3a. 对普通邮件、日历和提醒请求');
   });

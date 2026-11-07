@@ -22,6 +22,7 @@ import {
   type DurableSessionPayload,
 } from '../helpers/durableSessionPayload';
 import type { TraceReadService } from '../../host/app/traceReadService';
+import { dropForeignPlannedSessionWorkDirectory } from '../../host/config/sessionWorkDirectoryReservations';
 
 interface SessionManagerLike {
   listSessions(options: { includeArchived?: boolean }): Promise<unknown[]>;
@@ -162,7 +163,9 @@ export function createSessionsRouter(deps: SessionsRouterDeps): Router {
         return;
       }
       const title = parsedBody.data.title?.trim() || 'New Session';
-      const workingDirectory = parsedBody.data.workingDirectory?.trim() || undefined;
+      const workingDirectory = await dropForeignPlannedSessionWorkDirectory(
+        parsedBody.data.workingDirectory?.trim() || undefined,
+      );
       const sm = await tryGetSessionManager();
       if (sm) {
         const { resolveSessionDefaultModelConfig } = await import('../../host/services/core/sessionDefaults');

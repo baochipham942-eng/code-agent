@@ -15,6 +15,7 @@ import { isExternalAgentEngine } from '../services/agentEngine';
 import { getUserBrowserLinkService } from '../services/surfaceExecution/UserBrowserLinkService';
 import { getManagedBrowserProviderAdapter } from '../services/surfaceExecution/ManagedBrowserProviderAdapter';
 import { createLogger } from '../services/infra/logger';
+import { dropForeignPlannedSessionWorkDirectory } from '../config/sessionWorkDirectoryReservations';
 
 const logger = createLogger('SessionLifecycleAppService');
 
@@ -52,9 +53,9 @@ export class SessionLifecycleAppService {
     const requestedWorkingDirectory = typeof config?.workingDirectory === 'string'
       ? config.workingDirectory.trim()
       : undefined;
-    const workingDirectory = hasExplicitWorkingDirectory
-      ? requestedWorkingDirectory
-      : this.deps.getWorkingDirectory();
+    const workingDirectory = await dropForeignPlannedSessionWorkDirectory(
+      hasExplicitWorkingDirectory ? requestedWorkingDirectory : this.deps.getWorkingDirectory(),
+    );
 
     const requestedEngine = normalizeAgentEngineSession(config?.engine);
     if (config?.engine && isExternalAgentEngine(requestedEngine.kind)) {

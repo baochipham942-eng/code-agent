@@ -13,6 +13,7 @@
 import * as path from 'path';
 import { getDefaultWorkDirectory } from './configPaths';
 import { isPathWithinRoot } from '../runtime/workspaceScope';
+import { isPlannedSessionWorkDirectory } from './sessionWorkDirectory';
 import { createLogger } from '../services/infra/logger';
 
 const logger = createLogger('SessionWorkDirReservations');
@@ -47,4 +48,24 @@ export async function listSessionWorkDirectoryReservations(
     logger.warn('[SessionWorkDirReservations] Failed to list recorded working directories, treating none as reserved:', error);
     return [];
   }
+}
+
+/**
+ * 新建聊天会话时的工作目录入口过滤（N-FIX-DELIVERABLE-FOLDER-WRONG-SESSION）。
+ * renderer 的「新建会话」默认继承全局当前工作目录，而上一个聊天首轮规划出的
+ * 任务_MMDD_<标题> 会被回写成这个全局值；新会话原样带着它创建，就拿到别人的产出目录，
+ * 用户在自己任务名下找不到文件。规划形状的目录且已被其它会话行记下时丢弃，
+ * 让新会话首轮自己规划；用户显式选的普通项目目录、未被占用的路径原样放行。
+ */
+export async function dropForeignPlannedSessionWorkDirectory(
+  workingDirectory: string | undefined,
+  options: SessionWorkDirectoryReservationOptions = {},
+): Promise<string | undefined> {
+  const trimmed = workingDirectory?.trim();
+  if (!trimmed) return workingDirectory;
+  if (!isPlannedSessionWorkDirectory(trimmed, options.env)) return workingDirectory;
+  const reserved = await listSessionWorkDirectoryReservations(options);
+  if (!reserved.includes(path.resolve(trimmed))) return workingDirectory;
+  logger.info(`[SessionWorkDirReservations] New session dropped inherited work dir already recorded by another session: ${trimmed}`);
+  return undefined;
 }
